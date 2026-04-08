@@ -1,0 +1,124 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  html {
+    -webkit-tap-highlight-color: transparent;
+  }
+  body {
+    @apply text-gray-900 bg-gray-50;
+  }
+  html.dark {
+    color-scheme: dark;
+  }
+  html.dark body {
+    @apply text-gray-100;
+    background-color: #0a0a0f;
+  }
+
+  /* ── Global dark overrides ─────────────────────────── */
+
+  /* Headings & strong text */
+  html.dark .text-gray-900 { color: #eef0f4; }
+  html.dark .text-gray-800 { color: #d1d5db; }
+  html.dark .text-gray-700 { color: #9ca3af; }
+
+  /* Backgrounds */
+  html.dark .bg-white { background-color: #12121a; }
+  html.dark .bg-gray-50 { background-color: #0e0e16; }
+  html.dark .bg-gray-100 { background-color: #1a1a24; }
+
+  /* Borders */
+  html.dark .border-gray-200 { border-color: #1a1a24; }
+  html.dark .border-gray-100 { border-color: #16161e; }
+  html.dark .border-gray-300 { border-color: #2a2a34; }
+
+  /* Dividers */
+  html.dark .divide-gray-100 > * + * { border-color: #16161e; }
+  html.dark .divide-gray-200 > * + * { border-color: #1a1a24; }
+
+  /* Hover states */
+  html.dark .hover\:bg-gray-50:hover { background-color: #16161e; }
+  html.dark .hover\:bg-gray-100:hover { background-color: #1a1a24; }
+
+  /* Semi-transparent whites */
+  html.dark .bg-white\/60 { background-color: rgba(18, 18, 26, 0.6); }
+  html.dark .bg-gray-50\/60 { background-color: rgba(14, 14, 22, 0.6); }
+
+  /* Dashed borders (label previews etc) */
+  html.dark .border-dashed { border-color: #2a2a34; }
+
+  /* Table specifics */
+  html.dark th { color: #9ca3af; }
+  html.dark td { border-color: #16161e; }
+  html.dark tr:hover { background-color: #16161e; }
+  html.dark thead { background-color: #0e0e16; }
+  html.dark .border-b { border-bottom-color: #16161e; }
+  html.dark .border-t { border-top-color: #16161e; }
+  html.dark .border-l { border-left-color: #16161e; }
+  html.dark .border-r { border-right-color: #16161e; }
+
+  /* Badges & pills */
+  html.dark .bg-gray-100.text-gray-600,
+  html.dark .bg-gray-100.text-gray-500,
+  html.dark .bg-gray-100.text-gray-700 {
+    background-color: #1a1a24;
+    color: #9ca3af;
+  }
+
+  /* Focus ring offset */
+  html.dark .focus\:ring-offset-2 { --tw-ring-offset-color: #0a0a0f; }
+
+  /* Disabled inputs */
+  html.dark .disabled\:bg-gray-50:disabled { background-color: #0e0e16; }
+  html.dark .disabled\:text-gray-500:disabled { color: #4b5563; }
+
+  /* Brand overrides for dark - ensure brand-100 bg is dark */
+  html.dark .bg-brand-100 { background-color: rgba(0, 179, 141, 0.15); }
+  html.dark .bg-brand-50 { background-color: rgba(0, 212, 170, 0.08); }
+
+  /* Alert backgrounds */
+  html.dark .bg-red-50 { background-color: rgba(239, 68, 68, 0.1); }
+  html.dark .bg-yellow-50 { background-color: rgba(234, 179, 8, 0.1); }
+  html.dark .bg-emerald-50 { background-color: rgba(16, 185, 129, 0.1); }
+  html.dark .bg-blue-50 { background-color: rgba(59, 130, 246, 0.1); }
+  html.dark .bg-amber-50 { background-color: rgba(245, 158, 11, 0.1); }
+  html.dark .bg-orange-50 { background-color: rgba(249, 115, 22, 0.1); }
+
+  /* Alert borders */
+  html.dark .border-red-200 { border-color: rgba(239, 68, 68, 0.3); }
+  html.dark .border-yellow-200 { border-color: rgba(234, 179, 8, 0.3); }
+  html.dark .border-emerald-200 { border-color: rgba(16, 185, 129, 0.3); }
+  html.dark .border-blue-200 { border-color: rgba(59, 130, 246, 0.3); }
+  html.dark .border-blue-300 { border-color: rgba(59, 130, 246, 0.4); }
+  html.dark .border-amber-200 { border-color: rgba(245, 158, 11, 0.3); }
+
+  /* Placeholders */
+  html.dark .placeholder-gray-400::placeholder { color: #4b5563; }
+
+  /* Scrollbar */
+  html.dark ::-webkit-scrollbar { width: 8px; }
+  html.dark ::-webkit-scrollbar-track { background: #0a0a0f; }
+  html.dark ::-webkit-scrollbar-thumb { background: #2a2a34; border-radius: 4px; }
+  html.dark ::-webkit-scrollbar-thumb:hover { background: #3a3a44; }
+}
+
+@media print {
+  body * {
+    visibility: hidden;
+  }
+  .print\:block,
+  .print\:block * {
+    visibility: visible;
+  }
+  .print\:block {
+    position: absolute;
+    top: 0;
+    left: 0;
+  }
+  /* Force light mode for printing */
+  html.dark .bg-white { background-color: white !important; }
+  html.dark .text-gray-900 { color: #111827 !important; }
+  html.dark .border-gray-200 { border-color: #e5e7eb !important; }
+}
