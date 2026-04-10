@@ -188,7 +188,10 @@ export function FichaDetailPage() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-50">
-                {versaoAtiva.itens?.map((item) => (
+                {[...(versaoAtiva.itens ?? [])].sort((a, b) => {
+                  const toG = (q: number, u: string) => u === 'kg' || u === 'L' ? q * 1000 : q
+                  return toG(b.quantidade, b.unidade) - toG(a.quantidade, a.unidade)
+                }).map((item) => (
                   <tr key={item.id} className="hover:bg-gray-50">
                     <td className="px-4 py-3">
                       <p className="font-medium text-gray-900">{item.insumo?.nome}</p>

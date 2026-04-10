@@ -87,7 +87,10 @@ export function ImpressaoFichaPage() {
   )
 
   const versaoAtiva = ficha.versoes.find(v => v.ativa)
-  const itens = versaoAtiva?.itens ?? []
+  const itens = [...(versaoAtiva?.itens ?? [])].sort((a, b) => {
+    const toG = (q: number, u: string) => u === 'kg' || u === 'L' ? q * 1000 : q
+    return toG(b.quantidade, b.unidade) - toG(a.quantidade, a.unidade)
+  })
   const empresaNome = empresa?.nome ?? 'Unno'
   const tipo = ficha.tipo ?? 'produto'
 
