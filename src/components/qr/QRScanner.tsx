@@ -14,6 +14,7 @@ export function QRScanner({ onScan, onError, label = 'Aponte a câmera para o QR
   const [started, setStarted] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [scanned, setScanned] = useState<string | null>(null)
+  const [scanKey, setScanKey] = useState(0)
 
   async function startScanner() {
     setError(null)
@@ -58,9 +59,17 @@ export function QRScanner({ onScan, onError, label = 'Aponte a câmera para o QR
     }
   }, [])
 
+  // Re-inicia scanner quando scanKey muda (forca remount do container via key prop)
+  useEffect(() => {
+    if (scanKey > 0) {
+      startScanner()
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [scanKey])
+
   function handleRescan() {
     setScanned(null)
-    startScanner()
+    setScanKey(k => k + 1)
   }
 
   return (
@@ -84,6 +93,7 @@ export function QRScanner({ onScan, onError, label = 'Aponte a câmera para o QR
       ) : (
         <>
           <div
+            key={scanKey}
             id={containerId.current}
             className="w-full max-w-sm rounded-xl overflow-hidden bg-black min-h-[280px]"
           />
