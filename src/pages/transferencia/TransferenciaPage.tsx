@@ -7,6 +7,7 @@ import { Button } from '../../components/ui/Button'
 import { Card } from '../../components/ui/Card'
 import { ConfirmModal } from '../../components/ui/ConfirmModal'
 import { formatDate, formatQty, precisaReembalagem, precisaDestinoMultiplo } from '../../lib/utils'
+import { parseQRLoteCodigo } from '../../lib/qr'
 import { ReembalagemNutella } from './components/ReembalagemNutella'
 import { ReembalagemStikadinho } from './components/ReembalagemStikadinho'
 import { ReembalagemDDL } from './components/ReembalagemDDL'
@@ -45,7 +46,7 @@ export function TransferenciaPage() {
     const { data } = await supabase
       .from('lotes')
       .select('codigo, status')
-      .eq('qr_code', qr)
+      .eq('codigo', parseQRLoteCodigo(qr))
       .single()
 
     if (!data) return `QR não reconhecido: ${qr}`
@@ -74,7 +75,7 @@ export function TransferenciaPage() {
           armazenamento_config:insumos_armazenamento_config(passa_reembalagem, destino_multiplo)
         )
       `)
-      .eq('qr_code', qr)
+      .eq('codigo', parseQRLoteCodigo(qr))
       .eq('status', 'ativo')
       .single()
 
@@ -123,7 +124,7 @@ export function TransferenciaPage() {
           armazenamento_config:insumos_armazenamento_config(passa_reembalagem, destino_multiplo)
         )
       `)
-      .eq('qr_code', qr)
+      .eq('codigo', parseQRLoteCodigo(qr))
       .eq('status', 'ativo')
       .single()
 
