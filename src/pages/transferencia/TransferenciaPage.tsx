@@ -43,13 +43,19 @@ export function TransferenciaPage() {
   // ── Helpers ───────────────────────────────────────────────
 
   async function erroLoteInativo(qr: string): Promise<string> {
+    const codigoParseado = parseQRLoteCodigo(qr)
     const { data } = await supabase
       .from('lotes')
       .select('codigo, status')
-      .eq('codigo', parseQRLoteCodigo(qr))
-      .single()
+      .eq('codigo', codigoParseado)
+      .maybeSingle()
 
-    if (!data) return `QR não reconhecido: ${qr}`
+    // Debug: loga no console do celular (acessível via chrome://inspect)
+    console.log('[TransferenciaPage] QR bruto:', JSON.stringify(qr))
+    console.log('[TransferenciaPage] Código parseado:', JSON.stringify(codigoParseado))
+    console.log('[TransferenciaPage] Lote encontrado:', data)
+
+    if (!data) return `QR não reconhecido. Código buscado: "${codigoParseado}" (do QR: "${qr}")`
 
     const codigo = data.codigo
     if (data.status === 'esgotado')
