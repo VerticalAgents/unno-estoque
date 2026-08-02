@@ -13,6 +13,7 @@ import { TransferenciaPage } from './pages/transferencia/TransferenciaPage'
 import { SessoesListPage } from './pages/producao/SessoesListPage'
 import { AberturaSessaoPage } from './pages/producao/AberturaSessaoPage'
 import { PlanejadorRecipientesPage } from './pages/producao/PlanejadorRecipientesPage'
+import { ReabastecimentoPage } from './pages/reabastecimento/ReabastecimentoPage'
 import { FechamentoSessaoPage } from './pages/producao/FechamentoSessaoPage'
 import { PerdaListPage } from './pages/perdas/PerdaListPage'
 import { NovaPerdaPage } from './pages/perdas/NovaPerdaPage'
@@ -56,6 +57,7 @@ export default function App() {
           <Route path="recebimento/imprimir/:loteId" element={<ImpressaoEtiquetaPage />} />
           <Route path="recebimento/imprimir-lotes" element={<ImpressaoLotesPage />} />
           <Route path="transferencia" element={<TransferenciaPage />} />
+          <Route path="reabastecimento" element={<ReabastecimentoPage />} />
           <Route path="producao" element={<SessoesListPage />} />
           <Route path="producao/abrir" element={<AberturaSessaoPage />} />
           <Route path="producao/planejador" element={<PlanejadorRecipientesPage />} />

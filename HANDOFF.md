@@ -70,9 +70,30 @@ Nas fichas Odara, **1 fornada = 1 forma = 60 unidades** de ~67,5 g.
   `UNIQUE(sessao_id, local_id, lote_id)`).
 - Tela: `src/pages/producao/PlanejadorRecipientesPage.tsx` (`/producao/planejador`).
 
-Falta a **Fase 3** (reabastecimento): tabela `projecao_producao`, parâmetros de
-periodicidade/margem em `configuracoes_sistema` e a view `v_reabastecimento`.
-A auditoria de estoque da planilha é o módulo de Contagem que já existe.
+## Reabastecimento — Fase 3 (migrations 046-047)
+
+Substitui a aba *Projeção de Produção Mensal* da planilha. Tela em
+`/reabastecimento` (`src/pages/reabastecimento/ReabastecimentoPage.tsx`).
+
+- `projecao_producao` — formas/dia por ficha. Grava via `salvar_projecao`;
+  ficha com 0 é apagada em vez de ficar guardada valendo nada.
+- Parâmetros em `configuracoes_sistema`: `reabastecimento_dias` (7),
+  `reabastecimento_margem_pct` (15), `dias_uteis_mes` (22).
+- `v_reabastecimento` — consumo/dia, necessário no período, estoque, quanto
+  comprar e em quantas embalagens.
+
+**O estoque soma EC + EP.** O açúcar que está no pote da produção é açúcar que
+a padaria tem; ignorá-lo encheria o depósito.
+
+`embalagens` só sai quando `insumos.tamanho_embalagem` está preenchido — hoje
+só o INS001 tem. Os outros saem em kg, com aviso na tela.
+
+Conferido com 18 formas TRD + 12 DDL/dia: açúcar **20,5521 kg/dia**,
+**165,44441 kg** para 7 dias com 15%. A planilha diz 20,5524 / 165,44682 — a
+diferença é a ficha da DDL guardar 0,663875 kg/forma onde a planilha arredonda
+para 0,6639.
+
+A auditoria de estoque da planilha é o módulo de Contagem, que já existe.
 
 ---
 

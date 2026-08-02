@@ -5,7 +5,7 @@ import type { PermissoesPapel } from '../contexts/AuthContext'
 const defaultRoutes: Record<PapelUsuario, string[]> = {
   admin: ['*'],
   gestao: [
-    '/dashboard', '/recebimento', '/transferencia', '/producao',
+    '/dashboard', '/recebimento', '/transferencia', '/reabastecimento', '/producao',
     '/expedicao', '/perdas', '/contagem', '/relatorios',
     '/estoque', '/insumos', '/fornecedores', '/fichas', '/produtos', '/recipientes',
     '/configuracoes',
@@ -14,7 +14,7 @@ const defaultRoutes: Record<PapelUsuario, string[]> = {
     '/dashboard', '/transferencia', '/producao', '/contagem', '/estoque',
   ],
   compras: [
-    '/dashboard', '/recebimento', '/estoque', '/contagem', '/perdas',
+    '/dashboard', '/recebimento', '/reabastecimento', '/estoque', '/contagem', '/perdas',
   ],
 }
 
@@ -30,6 +30,7 @@ export const ALL_ROUTES = [
   { path: '/dashboard', label: 'Dashboard' },
   { path: '/recebimento', label: 'Recebimento' },
   { path: '/transferencia', label: 'Transferência' },
+  { path: '/reabastecimento', label: 'Reabastecimento' },
   { path: '/producao', label: 'Produção' },
   { path: '/expedicao', label: 'Expedição' },
   { path: '/perdas', label: 'Perdas' },
