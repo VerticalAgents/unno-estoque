@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../contexts/AuthContext'
@@ -879,39 +879,61 @@ export function PlanejadorSemanaPage({
             ))}
           </div>
 
-          {modo === 'percentual' && (
-            <div className="flex items-center gap-3">
-              <p className="flex-1 text-sm font-medium text-gray-900 dark:text-unno-text">
-                Produção total da semana
-              </p>
-              <CampoNumerico
-                valor={totalDigitado}
-                onDigitar={v => { setTotalDigitado(v); setAjustado(false) }}
-                onPasso={d => {
-                  setTotalDigitado(v => {
-                    const atual = parseFloat((v ?? '').replace(',', '.')) || 0
-                    const n = Math.max(0, Math.round(atual / passoTotalEfetivo) + d) * passoTotalEfetivo
-                    return n > 0 ? String(n) : ''
-                  })
-                  setAjustado(false)
-                }}
-                passo={passoTotalEfetivo}
-                sufixo="unidades"
-                largura="w-28"
-              />
-            </div>
-          )}
+          {/* Tudo num grid só — total e produtos.
+              Cada linha era um bloco independente, então nada compartilhava as
+              mesmas colunas: as caixas de número acabavam em posições
+              diferentes e as barras tinham comprimentos diferentes. Num grid
+              único a coluna da direita é dimensionada pelo controle mais largo
+              e todas as linhas terminam no mesmo lugar. */}
+          <div className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-3 gap-y-1.5">
+            {modo === 'percentual' && (
+              <>
+                <p className="text-sm font-medium text-gray-900 dark:text-unno-text">
+                  Produção total da semana
+                </p>
+                <CampoNumerico
+                  valor={totalDigitado}
+                  onDigitar={v => { setTotalDigitado(v); setAjustado(false) }}
+                  onPasso={d => {
+                    setTotalDigitado(v => {
+                      const atual = parseFloat((v ?? '').replace(',', '.')) || 0
+                      const n = Math.max(0, Math.round(atual / passoTotalEfetivo) + d) * passoTotalEfetivo
+                      return n > 0 ? String(n) : ''
+                    })
+                    setAjustado(false)
+                  }}
+                  passo={passoTotalEfetivo}
+                  sufixo="unidades"
+                />
+                {/* separador entre o total e os produtos */}
+                <div className="col-span-2 h-px bg-gray-100 dark:bg-white/[.06] my-1" />
+              </>
+            )}
 
-          {fichas.map(f => {
-            const m = metas.find(x => x.ficha.id === f.id)
-            const unidades = alvoEfetivo[f.id] ?? 0
-            const part = totalUnidadesMeta > 0 ? (100 * unidades) / totalUnidadesMeta : 0
-            return (
-              <div key={f.id}>
-                <div className="flex items-center gap-3">
-                  <p className="flex-1 min-w-0 text-sm font-medium text-gray-900 dark:text-unno-text truncate">
+            {fichas.map(f => {
+              const m = metas.find(x => x.ficha.id === f.id)
+              const unidades = alvoEfetivo[f.id] ?? 0
+              const part = totalUnidadesMeta > 0 ? (100 * unidades) / totalUnidadesMeta : 0
+              const ultima = m ? formasNaUltimaBatelada(m.formas) : 0
+              // Escada de quatro degraus: quanto menos massa sobra na última
+              // batelada, mais o forno precisa ser reprogramado. Uma forma
+              // sozinha é o pior caso.
+              // O limão vai como valor direto e não pelo token do tema
+              // (`unno.lime`): cor nova no tailwind.config só aparece depois de
+              // reiniciar o servidor, e escrita assim funciona na hora.
+              const cor = { 1: 'bg-red-500', 2: 'bg-unno-amber',
+                            3: 'bg-[#8cbf3f]', 4: 'bg-brand-500' }[ultima] ?? 'bg-brand-500'
+              const corTexto = { 1: 'text-red-600', 2: 'text-amber-700',
+                                 3: 'text-lime-700',
+                                 4: 'text-gray-500 dark:text-unno-muted' }[ultima]
+                ?? 'text-gray-500 dark:text-unno-muted'
+
+              return (
+                <Fragment key={f.id}>
+                  <p className="text-sm font-medium text-gray-900 dark:text-unno-text truncate">
                     {f.codigo} — {f.nome}
                   </p>
+
                   {modo === 'unidades' ? (
                     <CampoNumerico
                       valor={alvo[f.id] ?? ''}
@@ -939,72 +961,55 @@ export function PlanejadorSemanaPage({
                       sufixo="%"
                     />
                   )}
-                </div>
-                {/* As duas barras vivem no mesmo grid para terem exatamente o
-                    mesmo comprimento: a coluna do texto é dimensionada pelo
-                    maior dos dois rótulos, e as barras dividem o resto. Com
-                    dois flex separados cada barra media pelo seu próprio texto
-                    e elas saíam desalinhadas. */}
-                {unidades > 0 && (
-                  <div className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-2 gap-y-1 mt-1.5">
-                    <div className="h-1.5 rounded-full bg-gray-100 dark:bg-white/[.06] overflow-hidden">
-                      <div className="h-full bg-brand-500 rounded-full"
-                           style={{ width: `${Math.min(part, 100)}%` }} />
-                    </div>
-                    {/* No percentual quem foi digitado é o %, então o número
-                        que falta ver é quantas unidades aquela fatia virou. */}
-                    <span className="text-xs text-gray-500 dark:text-unno-muted tabular-nums whitespace-nowrap text-right">
-                      {modo === 'percentual' && `${fmt(unidades)} un · `}
-                      {m ? `${m.formas} formas · ${m.bateladas} bat` : ''}
-                      {modo === 'unidades' && ` · ${fmt(part, 1)}%`}
-                    </span>
 
-                    {/* A última batelada: quatro divisões, preenchidas conforme
-                        as formas que sobram nela. Incompleta muda o forno. */}
-                    {m && m.formas > 0 && (() => {
-                      const ultima = formasNaUltimaBatelada(m.formas)
-                      // Escada de quatro degraus: quanto menos massa sobra na
-                      // última batelada, mais o forno precisa ser reprogramado.
-                      // Uma forma sozinha é o pior caso.
-                      // O limão vai como valor direto e não pelo token do tema
-                      // (`unno.lime`): cor nova no tailwind.config só aparece
-                      // depois de reiniciar o servidor, e escrita assim funciona
-                      // na hora. O token continua no tema para reuso.
-                      const cor = { 1: 'bg-red-500', 2: 'bg-unno-amber',
-                                    3: 'bg-[#8cbf3f]', 4: 'bg-brand-500' }[ultima] ?? 'bg-brand-500'
-                      const corTexto = { 1: 'text-red-600', 2: 'text-amber-700',
-                                         3: 'text-lime-700',
-                                         4: 'text-gray-500 dark:text-unno-muted' }[ultima]
-                        ?? 'text-gray-500 dark:text-unno-muted'
-                      return (
-                        <>
-                          <div className="flex gap-0.5">
-                            {Array.from({ length: FORMAS_POR_BATELADA }, (_, i) => (
-                              <div
-                                key={i}
-                                className={`h-1.5 flex-1 rounded-[2px] ${
-                                  i < ultima ? cor : 'bg-gray-100 dark:bg-white/[.06]'
-                                }`}
-                              />
-                            ))}
-                          </div>
-                          <span className={`text-xs tabular-nums whitespace-nowrap text-right ${corTexto}`}>
-                            última batelada: {ultima} de {FORMAS_POR_BATELADA} formas
-                          </span>
-                        </>
-                      )
-                    })()}
-                  </div>
-                )}
+                  {/* Participação na produção total */}
+                  {unidades > 0 && (
+                    <>
+                      <div className="h-1.5 rounded-full bg-gray-100 dark:bg-white/[.06] overflow-hidden">
+                        <div className="h-full bg-brand-500 rounded-full"
+                             style={{ width: `${Math.min(part, 100)}%` }} />
+                      </div>
+                      {/* No percentual quem foi digitado é o %, então o número
+                          que falta ver é quantas unidades a fatia virou. */}
+                      <span className="text-xs text-gray-500 dark:text-unno-muted tabular-nums whitespace-nowrap text-right">
+                        {modo === 'percentual' && `${fmt(unidades)} un · `}
+                        {m ? `${m.formas} formas · ${m.bateladas} bat` : ''}
+                        {modo === 'unidades' && ` · ${fmt(part, 1)}%`}
+                      </span>
+                    </>
+                  )}
 
-                {unidades > 0 && !f.rendimento_fornada && (
-                  <p className="text-xs text-red-600 mt-1">
-                    Sem rendimento cadastrado — Configurações → Produção.
-                  </p>
-                )}
-              </div>
-            )
-          })}
+                  {/* A última batelada, em quatro divisões */}
+                  {m && m.formas > 0 && (
+                    <>
+                      <div className="flex gap-0.5">
+                        {Array.from({ length: FORMAS_POR_BATELADA }, (_, i) => (
+                          <div
+                            key={i}
+                            className={`h-1.5 flex-1 rounded-[2px] ${
+                              i < ultima ? cor : 'bg-gray-100 dark:bg-white/[.06]'
+                            }`}
+                          />
+                        ))}
+                      </div>
+                      <span className={`text-xs tabular-nums whitespace-nowrap text-right ${corTexto}`}>
+                        última batelada: {ultima} de {FORMAS_POR_BATELADA} formas
+                      </span>
+                    </>
+                  )}
+
+                  {unidades > 0 && !f.rendimento_fornada && (
+                    <p className="col-span-2 text-xs text-red-600">
+                      Sem rendimento cadastrado — Configurações → Produção.
+                    </p>
+                  )}
+
+                  {/* respiro entre produtos, sem quebrar as colunas */}
+                  <div className="col-span-2 h-1" />
+                </Fragment>
+              )
+            })}
+          </div>
 
           {/* Encaixar em bateladas cheias: o passo vira 4 formas e a última
               batelada nunca sai pela metade. Fica como escolha, e não como
