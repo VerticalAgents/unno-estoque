@@ -320,7 +320,7 @@ export function ReabastecimentoPage() {
               <thead className="text-xs uppercase text-gray-500 dark:text-unno-muted border-b border-gray-200 dark:border-white/[.06]">
                 <tr>
                   <th className="text-left px-4 py-2 font-medium">Insumo</th>
-                  <th className="text-right px-3 py-2 font-medium">Receita pede</th>
+                  <th className="text-right px-3 py-2 font-medium">Produção pede</th>
                   <th className="text-right px-3 py-2 font-medium">Com margem</th>
                   <th className="text-right px-3 py-2 font-medium">Tem</th>
                   <th className="text-right px-4 py-2 font-medium">Comprar</th>
