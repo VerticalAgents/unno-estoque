@@ -49,7 +49,9 @@ export function AberturaSessaoPage() {
   const [justificativa, setJustificativa] = useState('')
 
   const bloqueado = travaModo === 'bloqueia'
-  const faltaJustificar = travaModo === 'avisa' && justificativa.trim().length < 5
+  const MINIMO_JUSTIFICATIVA = 5
+  const faltaJustificar =
+    travaModo === 'avisa' && justificativa.trim().length < MINIMO_JUSTIFICATIVA
 
   // Mexeu nas formas: o diagnóstico anterior não vale mais.
   function mudarFormas(fichaId: string, valor: string) {
@@ -372,7 +374,8 @@ export function AberturaSessaoPage() {
               />
               <p className="text-[0.7rem] text-gray-500 dark:text-unno-muted mt-1">
                 {faltaJustificar
-                  ? 'Escreva pelo menos algumas palavras para liberar o botão.'
+                  ? `Faltam ${MINIMO_JUSTIFICATIVA - justificativa.trim().length} letra(s) `
+                    + `para liberar o botão — o mínimo é ${MINIMO_JUSTIFICATIVA}.`
                   : 'Fica registrado em Configurações → Travas, com seu nome.'}
               </p>
             </div>

@@ -368,7 +368,7 @@ export function TransferenciaPage() {
             />
             <p className="text-[0.7rem] text-gray-500 mt-1">
               {faltaJustificarScan
-                ? 'Escreva pelo menos algumas palavras para liberar.'
+                ? `Faltam ${5 - justScan.trim().length} letra(s) para liberar o botão — o mínimo é 5.`
                 : 'Fica registrado em Configurações → Travas.'}
             </p>
           </div>
