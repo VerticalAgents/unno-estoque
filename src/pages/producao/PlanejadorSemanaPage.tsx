@@ -1351,7 +1351,7 @@ export function PlanejadorSemanaPage({
                   Salvar plano
                 </Button>
                 <Button fullWidth variant="secondary" size="sm" onClick={() => window.print()}>
-                  Imprimir
+                  Imprimir / PDF
                 </Button>
                 {salvoEm && !faltaDistribuir && (
                   <p className="text-xs text-gray-400 text-center">plano salvo</p>

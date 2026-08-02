@@ -198,14 +198,25 @@ export function PlanejadorRecipientesPage({
 
   // Veio de um dia da semana: substitui o que estava digitado. O objeto é
   // recriado a cada clique lá, então a identidade serve de gatilho.
+  //
+  // Aqui o cálculo sai sozinho: quem clicou em "ver o que abastecer" já pediu
+  // o resultado, e obrigar a clicar de novo seria pedir duas vezes a mesma
+  // coisa. Digitar à mão continua exigindo o botão.
+  const [gerarAoChegar, setGerarAoChegar] = useState(false)
+
   useEffect(() => {
-    if (formasIniciais) setFormas(formasIniciais)
+    if (formasIniciais) {
+      setFormas(formasIniciais)
+      setGerarAoChegar(true)
+    }
   }, [formasIniciais])
   const [linhas, setLinhas] = useState<LinhaPlano[]>([])
   const [lotes, setLotes] = useState<LoteSugerido[]>([])
   const [abastecimento, setAbastecimento] = useState<LinhaAbastecimento[]>([])
   const [loading, setLoading] = useState(true)
   const [calculando, setCalculando] = useState(false)
+  // O plano que gerou o resultado na tela, para saber quando ele envelheceu.
+  const [planoGerado, setPlanoGerado] = useState('')
   const [erro, setErro] = useState('')
 
   useEffect(() => {
@@ -251,34 +262,54 @@ export function PlanejadorRecipientesPage({
     return s + p.formas * (f?.rendimento_fornada ?? 0)
   }, 0)
 
+  /**
+   * O cálculo acontece no botão, não a cada tecla.
+   *
+   * Antes rodava sozinho com 300ms de espera: as tabelas apareciam e se
+   * refaziam enquanto o número ainda estava sendo digitado, e três consultas
+   * saíam a cada pausa. Agora é uma decisão explícita — e o resultado que está
+   * na tela sempre corresponde a um plano que alguém mandou calcular.
+   */
+  async function gerar() {
+    if (!profile || plano.length === 0) return
+    setCalculando(true)
+    const args = { p_empresa_id: profile.empresa_id, p_plano: plano }
+    const [plan, fefo, abast] = await Promise.all([
+      supabase.rpc('planejar_recipientes', args),
+      supabase.rpc('sugerir_lotes_transferencia', args),
+      supabase.rpc('planejar_abastecimento', args),
+    ])
+    const err = plan.error ?? fefo.error ?? abast.error
+    if (err) {
+      setErro(err.message)
+    } else {
+      setErro('')
+      setLinhas((plan.data ?? []) as LinhaPlano[])
+      setLotes((fefo.data ?? []) as LoteSugerido[])
+      setAbastecimento((abast.data ?? []) as LinhaAbastecimento[])
+      setPlanoGerado(JSON.stringify(plano))
+    }
+    setCalculando(false)
+  }
+
   useEffect(() => {
-    if (!profile || plano.length === 0) {
+    if (gerarAoChegar && plano.length > 0) {
+      setGerarAoChegar(false)
+      gerar()
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [gerarAoChegar, plano])
+
+  // Zerar as formas apaga o resultado: manter tabela de um plano que não
+  // existe mais é pior do que não mostrar nada.
+  useEffect(() => {
+    if (plano.length === 0) {
       setLinhas([])
       setLotes([])
       setAbastecimento([])
-      return
+      setPlanoGerado('')
     }
-    setCalculando(true)
-    const timer = setTimeout(() => {
-      const args = { p_empresa_id: profile.empresa_id, p_plano: plano }
-      Promise.all([
-        supabase.rpc('planejar_recipientes', args),
-        supabase.rpc('sugerir_lotes_transferencia', args),
-        supabase.rpc('planejar_abastecimento', args),
-      ]).then(([plan, fefo, abast]) => {
-        const err = plan.error ?? fefo.error ?? abast.error
-        if (err) setErro(err.message)
-        else {
-          setErro('')
-          setLinhas((plan.data ?? []) as LinhaPlano[])
-          setLotes((fefo.data ?? []) as LoteSugerido[])
-          setAbastecimento((abast.data ?? []) as LinhaAbastecimento[])
-        }
-        setCalculando(false)
-      })
-    }, 300) // evita recalcular a cada tecla digitada
-    return () => clearTimeout(timer)
-  }, [profile, plano])
+  }, [plano])
 
   // Lotes sugeridos agrupados por insumo, preservando a ordem FEFO que veio do banco
   const lotesPorInsumo = useMemo(() => {
@@ -300,344 +331,382 @@ export function PlanejadorRecipientesPage({
   const semRecipiente = linhas.filter(l => l.capacidade == null)
   const coberto = linhas.length > 0 && faltamTotal === 0
 
+  // As formas mudaram depois de gerar: o que está na tela é de outro plano.
+  const desatualizado = linhas.length > 0 && JSON.stringify(plano) !== planoGerado
+
   if (loading) return <p className="p-6 text-sm text-gray-500">Carregando fichas…</p>
 
   return (
     <div className="space-y-5">
-      {/* ── Entrada: formas por ficha ─────────────────────── */}
-      <Card>
-        <CardHeader
-          title="Sessão de produção"
-          subtitle="Quantas formas de cada ficha entram no dia. Pode misturar fichas."
-        />
-        <CardBody className="space-y-3">
-          {fichas.length === 0 && (
-            <p className="text-sm text-gray-500">
-              Nenhuma ficha técnica ativa com rendimento definido.
+      {/* ── Duas colunas ───────────────────────────────────────
+          A entrada e o resultado do dia disputavam a mesma faixa horizontal:
+          para conferir uma tabela era preciso rolar para longe dos números que
+          a geraram. Agora a entrada vira coluna fixa, como no planejador
+          semanal, e as tabelas ocupam a largura que precisam. */}
+      <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_22rem]">
+        <aside className="space-y-3 self-start lg:col-start-2 lg:row-start-1 lg:sticky lg:top-4">
+        {/* ── Entrada: formas por ficha ─────────────────────── */}
+        <Card>
+          <CardHeader
+            title="Sessão de produção"
+            subtitle="Quantas formas de cada ficha entram no dia. Pode misturar fichas."
+          />
+          <CardBody className="space-y-3">
+            {fichas.length === 0 && (
+              <p className="text-sm text-gray-500">
+                Nenhuma ficha técnica ativa com rendimento definido.
+              </p>
+            )}
+
+            {fichas.map(f => (
+              <div key={f.id} className="flex items-center gap-3">
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-medium text-gray-900 dark:text-gray-100 truncate">
+                    {f.codigo} — {f.nome}
+                  </p>
+                  <p className="text-xs text-gray-500 dark:text-unno-dim">
+                    {f.rendimento_fornada ?? '—'} unidades por forma
+                  </p>
+                </div>
+                <input
+                  type="number"
+                  min={0}
+                  inputMode="numeric"
+                  value={formas[f.id] ?? ''}
+                  onChange={e => setFormas(s => ({ ...s, [f.id]: e.target.value }))}
+                  placeholder="0"
+                  className="w-24 rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-right
+                             focus:outline-none focus:border-brand-500 focus:ring-[3px] focus:ring-brand-500/10
+                             dark:border-white/[.08] dark:bg-unno-raised dark:text-unno-text"
+                />
+                <span className="text-xs text-gray-400 w-12">formas</span>
+              </div>
+            ))}
+
+            {totalFormas > 0 && (
+              <div className="flex flex-wrap gap-x-6 gap-y-1 pt-3 border-t border-gray-100 dark:border-white/[.08] text-sm">
+                <span className="text-gray-500 dark:text-unno-muted">
+                  Total: <strong className="text-gray-900 dark:text-unno-text">{fmt(totalFormas, 0)}</strong> formas
+                </span>
+                <span className="text-gray-500 dark:text-unno-muted">
+                  Bateladas: <strong className="text-gray-900 dark:text-unno-text">{fmt(bateladas, 2)}</strong>
+                </span>
+                <span className="text-gray-500 dark:text-unno-muted">
+                  Unidades: <strong className="text-gray-900 dark:text-unno-text">{fmt(totalUnidades, 0)}</strong>
+                </span>
+              </div>
+            )}
+          </CardBody>
+        </Card>
+
+          {/* Gerar é uma decisão, não um efeito colateral de digitar */}
+          <Button fullWidth loading={calculando} disabled={plano.length === 0} onClick={gerar}>
+            {linhas.length > 0 ? 'Gerar de novo' : 'Gerar planejamento'}
+          </Button>
+
+          {desatualizado && (
+            <p className="text-xs text-amber-700">
+              As formas mudaram desde o último cálculo — gere de novo para as
+              tabelas acompanharem.
             </p>
           )}
 
-          {fichas.map(f => (
-            <div key={f.id} className="flex items-center gap-3">
-              <div className="flex-1 min-w-0">
-                <p className="text-sm font-medium text-gray-900 dark:text-gray-100 truncate">
-                  {f.codigo} — {f.nome}
-                </p>
-                <p className="text-xs text-gray-500 dark:text-unno-dim">
-                  {f.rendimento_fornada ?? '—'} unidades por forma
-                </p>
-              </div>
-              <input
-                type="number"
-                min={0}
-                inputMode="numeric"
-                value={formas[f.id] ?? ''}
-                onChange={e => setFormas(s => ({ ...s, [f.id]: e.target.value }))}
-                placeholder="0"
-                className="w-24 rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-right
-                           focus:outline-none focus:border-brand-500 focus:ring-[3px] focus:ring-brand-500/10
-                           dark:border-white/[.08] dark:bg-unno-raised dark:text-unno-text"
-              />
-              <span className="text-xs text-gray-400 w-12">formas</span>
-            </div>
-          ))}
-
-          {totalFormas > 0 && (
-            <div className="flex flex-wrap gap-x-6 gap-y-1 pt-3 border-t border-gray-100 dark:border-white/[.08] text-sm">
-              <span className="text-gray-500 dark:text-unno-muted">
-                Total: <strong className="text-gray-900 dark:text-unno-text">{fmt(totalFormas, 0)}</strong> formas
-              </span>
-              <span className="text-gray-500 dark:text-unno-muted">
-                Bateladas: <strong className="text-gray-900 dark:text-unno-text">{fmt(bateladas, 2)}</strong>
-              </span>
-              <span className="text-gray-500 dark:text-unno-muted">
-                Unidades: <strong className="text-gray-900 dark:text-unno-text">{fmt(totalUnidades, 0)}</strong>
-              </span>
-            </div>
-          )}
-        </CardBody>
-      </Card>
-
-      {erro && (
-        <div className="p-3 rounded-lg bg-red-50 border border-red-200 text-sm text-red-700
-                        dark:bg-unno-danger/10 dark:border-unno-danger/30 dark:text-unno-danger">
-          {erro}
-        </div>
-      )}
-
-      {/* ── Resultado ─────────────────────────────────────── */}
-      {linhas.length > 0 && (
-        <>
-          <div
-            className={[
-              'rounded-2xl border p-4 flex items-center justify-between gap-4 flex-wrap',
-              coberto
+          {/* Situação e ações, na mesma coluna de quem acabou de gerar */}
+          {linhas.length > 0 && (
+            <Card
+              className={coberto
                 ? 'bg-brand-500/10 border-brand-500/25'
-                : 'bg-unno-amber/10 border-unno-amber/30',
-            ].join(' ')}
-          >
-            <div>
-              <p className="font-display font-semibold text-gray-900 dark:text-unno-text">
-                {coberto ? '✔ Produção coberta' : `⚠ Faltam ${faltamTotal} recipiente(s)`}
-              </p>
-              <p className="text-sm text-gray-600 dark:text-unno-muted mt-0.5">
-                {coberto
-                  ? 'Todos os insumos têm recipientes suficientes para esta sessão.'
-                  : 'Abasteça ou providencie os recipientes marcados abaixo antes de começar.'}
-              </p>
-            </div>
-            <div className="flex gap-2">
-              <Button size="sm" variant="secondary" onClick={() => window.print()}>
-                Imprimir / PDF
-              </Button>
-              <Button size="sm" onClick={() => navigate('/producao/abrir', { state: { formas } })}>
-                Abrir sessão
-              </Button>
-            </div>
+                : 'bg-unno-amber/10 border-unno-amber/30'}
+            >
+              <CardBody className="py-3 space-y-2">
+                <p className="font-display font-semibold text-sm text-gray-900 dark:text-unno-text">
+                  {coberto ? '✔ Produção coberta' : `⚠ Faltam ${faltamTotal} recipiente(s)`}
+                </p>
+                <p className="text-xs text-gray-600 dark:text-unno-muted">
+                  {coberto
+                    ? 'Todos os insumos têm recipientes suficientes para esta sessão.'
+                    : 'Abasteça ou providencie os recipientes marcados ao lado antes de começar.'}
+                </p>
+                <Button fullWidth size="sm" variant="secondary" onClick={() => window.print()}>
+                  Imprimir / PDF
+                </Button>
+                <Button fullWidth size="sm"
+                        onClick={() => navigate('/producao/abrir', { state: { formas } })}>
+                  Abrir sessão
+                </Button>
+              </CardBody>
+            </Card>
+          )}
+        </aside>
+
+        <div className="space-y-5 lg:col-start-1 lg:row-start-1">
+          {linhas.length === 0 && !calculando && (
+            <Card>
+              <CardBody className="text-center py-12">
+                <p className="text-sm text-gray-500 dark:text-unno-muted">
+                  {plano.length === 0
+                    ? 'Informe quantas formas de cada ficha entram no dia.'
+                    : 'Clique em "Gerar planejamento" para ver os recipientes e os lotes.'}
+                </p>
+              </CardBody>
+            </Card>
+          )}
+
+        {erro && (
+          <div className="p-3 rounded-lg bg-red-50 border border-red-200 text-sm text-red-700
+                          dark:bg-unno-danger/10 dark:border-unno-danger/30 dark:text-unno-danger">
+            {erro}
           </div>
+        )}
 
-          <Card className="overflow-hidden">
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead className="bg-gray-50 dark:bg-unno-bg">
-                  <tr className="text-left text-xs uppercase tracking-wide text-gray-500 dark:text-unno-dim">
-                    <th className="px-4 py-3 font-semibold">Insumo</th>
-                    <th className="px-4 py-3 font-semibold">Recipiente</th>
-                    <th className="px-4 py-3 font-semibold text-right">Demanda</th>
-                    <th className="px-4 py-3 font-semibold text-right">Cap.</th>
-                    <th className="px-4 py-3 font-semibold text-right">Tem</th>
-                    <th className="px-4 py-3 font-semibold text-right">Precisa</th>
-                    <th className="px-4 py-3 font-semibold text-right">Faltam</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-gray-100 dark:divide-white/[.06]">
-                  {linhas.map(l => (
-                    <tr key={l.insumo_id} className="hover:bg-gray-50 dark:hover:bg-white/[.02]">
-                      <td className="px-4 py-2.5">
-                        <span className="text-gray-400 dark:text-unno-dim text-xs mr-2">{l.codigo}</span>
-                        <span className="text-gray-900 dark:text-unno-text">{l.nome}</span>
-                      </td>
-                      <td className="px-4 py-2.5 text-gray-500 dark:text-unno-muted">
-                        {l.recipiente_modelo ?? (
-                          <span className="text-unno-amber">a definir</span>
-                        )}
-                      </td>
-                      <td className="px-4 py-2.5 text-right tabular-nums text-gray-900 dark:text-unno-text">
-                        {fmt(l.demanda)} <span className="text-gray-400 text-xs">{l.unidade}</span>
-                      </td>
-                      <td className="px-4 py-2.5 text-right tabular-nums text-gray-500 dark:text-unno-muted">
-                        {l.capacidade != null ? fmt(l.capacidade) : '—'}
-                      </td>
-                      <td className="px-4 py-2.5 text-right tabular-nums text-gray-500 dark:text-unno-muted">
-                        {l.recipientes_atuais}
-                      </td>
-                      <td className="px-4 py-2.5 text-right tabular-nums font-semibold text-gray-900 dark:text-unno-text">
-                        {l.recipientes_necessarios ?? '—'}
-                      </td>
-                      <td className="px-4 py-2.5 text-right">
-                        {l.faltam == null ? (
-                          <Badge variant="warning">sem recip.</Badge>
-                        ) : l.faltam > 0 ? (
-                          <Badge variant="danger">{l.faltam}</Badge>
-                        ) : (
-                          <Badge variant="success">ok</Badge>
-                        )}
-                      </td>
+        {/* ── Resultado ─────────────────────────────────────── */}
+        {linhas.length > 0 && (
+          <>
+            <Card className="overflow-hidden">
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead className="bg-gray-50 dark:bg-unno-bg">
+                    <tr className="text-left text-xs uppercase tracking-wide text-gray-500 dark:text-unno-dim">
+                      <th className="px-4 py-3 font-semibold">Insumo</th>
+                      <th className="px-4 py-3 font-semibold">Recipiente</th>
+                      <th className="px-4 py-3 font-semibold text-right">Demanda</th>
+                      <th className="px-4 py-3 font-semibold text-right">Cap.</th>
+                      <th className="px-4 py-3 font-semibold text-right">Tem</th>
+                      <th className="px-4 py-3 font-semibold text-right">Precisa</th>
+                      <th className="px-4 py-3 font-semibold text-right">Faltam</th>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </Card>
+                  </thead>
+                  <tbody className="divide-y divide-gray-100 dark:divide-white/[.06]">
+                    {linhas.map(l => (
+                      <tr key={l.insumo_id} className="hover:bg-gray-50 dark:hover:bg-white/[.02]">
+                        <td className="px-4 py-2.5">
+                          <span className="text-gray-400 dark:text-unno-dim text-xs mr-2">{l.codigo}</span>
+                          <span className="text-gray-900 dark:text-unno-text">{l.nome}</span>
+                        </td>
+                        <td className="px-4 py-2.5 text-gray-500 dark:text-unno-muted">
+                          {l.recipiente_modelo ?? (
+                            <span className="text-unno-amber">a definir</span>
+                          )}
+                        </td>
+                        <td className="px-4 py-2.5 text-right tabular-nums text-gray-900 dark:text-unno-text">
+                          {fmt(l.demanda)} <span className="text-gray-400 text-xs">{l.unidade}</span>
+                        </td>
+                        <td className="px-4 py-2.5 text-right tabular-nums text-gray-500 dark:text-unno-muted">
+                          {l.capacidade != null ? fmt(l.capacidade) : '—'}
+                        </td>
+                        <td className="px-4 py-2.5 text-right tabular-nums text-gray-500 dark:text-unno-muted">
+                          {l.recipientes_atuais}
+                        </td>
+                        <td className="px-4 py-2.5 text-right tabular-nums font-semibold text-gray-900 dark:text-unno-text">
+                          {l.recipientes_necessarios ?? '—'}
+                        </td>
+                        <td className="px-4 py-2.5 text-right">
+                          {l.faltam == null ? (
+                            <Badge variant="warning">sem recip.</Badge>
+                          ) : l.faltam > 0 ? (
+                            <Badge variant="danger">{l.faltam}</Badge>
+                          ) : (
+                            <Badge variant="success">ok</Badge>
+                          )}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </Card>
 
-          {/* ── Abastecimento: em quais potes colocar ─────── */}
-          {abastecimento.length > 0 && (
+            {/* ── Abastecimento: em quais potes colocar ─────── */}
+            {abastecimento.length > 0 && (
+              <Card>
+                <CardHeader
+                  title="Abastecer nesta ordem"
+                  subtitle="Completa os potes já em uso antes de abrir pote novo — o espaço é o que falta."
+                />
+                <CardBody className="space-y-4">
+                  {[...new Set(abastecimento.map(a => a.insumo_id))].map(insId => {
+                    const linhas = abastecimento.filter(a => a.insumo_id === insId)
+                    const primeiro = linhas[0]
+                    return (
+                      <div key={insId}>
+                        <div className="mb-2">
+                          <p className="text-sm font-medium text-gray-900 dark:text-unno-text">
+                            <span className="text-gray-400 dark:text-unno-dim text-xs mr-2">
+                              {primeiro.insumo_codigo}
+                            </span>
+                            {primeiro.insumo_nome}
+                          </p>
+
+                          {/* A conta aberta: quanto entra, quanto é da produção,
+                              quanto é excedente, e como o pote fica depois. */}
+                          <div className="mt-1 grid grid-cols-2 sm:grid-cols-4 gap-x-4 gap-y-1 text-xs">
+                            <span className="text-gray-500 dark:text-unno-muted">
+                              Abastecer{' '}
+                              <strong className="text-gray-900 dark:text-unno-text">
+                                {fmt(primeiro.alvo)} {primeiro.unidade}
+                              </strong>
+                            </span>
+                            <span className="text-gray-500 dark:text-unno-muted">
+                              Produção {fmt(primeiro.para_producao)}
+                            </span>
+                            <span className="text-unno-amber">
+                              Excedente {fmt(primeiro.excedente)}
+                            </span>
+                            <span className="text-gray-500 dark:text-unno-muted">
+                              Sobra depois{' '}
+                              <strong className="text-gray-900 dark:text-unno-text">
+                                {fmt(primeiro.sobra_apos_producao)}
+                              </strong>
+                            </span>
+                          </div>
+
+                          {primeiro.conteudo_atual > 0 && (
+                            <p className="text-[0.7rem] text-gray-400 dark:text-unno-dim mt-1">
+                              Já tem {fmt(primeiro.conteudo_atual)} nos recipientes · capacidade
+                              total {fmt(primeiro.capacidade_total)} {primeiro.unidade}
+                            </p>
+                          )}
+                        </div>
+
+                        <div className="space-y-1">
+                          {linhas.map(a => (
+                            <div
+                              key={a.local_id}
+                              className="flex items-center gap-3 rounded-lg border border-gray-200 dark:border-white/[.08]
+                                         bg-gray-50 dark:bg-white/[.02] px-3 py-2"
+                            >
+                              <span className="w-5 text-xs font-bold text-brand-600 dark:text-brand-400">
+                                {a.ordem}º
+                              </span>
+                              <span className="text-xs text-gray-900 dark:text-unno-text flex-1 truncate">
+                                {a.local_nome}
+                              </span>
+                              {a.ja_tem > 0 && (
+                                <span className="text-[0.65rem] text-gray-500 dark:text-unno-muted whitespace-nowrap">
+                                  tem {fmt(a.ja_tem)}
+                                </span>
+                              )}
+                              <span className="text-xs tabular-nums font-semibold text-gray-900 dark:text-unno-text whitespace-nowrap">
+                                + {fmt(a.colocar)} {a.unidade}
+                              </span>
+                              <span className="text-[0.65rem] text-gray-400 dark:text-unno-dim whitespace-nowrap">
+                                de {a.capacidade != null ? fmt(a.capacidade) : '—'}
+                              </span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )
+                  })}
+                  <p className="text-xs text-gray-500 dark:text-unno-muted pt-1 border-t border-gray-100 dark:border-white/[.08]">
+                    <strong>sobra</strong> = quantidade muito pequena para justificar um pote
+                    só para ela. Se couber nos anteriores, melhor não abrir mais um.
+                  </p>
+                </CardBody>
+              </Card>
+            )}
+
+            {/* ── Lotes a transferir (FEFO) ─────────────────── */}
             <Card>
               <CardHeader
-                title="Abastecer nesta ordem"
-                subtitle="Completa os potes já em uso antes de abrir pote novo — o espaço é o que falta."
+                title="Lotes a transferir"
+                subtitle="Ordem FEFO — vence antes, sai antes. Pode transferir parcial."
               />
               <CardBody className="space-y-4">
-                {[...new Set(abastecimento.map(a => a.insumo_id))].map(insId => {
-                  const linhas = abastecimento.filter(a => a.insumo_id === insId)
-                  const primeiro = linhas[0]
+                {lotesPorInsumo.length === 0 && semLote.length === 0 && (
+                  <p className="text-sm text-gray-500 dark:text-unno-muted">
+                    Os recipientes já têm o suficiente para esta sessão — nada a transferir.
+                  </p>
+                )}
+
+                {lotesPorInsumo.map(grupo => {
+                  const primeiro = grupo[0]
                   return (
-                    <div key={insId}>
-                      <div className="mb-2">
+                    <div key={primeiro.insumo_id}>
+                      <div className="flex items-baseline justify-between gap-3 mb-1.5">
                         <p className="text-sm font-medium text-gray-900 dark:text-unno-text">
                           <span className="text-gray-400 dark:text-unno-dim text-xs mr-2">
                             {primeiro.insumo_codigo}
                           </span>
                           {primeiro.insumo_nome}
                         </p>
-
-                        {/* A conta aberta: quanto entra, quanto é da produção,
-                            quanto é excedente, e como o pote fica depois. */}
-                        <div className="mt-1 grid grid-cols-2 sm:grid-cols-4 gap-x-4 gap-y-1 text-xs">
-                          <span className="text-gray-500 dark:text-unno-muted">
-                            Abastecer{' '}
-                            <strong className="text-gray-900 dark:text-unno-text">
-                              {fmt(primeiro.alvo)} {primeiro.unidade}
-                            </strong>
-                          </span>
-                          <span className="text-gray-500 dark:text-unno-muted">
-                            Produção {fmt(primeiro.para_producao)}
-                          </span>
-                          <span className="text-unno-amber">
-                            Excedente {fmt(primeiro.excedente)}
-                          </span>
-                          <span className="text-gray-500 dark:text-unno-muted">
-                            Sobra depois{' '}
-                            <strong className="text-gray-900 dark:text-unno-text">
-                              {fmt(primeiro.sobra_apos_producao)}
-                            </strong>
-                          </span>
-                        </div>
-
-                        {primeiro.conteudo_atual > 0 && (
-                          <p className="text-[0.7rem] text-gray-400 dark:text-unno-dim mt-1">
-                            Já tem {fmt(primeiro.conteudo_atual)} nos recipientes · capacidade
-                            total {fmt(primeiro.capacidade_total)} {primeiro.unidade}
-                          </p>
-                        )}
+                        <p className="text-xs text-gray-500 dark:text-unno-muted whitespace-nowrap">
+                          levar {fmt(primeiro.alvo)} {primeiro.unidade}
+                        </p>
                       </div>
 
                       <div className="space-y-1">
-                        {linhas.map(a => (
-                          <div
-                            key={a.local_id}
-                            className="flex items-center gap-3 rounded-lg border border-gray-200 dark:border-white/[.08]
-                                       bg-gray-50 dark:bg-white/[.02] px-3 py-2"
-                          >
-                            <span className="w-5 text-xs font-bold text-brand-600 dark:text-brand-400">
-                              {a.ordem}º
-                            </span>
-                            <span className="text-xs text-gray-900 dark:text-unno-text flex-1 truncate">
-                              {a.local_nome}
-                            </span>
-                            {a.ja_tem > 0 && (
-                              <span className="text-[0.65rem] text-gray-500 dark:text-unno-muted whitespace-nowrap">
-                                tem {fmt(a.ja_tem)}
+                        {grupo.map(l =>
+                          l.lote_id === null ? (
+                            <div
+                              key={`sem-${l.insumo_id}`}
+                              className="rounded-lg border border-unno-amber/30 bg-unno-amber/10 px-3 py-2
+                                         text-xs text-gray-700 dark:text-unno-amber"
+                            >
+                              Sem lote no estoque central — confira o recebimento antes da produção.
+                            </div>
+                          ) : (
+                            <div
+                              key={l.lote_id}
+                              className="flex items-center gap-3 rounded-lg border border-gray-200 dark:border-white/[.08]
+                                         bg-gray-50 dark:bg-white/[.02] px-3 py-2"
+                            >
+                              <span className="font-mono text-xs text-gray-900 dark:text-unno-text flex-1 truncate">
+                                {l.lote_codigo}
                               </span>
-                            )}
-                            <span className="text-xs tabular-nums font-semibold text-gray-900 dark:text-unno-text whitespace-nowrap">
-                              + {fmt(a.colocar)} {a.unidade}
-                            </span>
-                            <span className="text-[0.65rem] text-gray-400 dark:text-unno-dim whitespace-nowrap">
-                              de {a.capacidade != null ? fmt(a.capacidade) : '—'}
-                            </span>
-                          </div>
-                        ))}
+                              {/* O que já estava aberto tem que sair primeiro —
+                                  é a regra do "um lote aberto só". */}
+                              {l.ja_estava_aberto && <Badge variant="info">aberto</Badge>}
+                              {l.dias_para_vencer != null && l.dias_para_vencer <= 7 && (
+                                <Badge variant={l.dias_para_vencer <= 0 ? 'danger' : 'warning'}>
+                                  {l.dias_para_vencer <= 0 ? 'vencido' : `${l.dias_para_vencer}d`}
+                                </Badge>
+                              )}
+                              <span className="text-xs tabular-nums font-semibold text-gray-900 dark:text-unno-text whitespace-nowrap">
+                                levar {fmt(l.levar ?? 0)} {l.unidade}
+                              </span>
+                              {(l.volta_aberto ?? 0) > 0 && (
+                                <span className="text-[0.65rem] text-unno-amber whitespace-nowrap">
+                                  volta {fmt(l.volta_aberto!)} aberto
+                                </span>
+                              )}
+                            </div>
+                          ),
+                        )}
                       </div>
                     </div>
                   )
                 })}
-                <p className="text-xs text-gray-500 dark:text-unno-muted pt-1 border-t border-gray-100 dark:border-white/[.08]">
-                  <strong>sobra</strong> = quantidade muito pequena para justificar um pote
-                  só para ela. Se couber nos anteriores, melhor não abrir mais um.
-                </p>
+
+                {semLote.length > 0 && (
+                  <p className="text-xs text-gray-500 dark:text-unno-muted pt-1 border-t border-gray-100 dark:border-white/[.08]">
+                    {semLote.length} insumo(s) sem lote no estoque central:{' '}
+                    {semLote.map(l => l.insumo_nome).join(', ')}.
+                  </p>
+                )}
               </CardBody>
             </Card>
-          )}
 
-          {/* ── Lotes a transferir (FEFO) ─────────────────── */}
-          <Card>
-            <CardHeader
-              title="Lotes a transferir"
-              subtitle="Ordem FEFO — vence antes, sai antes. Pode transferir parcial."
-            />
-            <CardBody className="space-y-4">
-              {lotesPorInsumo.length === 0 && semLote.length === 0 && (
-                <p className="text-sm text-gray-500 dark:text-unno-muted">
-                  Os recipientes já têm o suficiente para esta sessão — nada a transferir.
-                </p>
-              )}
+            {semRecipiente.length > 0 && (
+              <p className="text-xs text-gray-500 dark:text-unno-muted">
+                {semRecipiente.map(l => l.nome).join(' e ')}{' '}
+                {semRecipiente.length > 1 ? 'ainda não têm' : 'ainda não tem'} recipiente definido —
+                a demanda é calculada, mas não dá para dizer quantos potes são necessários.{' '}
+                <button
+                  onClick={() => navigate('/insumos')}
+                  className="text-brand-600 dark:text-brand-400 underline"
+                >
+                  Definir agora
+                </button>
+              </p>
+            )}
+          </>
+        )}
 
-              {lotesPorInsumo.map(grupo => {
-                const primeiro = grupo[0]
-                return (
-                  <div key={primeiro.insumo_id}>
-                    <div className="flex items-baseline justify-between gap-3 mb-1.5">
-                      <p className="text-sm font-medium text-gray-900 dark:text-unno-text">
-                        <span className="text-gray-400 dark:text-unno-dim text-xs mr-2">
-                          {primeiro.insumo_codigo}
-                        </span>
-                        {primeiro.insumo_nome}
-                      </p>
-                      <p className="text-xs text-gray-500 dark:text-unno-muted whitespace-nowrap">
-                        levar {fmt(primeiro.alvo)} {primeiro.unidade}
-                      </p>
-                    </div>
+        {calculando && <p className="text-xs text-gray-400">Calculando…</p>}
 
-                    <div className="space-y-1">
-                      {grupo.map(l =>
-                        l.lote_id === null ? (
-                          <div
-                            key={`sem-${l.insumo_id}`}
-                            className="rounded-lg border border-unno-amber/30 bg-unno-amber/10 px-3 py-2
-                                       text-xs text-gray-700 dark:text-unno-amber"
-                          >
-                            Sem lote no estoque central — confira o recebimento antes da produção.
-                          </div>
-                        ) : (
-                          <div
-                            key={l.lote_id}
-                            className="flex items-center gap-3 rounded-lg border border-gray-200 dark:border-white/[.08]
-                                       bg-gray-50 dark:bg-white/[.02] px-3 py-2"
-                          >
-                            <span className="font-mono text-xs text-gray-900 dark:text-unno-text flex-1 truncate">
-                              {l.lote_codigo}
-                            </span>
-                            {/* O que já estava aberto tem que sair primeiro —
-                                é a regra do "um lote aberto só". */}
-                            {l.ja_estava_aberto && <Badge variant="info">aberto</Badge>}
-                            {l.dias_para_vencer != null && l.dias_para_vencer <= 7 && (
-                              <Badge variant={l.dias_para_vencer <= 0 ? 'danger' : 'warning'}>
-                                {l.dias_para_vencer <= 0 ? 'vencido' : `${l.dias_para_vencer}d`}
-                              </Badge>
-                            )}
-                            <span className="text-xs tabular-nums font-semibold text-gray-900 dark:text-unno-text whitespace-nowrap">
-                              levar {fmt(l.levar ?? 0)} {l.unidade}
-                            </span>
-                            {(l.volta_aberto ?? 0) > 0 && (
-                              <span className="text-[0.65rem] text-unno-amber whitespace-nowrap">
-                                volta {fmt(l.volta_aberto!)} aberto
-                              </span>
-                            )}
-                          </div>
-                        ),
-                      )}
-                    </div>
-                  </div>
-                )
-              })}
-
-              {semLote.length > 0 && (
-                <p className="text-xs text-gray-500 dark:text-unno-muted pt-1 border-t border-gray-100 dark:border-white/[.08]">
-                  {semLote.length} insumo(s) sem lote no estoque central:{' '}
-                  {semLote.map(l => l.insumo_nome).join(', ')}.
-                </p>
-              )}
-            </CardBody>
-          </Card>
-
-          {semRecipiente.length > 0 && (
-            <p className="text-xs text-gray-500 dark:text-unno-muted">
-              {semRecipiente.map(l => l.nome).join(' e ')}{' '}
-              {semRecipiente.length > 1 ? 'ainda não têm' : 'ainda não tem'} recipiente definido —
-              a demanda é calculada, mas não dá para dizer quantos potes são necessários.{' '}
-              <button
-                onClick={() => navigate('/insumos')}
-                className="text-brand-600 dark:text-brand-400 underline"
-              >
-                Definir agora
-              </button>
-            </p>
-          )}
-        </>
-      )}
-
-      {calculando && <p className="text-xs text-gray-400">Calculando…</p>}
+        </div>
+      </div>
 
       {/* ── Versão impressa (A4) ──────────────────────────── */}
       <style>{printStyles}</style>
