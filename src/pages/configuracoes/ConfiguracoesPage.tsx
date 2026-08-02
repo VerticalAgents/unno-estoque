@@ -32,9 +32,11 @@ const TRAVAS: { chave: string; titulo: string; descricao: string }[] = [
   },
   {
     chave: 'excede_capacidade',
-    titulo: 'Passar da capacidade do recipiente',
+    titulo: 'Escanear mais do que cabe nos recipientes',
     descricao:
-      'O peso informado ultrapassa o que o pote comporta. Costuma ser erro de digitação — ou pote errado.',
+      'Impede levar para a produção lote que voltaria inteiro para o estoque. '
+      + 'O limite é o espaço livre somado dos recipientes do insumo; o último lote '
+      + 'pode passar, e é dele que sai a sobra.',
   },
   {
     chave: 'sessao_sem_insumo',
@@ -44,9 +46,11 @@ const TRAVAS: { chave: string; titulo: string; descricao: string }[] = [
   },
   {
     chave: 'fefo',
-    titulo: 'Transferir fora da ordem de validade',
+    titulo: 'Deixar para trás o lote que está aberto',
     descricao:
-      'Pegar um lote mais novo deixando outro para trás faz o antigo vencer na prateleira.',
+      'Ao escanear no estoque central, o lote aberto do insumo tem que vir primeiro. '
+      + 'Onde ele vai parar dentro dos recipientes não importa — o que não pode é ele '
+      + 'ficar na prateleira enquanto embalagens fechadas são abertas.',
   },
 ]
 

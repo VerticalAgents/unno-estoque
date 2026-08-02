@@ -162,6 +162,31 @@ antiga — senão o Postgres recusa por ambiguidade (aconteceu na 042).
   depois lotes inteiros em FEFO, e abre no máximo **um** novo.
   Lote aberto = `quantidade_disponivel < quantidade_recebida`.
 
+## Leitura guiada do QR (migration 045)
+
+`validar_scan_lote(empresa, lote, ja_escaneados[], justificativa)` é chamada a
+cada QR lido no estoque central. É **onde as travas agem** — antes de o operador
+carregar peso, quando ainda dá para trocar de embalagem.
+
+- **`fefo`** deixou de ser decorativa. Regra real: o lote **aberto** do insumo
+  tem que estar entre os escaneados. Onde ele é despejado não importa. Só é
+  cobrada enquanto nenhum aberto foi lido.
+- **`excede_capacidade`** virou limite de leitura: só dá para escanear mais um
+  lote enquanto o acumulado ainda não cobriu o **espaço livre somado dos
+  recipientes daquele insumo**. O último passa — é dele que sai a sobra.
+
+`realizar_transferencia_multipla` agora **enche até a capacidade** e devolve
+`sobras[]` com o que não coube; a tela oferece o próximo recipiente. Antes
+despejava o saldo inteiro de todos os lotes sem olhar a capacidade.
+
+**Regra revogada aqui:** "todos os sublotes do mesmo recebimento". Vinha da
+RO-003 e ficou incompatível com o lote aberto único — o aberto que voltou quase
+sempre é de outro recebimento. No lugar: **mesmo insumo e mesma marca**.
+
+`realizar_transferencia` (lote único, usada pelos fluxos de reembalagem) **não**
+ganhou a trava `fefo` — mexer nela sem testar Nutella/DDL/Stikadinho era risco
+sem necessidade.
+
 ## Sessão de produção (migration 044)
 
 - `abrir_sessao_producao_v2` valida insumo nos recipientes (trava
@@ -193,5 +218,6 @@ antiga — senão o Postgres recusa por ambiguidade (aconteceu na 042).
   EC ao transferir. Com transferência parcial isso comeria estoque real.
 - **FIFO**: aviso se há lote mais antigo do mesmo insumo disponível
 - **Marcas**: lote e recipiente devem ser da mesma marca (se ambos definidos)
-- **Sublotes**: só sublotes do mesmo `lote_grupo_id` podem ser transferidos juntos
+- ~~**Sublotes**: só sublotes do mesmo `lote_grupo_id` juntos~~ — **REVOGADA**
+  (migration 045). Agora basta mesmo insumo e mesma marca.
 - Insumos com reembalagem (`INS027` Nutella, `INS014` DDL, `INS023` Stikadinho) usam fluxo próprio

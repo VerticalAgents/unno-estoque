@@ -30,8 +30,20 @@ export function TransferenciaPage() {
   const [step, setStep] = useState<Step>('scan_lote')
   const [lotes, setLotes] = useState<LoteWithInsumo[]>([])
   const [local, setLocal] = useState<LocalWithInsumo | null>(null)
-  const [fifoWarning, setFifoWarning] = useState(false)
   const [ro003Error, setRo003Error] = useState('')
+  // Retorno de validar_scan_lote: quanto ainda cabe nos recipientes deste
+  // insumo e quanto já foi lido. É o que impede carregar peso à toa.
+  const [validacao, setValidacao] = useState<{
+    espaco_livre: number; ja_escaneado: number
+    total_com_este: number; volta_ao_estoque: number
+  } | null>(null)
+  // Trava que pegou na leitura do QR, antes de o operador carregar nada.
+  const [travaScan, setTravaScan] = useState<{
+    qr: string; chave: string; modo: string; mensagem: string; loteEsperado?: string
+  } | null>(null)
+  const [justScan, setJustScan] = useState('')
+  // Sobrou lote depois de encher um recipiente: dá para seguir para o próximo.
+  const [sobras, setSobras] = useState<{ codigo: string; quantidade: number }[]>([])
   // Trava em modo "avisa": a ação é permitida, mas só depois de o operador
   // escrever por que está contrariando a regra.
   const [travaAviso, setTravaAviso] = useState<{ chave: string; mensagem: string } | null>(null)
@@ -71,69 +83,29 @@ export function TransferenciaPage() {
     return `Lote ${codigo} inativo (status: ${data.status}).`
   }
 
-  // ── Step 1: scan primeiro sublote ────────────────────────
+  const SELECT_LOTE = `
+    *,
+    marca:marcas(nome),
+    insumo:insumos(
+      nome, codigo, shelf_life_dias_pos_abertura,
+      armazenamento_config:insumos_armazenamento_config(passa_reembalagem, destino_multiplo)
+    )
+  `
 
-  async function handleScanLote(qr: string) {
-    setScanError('')
-    const { data: loteData } = await supabase
-      .from('lotes')
-      .select(`
-        *,
-        marca:marcas(nome),
-        insumo:insumos(
-          nome, codigo, shelf_life_dias_pos_abertura,
-          armazenamento_config:insumos_armazenamento_config(passa_reembalagem, destino_multiplo)
-        )
-      `)
-      .eq('codigo', parseQRLoteCodigo(qr))
-      .eq('status', 'ativo')
-      .single()
-
-    if (!loteData) {
-      setScanError(await erroLoteInativo(qr))
-      return
-    }
-
-    const l = loteData as LoteWithInsumo
-
-    // Check FIFO
-    const { data: older } = await supabase
-      .from('lotes')
-      .select('data_recebimento')
-      .eq('insumo_id', l.insumo_id)
-      .eq('status', 'ativo')
-      .lt('data_recebimento', l.data_recebimento)
-      .limit(1)
-
-    if (older && older.length > 0) {
-      setFifoWarning(true)
-    }
-
-    setLotes([l])
-
-    // Insumos com reembalagem pulam o fluxo multi-sublote
-    if (precisaReembalagem(l.insumo.codigo)) {
-      setStep('scan_local')
-    } else {
-      setStep('scan_mais')
-    }
-  }
-
-  // ── Step scan_mais: escanear sublotes adicionais ──────────
-
-  async function handleScanMais(qr: string) {
+  /**
+   * Toda leitura de QR no estoque central passa por aqui.
+   *
+   * Quem decide se o lote entra é o banco (`validar_scan_lote`), porque são as
+   * travas configuradas que mandam: obrigar a começar pelo lote que ficou
+   * aberto, e não deixar escanear mais do que cabe nos recipientes daquele
+   * insumo. A conta é feita antes de o operador carregar qualquer peso.
+   */
+  async function adicionarLote(qr: string, justificativa?: string) {
     setScanError('')
 
     const { data: loteData } = await supabase
       .from('lotes')
-      .select(`
-        *,
-        marca:marcas(nome),
-        insumo:insumos(
-          nome, codigo, shelf_life_dias_pos_abertura,
-          armazenamento_config:insumos_armazenamento_config(passa_reembalagem, destino_multiplo)
-        )
-      `)
+      .select(SELECT_LOTE)
       .eq('codigo', parseQRLoteCodigo(qr))
       .eq('status', 'ativo')
       .single()
@@ -146,17 +118,61 @@ export function TransferenciaPage() {
     const novo = loteData as LoteWithInsumo
 
     if (lotes.some(l => l.id === novo.id)) {
-      setScanError('Sublote já adicionado.')
+      setScanError('Este lote já foi escaneado.')
       return
     }
 
-    if (novo.lote_grupo_id !== lotes[0]?.lote_grupo_id) {
-      setScanError('Este sublote pertence a um recebimento diferente.')
+    const { data, error } = await supabase.rpc('validar_scan_lote', {
+      p_empresa_id:    profile!.empresa_id,
+      p_lote_id:       novo.id,
+      p_ja_escaneados: lotes.map(l => l.id),
+      p_justificativa: justificativa?.trim() || null,
+    })
+
+    const resp = data as {
+      ok: boolean; erro?: string; trava?: string; modo?: string
+      mensagem?: string; lote_esperado?: string
+      espaco_livre?: number; ja_escaneado?: number
+      total_com_este?: number; volta_ao_estoque?: number
+    } | null
+
+    if (error) {
+      setScanError(error.message)
       return
     }
 
+    if (resp?.trava) {
+      setTravaScan({
+        qr,
+        chave: resp.trava,
+        modo: resp.modo ?? 'bloqueia',
+        mensagem: resp.mensagem ?? '',
+        loteEsperado: resp.lote_esperado,
+      })
+      return
+    }
+
+    if (!resp?.ok) {
+      setScanError(resp?.erro ?? 'Não foi possível validar este lote.')
+      return
+    }
+
+    setTravaScan(null)
+    setJustScan('')
+    setValidacao({
+      espaco_livre:     Number(resp.espaco_livre ?? 0),
+      ja_escaneado:     Number(resp.ja_escaneado ?? 0),
+      total_com_este:   Number(resp.total_com_este ?? 0),
+      volta_ao_estoque: Number(resp.volta_ao_estoque ?? 0),
+    })
     setLotes(prev => [...prev, novo])
-    setScanError('')
+
+    // Insumos com reembalagem pulam o fluxo multi-lote
+    if (lotes.length === 0 && precisaReembalagem(novo.insumo.codigo)) {
+      setStep('scan_local')
+    } else if (lotes.length === 0) {
+      setStep('scan_mais')
+    }
   }
 
   // ── Step 3: scan local EP QR ──────────────────────────────
@@ -258,10 +274,30 @@ export function TransferenciaPage() {
     setTravaAviso(null)
     setJustificativa('')
 
-    const codigos = (data as { codigos?: string[]; codigo?: string })?.codigos
-      ?? [(data as { codigo?: string })?.codigo ?? '']
+    const r = data as {
+      codigo?: string
+      sobras?: { codigo: string; quantidade: number }[]
+      volta_ao_estoque?: number
+    }
 
-    setSucesso({ codigos })
+    // O recipiente encheu antes de acabar o que foi escaneado. O operador está
+    // com o resto na mão — em vez de encerrar, a tela pede o próximo recipiente.
+    if (r.sobras && r.sobras.length > 0) {
+      const { data: restantes } = await supabase
+        .from('lotes')
+        .select(SELECT_LOTE)
+        .in('codigo', r.sobras.map(s => s.codigo))
+        .eq('status', 'ativo')
+
+      setSobras(r.sobras)
+      setLotes((restantes ?? []) as unknown as LoteWithInsumo[])
+      setLocal(null)
+      setValidacao(null)
+      setStep('scan_local')
+      return
+    }
+
+    setSucesso({ codigos: [r.codigo ?? ''] })
     setStep('sucesso')
   }
 
@@ -269,11 +305,14 @@ export function TransferenciaPage() {
     setStep('scan_lote')
     setLotes([])
     setLocal(null)
-    setFifoWarning(false)
     setRo003Error('')
     setScanError('')
     setSucesso(null)
     setShowConfirm(false)
+    setValidacao(null)
+    setTravaScan(null)
+    setJustScan('')
+    setSobras([])
   }
 
   const totalQty = lotes.reduce((acc, l) => acc + (l.quantidade_disponivel ?? 0), 0)
@@ -283,6 +322,102 @@ export function TransferenciaPage() {
 
   const STEPS_NORMAL: Step[] = ['scan_lote', 'scan_mais', 'scan_local', 'confirmar']
   const stepIndex = STEPS_NORMAL.indexOf(step)
+
+  const bloqueadoNoScan = travaScan?.modo === 'bloqueia'
+  const faltaJustificarScan = !bloqueadoNoScan && justScan.trim().length < 5
+
+  /**
+   * O painel que aparece quando uma trava pega na leitura do QR.
+   * Em `bloqueia` só há o caminho de volta; em `avisa`, o operador explica e
+   * segue. É o mesmo desenho nos dois passos de leitura.
+   */
+  const painelTrava = travaScan && (
+    <div className={`p-4 rounded-xl border space-y-3 ${
+      bloqueadoNoScan
+        ? 'bg-red-50 border-red-300'
+        : 'bg-amber-50 border-amber-300'
+    }`}>
+      <div>
+        <p className="font-semibold text-gray-900">
+          {travaScan.chave === 'fefo'
+            ? (bloqueadoNoScan ? 'Escaneie primeiro o lote aberto' : 'Há um lote aberto no estoque')
+            : (bloqueadoNoScan ? 'Não cabe mais' : 'Isso é mais do que cabe')}
+        </p>
+        <p className="text-sm text-gray-700 mt-1">{travaScan.mensagem}</p>
+      </div>
+
+      {bloqueadoNoScan ? (
+        <Button variant="secondary" size="sm" fullWidth onClick={() => setTravaScan(null)}>
+          Entendi, vou pegar o certo
+        </Button>
+      ) : (
+        <>
+          <div>
+            <label className="text-xs font-semibold uppercase tracking-wide text-gray-600">
+              Seguir mesmo assim? Explique por quê
+            </label>
+            <textarea
+              rows={2}
+              value={justScan}
+              onChange={e => setJustScan(e.target.value)}
+              placeholder={travaScan.chave === 'fefo'
+                ? 'Ex: o lote aberto foi separado para descarte'
+                : 'Ex: vou abastecer também o recipiente reserva'}
+              className="mt-1 block w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm
+                         focus:outline-none focus:border-brand-500 focus:ring-[3px] focus:ring-brand-500/10"
+            />
+            <p className="text-[0.7rem] text-gray-500 mt-1">
+              {faltaJustificarScan
+                ? 'Escreva pelo menos algumas palavras para liberar.'
+                : 'Fica registrado em Configurações → Travas.'}
+            </p>
+          </div>
+          <div className="flex gap-2">
+            <Button variant="ghost" size="sm" onClick={() => { setTravaScan(null); setJustScan('') }}>
+              Cancelar
+            </Button>
+            <Button
+              size="sm"
+              fullWidth
+              disabled={faltaJustificarScan}
+              onClick={() => adicionarLote(travaScan.qr, justScan)}
+            >
+              Escanear mesmo assim
+            </Button>
+          </div>
+        </>
+      )}
+    </div>
+  )
+
+  /** Quanto ainda cabe nos recipientes deste insumo, somados. */
+  const painelCabe = validacao && (
+    <div className="p-3 rounded-lg bg-gray-50 border border-gray-200 text-sm">
+      <div className="flex justify-between">
+        <span className="text-gray-500">Cabe nos recipientes</span>
+        <span className="font-semibold text-gray-900 tabular-nums">
+          {formatQty(validacao.espaco_livre, unidade)}
+        </span>
+      </div>
+      <div className="flex justify-between mt-1">
+        <span className="text-gray-500">Escaneado até agora</span>
+        <span className="font-semibold text-brand-700 tabular-nums">
+          {formatQty(totalQty, unidade)}
+        </span>
+      </div>
+      {validacao.volta_ao_estoque > 0 && (
+        <p className="text-xs text-amber-700 mt-2">
+          Sobram {formatQty(validacao.volta_ao_estoque, unidade)}, que voltam para o
+          estoque e viram o próximo lote aberto.
+        </p>
+      )}
+      {validacao.volta_ao_estoque === 0 && totalQty < validacao.espaco_livre && (
+        <p className="text-xs text-gray-500 mt-2">
+          Ainda dá para escanear {formatQty(validacao.espaco_livre - totalQty, unidade)}.
+        </p>
+      )}
+    </div>
+  )
 
   return (
     <div className="p-4 max-w-lg mx-auto min-h-screen">
@@ -309,10 +444,12 @@ export function TransferenciaPage() {
         <Card className="p-5">
           <h2 className="text-base font-semibold text-gray-900 mb-1">Passo 1: Escanear lote (EC)</h2>
           <p className="text-sm text-gray-500 mb-4">Aponte para o QR Code colado na embalagem no Estoque Central</p>
-          <QRScanner
-            onScan={handleScanLote}
-            label="Escanear QR do lote"
-          />
+          {travaScan ? painelTrava : (
+            <QRScanner
+              onScan={qr => adicionarLote(qr)}
+              label="Escanear QR do lote"
+            />
+          )}
           {scanError && (
             <div className="mt-3 p-3 bg-red-50 border border-red-200 rounded-lg text-sm text-red-700">
               {scanError}
@@ -340,22 +477,19 @@ export function TransferenciaPage() {
             </div>
           </Card>
 
-          {/* FIFO warning */}
-          {fifoWarning && (
-            <div className="p-3 bg-yellow-50 border border-yellow-300 rounded-lg text-sm text-yellow-800">
-              ⚠️ <strong>Atenção (FIFO):</strong> Existe um lote mais antigo deste insumo disponível. Use o lote mais antigo primeiro.
-            </div>
-          )}
+          {painelCabe}
 
           <Card className="p-5">
-            <h2 className="text-base font-semibold text-gray-900 mb-1">Escanear mais sublotes</h2>
+            <h2 className="text-base font-semibold text-gray-900 mb-1">Escanear mais lotes</h2>
             <p className="text-sm text-gray-500 mb-4">
-              Escaneie outros sublotes do mesmo recebimento, ou continue para escanear o recipiente
+              Escaneie outros lotes do mesmo insumo, ou continue para escanear o recipiente
             </p>
-            <QRScanner
-              onScan={handleScanMais}
-              label="Escanear sublote adicional"
-            />
+            {travaScan ? painelTrava : (
+              <QRScanner
+                onScan={qr => adicionarLote(qr)}
+                label="Escanear lote adicional"
+              />
+            )}
             {scanError && (
               <div className="mt-3 p-3 bg-red-50 border border-red-200 rounded-lg text-sm text-red-700">
                 {scanError}
@@ -409,10 +543,17 @@ export function TransferenciaPage() {
             )}
           </Card>
 
-          {/* FIFO warning (reembalagem flow) */}
-          {fifoWarning && (
-            <div className="p-3 bg-yellow-50 border border-yellow-300 rounded-lg text-sm text-yellow-800">
-              ⚠️ <strong>Atenção (FIFO):</strong> Existe um lote mais antigo deste insumo disponível. Use o lote mais antigo primeiro.
+          {/* Veio de um recipiente que encheu no meio do caminho */}
+          {sobras.length > 0 && (
+            <div className="p-3 bg-amber-50 border border-amber-300 rounded-lg text-sm">
+              <p className="font-medium text-gray-900">O recipiente anterior encheu</p>
+              <p className="text-xs text-gray-700 mt-1">
+                Ainda está com {formatQty(totalQty, unidade)} na mão. Escaneie outro
+                recipiente deste insumo, ou finalize e devolva ao estoque central.
+              </p>
+              <Button variant="ghost" size="sm" className="mt-2" onClick={handleReset}>
+                Finalizar e devolver ao estoque
+              </Button>
             </div>
           )}
 
@@ -515,12 +656,30 @@ export function TransferenciaPage() {
               )}
             </div>
 
-            <div className="mt-4 p-3 bg-amber-50 border border-amber-200 rounded-lg text-xs text-amber-800">
-              <strong>RO-002:</strong> {lotes.length > 1
-                ? `Os ${lotes.length} sublotes (${formatQty(totalQty, unidade)} no total) serão transferidos de uma vez.`
-                : `A embalagem inteira (${formatQty(lote.quantidade_disponivel, lote.unidade)}) será transferida de uma vez.`
-              } Esta operação não pode ser desfeita.
-            </div>
+            {/* Quanto realmente entra aqui: o recipiente enche até a capacidade
+                e o que passar disso continua no estoque central. */}
+            {(() => {
+              const jaTem = local.estado_atual?.quantidade ?? 0
+              const cap = local.capacidade_max
+              const cabe = cap == null ? totalQty : Math.max(cap - jaTem, 0)
+              const entra = Math.min(totalQty, cabe)
+              const volta = totalQty - entra
+              return (
+                <div className="mt-4 p-3 bg-amber-50 border border-amber-200 rounded-lg text-xs text-amber-800 space-y-1">
+                  <p>
+                    Vai entrar <strong>{formatQty(entra, unidade)}</strong>
+                    {cap != null && <> — o recipiente comporta {formatQty(cap, unidade)}</>}.
+                  </p>
+                  {volta > 0 && (
+                    <p>
+                      Os outros <strong>{formatQty(volta, unidade)}</strong> continuam no
+                      estoque central. Na tela seguinte dá para levá-los a outro recipiente.
+                    </p>
+                  )}
+                  <p>Esta operação não pode ser desfeita.</p>
+                </div>
+              )
+            })()}
           </Card>
 
           {scanError && (

@@ -39,11 +39,27 @@ export function AberturaSessaoPage() {
   const [success, setSuccess] = useState<{ codigo: string; locais: number; planejada: number } | null>(null)
 
   const [formas, setFormas] = useState<Record<string, string>>(formasIniciais ?? {})
-  // Trava sessao_sem_insumo: lista o que falta em vez de só recusar
+  // Trava sessao_sem_insumo: lista o que falta em vez de só recusar.
+  // O modo decide a tela: em `bloqueia` não há caminho para a frente, então
+  // não faz sentido mostrar campo de motivo nem botão de abrir.
   const [faltantes, setFaltantes] = useState<
     { codigo: string; nome: string; falta: number; unidade: string }[] | null
   >(null)
+  const [travaModo, setTravaModo] = useState<'bloqueia' | 'avisa' | null>(null)
   const [justificativa, setJustificativa] = useState('')
+
+  const bloqueado = travaModo === 'bloqueia'
+  const faltaJustificar = travaModo === 'avisa' && justificativa.trim().length < 5
+
+  // Mexeu nas formas: o diagnóstico anterior não vale mais.
+  function mudarFormas(fichaId: string, valor: string) {
+    setFormas(s => ({ ...s, [fichaId]: valor }))
+    if (faltantes) {
+      setFaltantes(null)
+      setTravaModo(null)
+      setError('')
+    }
+  }
   const [dataProducao, setDataProducao] = useState(new Date().toISOString().split('T')[0])
   const [observacoes, setObservacoes] = useState('')
 
@@ -158,6 +174,7 @@ export function AberturaSessaoPage() {
     // em vez de deixar a produção parar no meio para abastecer.
     if (resp?.trava === 'sessao_sem_insumo') {
       setFaltantes(resp.faltantes ?? [])
+      setTravaModo(resp.modo === 'bloqueia' ? 'bloqueia' : 'avisa')
       setError(resp.mensagem ?? '')
       return
     }
@@ -262,7 +279,7 @@ export function AberturaSessaoPage() {
                   step={1}
                   inputMode="numeric"
                   value={formas[f.id] ?? ''}
-                  onChange={(e) => setFormas((s) => ({ ...s, [f.id]: e.target.value }))}
+                  onChange={(e) => mudarFormas(f.id, e.target.value)}
                   placeholder="0"
                   className="w-24 rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-right
                              focus:outline-none focus:border-brand-500 focus:ring-[3px] focus:ring-brand-500/10
@@ -289,15 +306,25 @@ export function AberturaSessaoPage() {
         </Card>
 
         {/* Insumo insuficiente: o problema é resolvível, então a tela mostra o
-            que falta e leva ao planejador já preenchido — em vez de só recusar. */}
+            que falta e leva ao planejador já preenchido — em vez de só recusar.
+            Em modo `bloqueia` some o campo de motivo: não existe caminho para a
+            frente, e oferecer um seria mentir para o operador. */}
         {faltantes && (
-          <div className="rounded-xl border border-unno-amber/40 bg-unno-amber/10 p-4 space-y-3">
+          <div className={`rounded-xl border p-4 space-y-3 ${
+            bloqueado
+              ? 'border-red-300 bg-red-50 dark:border-unno-danger/40 dark:bg-unno-danger/10'
+              : 'border-unno-amber/40 bg-unno-amber/10'
+          }`}>
             <div>
               <p className="font-medium text-gray-900 dark:text-unno-text">
-                Falta insumo nos recipientes
+                {bloqueado
+                  ? 'Não dá para abrir a sessão: falta insumo'
+                  : 'Falta insumo nos recipientes'}
               </p>
               <p className="text-sm text-gray-600 dark:text-unno-muted mt-0.5">
-                Se abrir assim, a produção para no meio para abastecer.
+                {bloqueado
+                  ? 'Abasteça os recipientes antes de abrir. A regra está como "Bloqueia" em Configurações → Travas.'
+                  : 'Se abrir assim, a produção para no meio para abastecer.'}
               </p>
             </div>
 
@@ -324,8 +351,9 @@ export function AberturaSessaoPage() {
               </Button>
             </div>
 
-            {/* A trava pode estar em modo "avisa": nesse caso dá para seguir
-                assumindo o risco, desde que explique. */}
+            {/* Só em modo "avisa": aí dá para seguir assumindo o risco, desde
+                que explique. */}
+            {!bloqueado && (
             <div className="pt-2 border-t border-unno-amber/30">
               <label className="text-xs font-semibold uppercase tracking-wide text-gray-600 dark:text-unno-muted">
                 Abrir mesmo assim? Explique por quê
@@ -340,9 +368,12 @@ export function AberturaSessaoPage() {
                            dark:border-white/[.08] dark:bg-unno-raised dark:text-unno-text"
               />
               <p className="text-[0.7rem] text-gray-500 dark:text-unno-muted mt-1">
-                Fica registrado em Configurações → Travas, com seu nome.
+                {faltaJustificar
+                  ? 'Escreva pelo menos algumas palavras para liberar o botão.'
+                  : 'Fica registrado em Configurações → Travas, com seu nome.'}
               </p>
             </div>
+            )}
           </div>
         )}
 
@@ -357,9 +388,23 @@ export function AberturaSessaoPage() {
           <Button type="button" variant="secondary" size="lg" onClick={() => navigate('/producao')}>
             Cancelar
           </Button>
-          <Button type="submit" size="lg" fullWidth loading={loading} disabled={plano.length === 0}>
-            {editando ? 'Salvar formas' : 'Abrir sessão'}
-          </Button>
+          {/* Em `bloqueia` o botão sai da tela: insistir nele não leva a lugar
+              nenhum, e um botão que não faz nada parece defeito. */}
+          {!bloqueado && (
+            <Button
+              type="submit"
+              size="lg"
+              fullWidth
+              loading={loading}
+              disabled={plano.length === 0 || faltaJustificar}
+            >
+              {editando
+                ? 'Salvar formas'
+                : travaModo === 'avisa'
+                  ? 'Abrir mesmo assim'
+                  : 'Abrir sessão'}
+            </Button>
+          )}
         </div>
       </form>
     </div>
