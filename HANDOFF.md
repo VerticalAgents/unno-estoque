@@ -96,10 +96,27 @@ Tela em `/producao/planejador`, que virou **duas abas** —
 
 As duas ficam montadas (`hidden`), então trocar de aba não perde o digitado.
 
-**A regra que define o algoritmo:** trocar de sabor obriga a lavar os
-utensílios. A semana não se divide igual — enche-se cada dia com um sabor só, na
-ordem do código da ficha, e cada produto só transborda **uma vez** para o dia
-seguinte. Daí no máximo uma lavagem por troca de produto.
+**Três modos de preencher** (migration 052, `planos_semana.modo_preenchimento`):
+
+| Modo | O quê |
+|---|---|
+| `blocos` (padrão) | um sabor por dia; lava só na troca |
+| `igual` | todo dia com o mesmo mix, na proporção da meta |
+| `manual` | o sistema não distribui |
+
+**A regra por trás do `blocos`:** trocar de sabor obriga a lavar os utensílios.
+Enche-se cada dia com um sabor só, na ordem de `ordem_fichas`, e cada produto
+só transborda **uma vez** para o dia seguinte. Daí no máximo uma lavagem por
+troca.
+
+**A ordem muda o resultado de verdade.** Com 30.000 TRD + 20.000 DDL em 5 dias,
+TRD primeiro dá um dia misto (qua: TRD 164 + DDL 4); DDL primeiro dá **zero**
+dias mistos, porque o DDL fecha exatamente em 2 dias. Vale sugerir inverter
+quando o dia misto incomodar.
+
+Qualquer produto pode ser acrescentado a qualquer dia pelo botão `+ CÓDIGO` —
+sem isso o usuário ficava preso na distribuição sugerida. As linhas abertas na
+mão vivem em `abertos`, estado de digitação que some ao trocar de semana.
 
 A conta corre em **bateladas** (4 formas) e converte para formas no fim, com o
 último dia de cada produto levando o resto — a última batelada costuma ser

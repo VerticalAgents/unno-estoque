@@ -129,6 +129,17 @@ export function PlanejadorSemanaPage({
   // ajuste na próxima tecla digitada na meta.
   const [ajustado, setAjustado] = useState(false)
 
+  /**
+   * Como a meta vira dias.
+   *
+   *   blocos — um produto por dia, lavando só na troca (o padrão)
+   *   igual  — todo dia com o mesmo mix
+   *   manual — o sistema não distribui, quem distribui é você
+   */
+  const [preenchimento, setPreenchimento] = useState<'blocos' | 'igual' | 'manual'>('blocos')
+  /** Prioridade: quem vem primeiro ocupa os primeiros dias da semana. */
+  const [ordem, setOrdem] = useState<string[]>([])
+
   // Meta da semana — mesmo desenho da tela de Reabastecimento
   const [modo, setModo] = useState<'unidades' | 'percentual'>('unidades')
   const [alvo, setAlvo] = useState<Record<string, string>>({})
@@ -141,6 +152,9 @@ export function PlanejadorSemanaPage({
   const [receitas, setReceitas] = useState<Record<string, { insumo_id: string; quantidade: number }[]>>({})
 
   const [realizado, setRealizado] = useState<Record<string, Realizado>>({})
+  // Linhas de produto abertas na mão num dia, ainda sem quantidade. Some ao
+  // trocar de semana; é estado de digitação, não do plano.
+  const [abertos, setAbertos] = useState<string[]>([])
 
   const [loading, setLoading] = useState(true)
   const [salvando, setSalvando] = useState(false)
@@ -180,6 +194,7 @@ export function PlanejadorSemanaPage({
         rendimento_fornada: f.versoes.find(v => v.ativa)?.rendimento_fornada ?? null,
       }))
       setFichas(opts)
+      setOrdem(o => (o.length > 0 ? o : opts.map(f => f.id)))
 
       // Capacidade somada dos recipientes por insumo
       const cap: Record<string, { nome: string; unidade: string; capacidade: number }> = {}
@@ -223,9 +238,10 @@ export function PlanejadorSemanaPage({
   // sem elas não há rendimento para converter formas em unidades.
   const carregarSemana = useCallback(async () => {
     if (!profile || fichas.length === 0) return
+    setAbertos([])   // linhas abertas na mão são da semana que está saindo
     const { data: plano } = await supabase
       .from('planos_semana')
-      .select('id, dias_ativos, updated_at, itens:planos_semana_itens(data, ficha_id, formas)')
+      .select('id, dias_ativos, updated_at, modo_preenchimento, ordem_fichas, itens:planos_semana_itens(data, ficha_id, formas)')
       .eq('empresa_id', profile.empresa_id)
       .eq('semana_inicio', semana)
       .maybeSingle()
@@ -269,9 +285,17 @@ export function PlanejadorSemanaPage({
 
     const p = plano as unknown as {
       dias_ativos: string[]; updated_at: string
+      modo_preenchimento: 'blocos' | 'igual' | 'manual'
+      ordem_fichas: string[]
       itens: { data: string; ficha_id: string; formas: number }[]
     }
     setDiasAtivos((p.dias_ativos ?? []).map(d => String(d).slice(0, 10)))
+    setPreenchimento(p.modo_preenchimento ?? 'blocos')
+    // Ficha que não estava na ordem salva entra no fim, na ordem do código.
+    setOrdem([
+      ...(p.ordem_fichas ?? []).filter(id => fichas.some(f => f.id === id)),
+      ...fichas.map(f => f.id).filter(id => !(p.ordem_fichas ?? []).includes(id)),
+    ])
     const g: Grade = {}
     for (const i of p.itens ?? []) g[chave(String(i.data).slice(0, 10), i.ficha_id)] = i.formas
     setGrade(g)
@@ -309,15 +333,24 @@ export function PlanejadorSemanaPage({
 
   const totalPct = useMemo(() => fichas.reduce((s, f) => s + num(pct[f.id]), 0), [fichas, pct])
 
-  /** Meta em unidades → formas e bateladas de cada ficha. */
+  /** As fichas na ordem de prioridade escolhida. */
+  const fichasOrdenadas = useMemo(
+    () => [
+      ...ordem.map(id => fichas.find(f => f.id === id)).filter(Boolean) as FichaOption[],
+      ...fichas.filter(f => !ordem.includes(f.id)),
+    ],
+    [fichas, ordem],
+  )
+
+  /** Meta em unidades → formas e bateladas de cada ficha, na ordem escolhida. */
   const metas = useMemo(
-    () => fichas.map(f => {
+    () => fichasOrdenadas.map(f => {
       const unidades = alvoEfetivo[f.id] ?? 0
       const rend = f.rendimento_fornada ?? 0
       const formas = rend > 0 ? Math.ceil(unidades / rend) : 0
       return { ficha: f, unidades, formas, bateladas: Math.ceil(formas / FORMAS_POR_BATELADA) }
     }).filter(m => m.formas > 0),
-    [fichas, alvoEfetivo],
+    [fichasOrdenadas, alvoEfetivo],
   )
 
   const totalUnidadesMeta = metas.reduce((s, m) => s + m.unidades, 0)
@@ -335,6 +368,31 @@ export function PlanejadorSemanaPage({
   const distribuir = useCallback((): Grade => {
     const dias = diasAtivos.filter(d => diasDaSemana.includes(d)).sort()
     if (dias.length === 0 || metas.length === 0) return {}
+
+    // No modo manual o sistema não opina — quem distribui é o usuário.
+    if (preenchimento === 'manual') return {}
+
+    // Mix igual: cada produto espalhado por todos os dias. O último dia que
+    // recebe leva as formas restantes, para a soma bater exata.
+    if (preenchimento === 'igual') {
+      const nova: Grade = {}
+      for (const m of metas) {
+        const porDia = Math.floor(m.bateladas / dias.length)
+        const resto  = m.bateladas % dias.length
+        const fatias = dias
+          .map((dia, i) => ({ dia, bat: porDia + (i < resto ? 1 : 0) }))
+          .filter(f => f.bat > 0)
+        let formasRestantes = m.formas
+        fatias.forEach((f, i) => {
+          const formas = i === fatias.length - 1
+            ? formasRestantes
+            : Math.min(f.bat * FORMAS_POR_BATELADA, formasRestantes)
+          if (formas > 0) nova[chave(f.dia, m.ficha.id)] = formas
+          formasRestantes -= formas
+        })
+      }
+      return nova
+    }
 
     const totalBateladas = metas.reduce((s, m) => s + m.bateladas, 0)
     const base = Math.ceil(totalBateladas / dias.length)
@@ -374,7 +432,7 @@ export function PlanejadorSemanaPage({
     }
 
     return nova
-  }, [diasAtivos, diasDaSemana, metas])
+  }, [diasAtivos, diasDaSemana, metas, preenchimento])
 
   // Redistribui sozinho enquanto ninguém mexeu num dia na mão
   useEffect(() => {
@@ -391,6 +449,16 @@ export function PlanejadorSemanaPage({
       else delete novo[chave(dia, fichaId)]
       return novo
     })
+  }
+
+  /** Sobe ou desce um produto na prioridade da semana. */
+  function moverFicha(indice: number, direcao: -1 | 1) {
+    const destino = indice + direcao
+    if (destino < 0 || destino >= fichasOrdenadas.length) return
+    const ids = fichasOrdenadas.map(f => f.id)
+    ;[ids[indice], ids[destino]] = [ids[destino], ids[indice]]
+    setOrdem(ids)
+    setAjustado(false)   // ordem nova pede distribuição nova
   }
 
   function alternarDia(dia: string) {
@@ -489,6 +557,8 @@ export function PlanejadorSemanaPage({
       p_semana_inicio: semana,
       p_dias: diasAtivos,
       p_itens: itens,
+      p_modo: preenchimento,
+      p_ordem: ordem,
     })
 
     setSalvando(false)
@@ -660,20 +730,22 @@ export function PlanejadorSemanaPage({
       {/* ── Dias ────────────────────────────────────────────── */}
       <Card>
         <CardHeader
-          title="Dias de produção"
-          subtitle="Desmarque feriado ou dia de parada. A distribuição refaz sozinha."
+          title="Dias e distribuição"
+          subtitle="Desmarque feriado ou dia de parada, e escolha como a meta vira dias."
           action={
             <Button
               variant="ghost" size="sm"
-              disabled={!ajustado}
+              disabled={!ajustado || preenchimento === 'manual'}
               onClick={() => { setAjustado(false); setGrade(distribuir()) }}
-              title={ajustado ? 'Desfaz os ajustes manuais' : 'Já está distribuído automaticamente'}
+              title={preenchimento === 'manual'
+                ? 'No modo manual o sistema não distribui'
+                : ajustado ? 'Desfaz os ajustes manuais' : 'Já está distribuído automaticamente'}
             >
               Redistribuir
             </Button>
           }
         />
-        <CardBody>
+        <CardBody className="space-y-4">
           <div className="flex flex-wrap gap-2">
             {diasDaSemana.map(d => {
               const ativo = diasAtivos.includes(d)
@@ -694,6 +766,89 @@ export function PlanejadorSemanaPage({
               )
             })}
           </div>
+
+          {/* Como preencher — mesma ideia do toggle da meta */}
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-unno-muted mb-1.5">
+              Como preencher a semana
+            </p>
+            <div className="flex gap-1 p-1 bg-gray-100 dark:bg-white/[.04] rounded-lg">
+              {([
+                ['blocos', 'Um sabor por dia'],
+                ['igual', 'Mix igual todo dia'],
+                ['manual', 'Eu distribuo'],
+              ] as const).map(([key, label]) => (
+                <button
+                  key={key}
+                  type="button"
+                  onClick={() => {
+                    if (key === preenchimento) return
+                    setPreenchimento(key)
+                    // Trocar de modo é pedir para recalcular; manual mantém o
+                    // que está na tela para servir de ponto de partida.
+                    setAjustado(key === 'manual')
+                  }}
+                  className={[
+                    'flex-1 px-2 py-1.5 text-sm font-medium rounded-md transition-colors',
+                    preenchimento === key
+                      ? 'bg-white dark:bg-unno-raised text-gray-900 dark:text-unno-text shadow-sm'
+                      : 'text-gray-500 hover:text-gray-700 dark:text-unno-muted',
+                  ].join(' ')}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+            <p className="text-xs text-gray-500 dark:text-unno-muted mt-1.5">
+              {preenchimento === 'blocos'
+                ? 'Enche cada dia com um sabor só; a lavagem acontece na troca.'
+                : preenchimento === 'igual'
+                  ? 'Todo dia produz os dois, na mesma proporção da meta.'
+                  : 'O sistema não distribui — você preenche os dias como quiser.'}
+            </p>
+          </div>
+
+          {/* Prioridade: só muda o resultado no modo blocos */}
+          {preenchimento === 'blocos' && fichasOrdenadas.length > 1 && (
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-unno-muted mb-1.5">
+                Ordem na semana
+              </p>
+              <div className="space-y-1">
+                {fichasOrdenadas.map((f, i) => (
+                  <div key={f.id} className="flex items-center gap-2">
+                    <span className="w-5 text-xs text-gray-400 tabular-nums">{i + 1}º</span>
+                    <p className="flex-1 min-w-0 text-sm text-gray-700 dark:text-unno-text truncate">
+                      <span className="text-gray-400 mr-1.5">{f.codigo}</span>{f.nome}
+                    </p>
+                    <button
+                      type="button"
+                      disabled={i === 0}
+                      onClick={() => moverFicha(i, -1)}
+                      className="px-2 py-1 rounded border border-gray-200 text-gray-600 text-xs
+                                 disabled:opacity-30 hover:bg-gray-50 dark:border-white/[.08]"
+                      title="Subir"
+                    >
+                      ↑
+                    </button>
+                    <button
+                      type="button"
+                      disabled={i === fichasOrdenadas.length - 1}
+                      onClick={() => moverFicha(i, 1)}
+                      className="px-2 py-1 rounded border border-gray-200 text-gray-600 text-xs
+                                 disabled:opacity-30 hover:bg-gray-50 dark:border-white/[.08]"
+                      title="Descer"
+                    >
+                      ↓
+                    </button>
+                  </div>
+                ))}
+              </div>
+              <p className="text-xs text-gray-500 dark:text-unno-muted mt-1.5">
+                Quem está em cima ocupa os primeiros dias da semana.
+              </p>
+            </div>
+          )}
         </CardBody>
       </Card>
 
@@ -723,12 +878,13 @@ export function PlanejadorSemanaPage({
                   </p>
                 </div>
 
-                {fichas.map(f => {
+                {fichasOrdenadas.map(f => {
                   const v = grade[chave(d.dia, f.id)] ?? 0
                   const r = realizado[chave(d.dia, f.id)]
-                  // Só mostra a ficha se ela produz nesse dia, se foi produzida,
-                  // ou se o dia está vazio (aí dá para acrescentar na mão).
-                  if (v === 0 && r?.formas == null && d.itens.length > 0) return null
+                  // Fica escondida a ficha que não produz nem foi produzida —
+                  // mas o botão "+ produto" abaixo traz qualquer uma de volta.
+                  if (v === 0 && r?.formas == null
+                      && d.itens.length > 0 && !abertos.includes(chave(d.dia, f.id))) return null
                   return (
                     <div key={f.id}>
                       <div className="flex items-center gap-3">
@@ -767,6 +923,32 @@ export function PlanejadorSemanaPage({
                     </div>
                   )
                 })}
+
+                {/* Acrescentar um produto num dia que já tem outro. Sem isto o
+                    usuário fica preso na distribuição que o sistema sugeriu. */}
+                {(() => {
+                  const faltando = fichasOrdenadas.filter(f =>
+                    (grade[chave(d.dia, f.id)] ?? 0) === 0
+                    && realizado[chave(d.dia, f.id)]?.formas == null
+                    && !abertos.includes(chave(d.dia, f.id)))
+                  if (faltando.length === 0) return null
+                  return (
+                    <div className="flex flex-wrap gap-1.5">
+                      {faltando.map(f => (
+                        <button
+                          key={f.id}
+                          type="button"
+                          onClick={() => setAbertos(a => [...a, chave(d.dia, f.id)])}
+                          className="px-2 py-1 rounded-lg border border-dashed border-gray-300 text-xs
+                                     text-gray-500 hover:text-gray-700 hover:border-gray-400
+                                     dark:border-white/[.12] dark:text-unno-muted"
+                        >
+                          + {f.codigo}
+                        </button>
+                      ))}
+                    </div>
+                  )
+                })()}
 
                 {/* Dia que não cabe nos recipientes: é estrutural, não depende
                     do estoque de hoje. */}
