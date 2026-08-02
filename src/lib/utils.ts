@@ -25,6 +25,25 @@ export function today(): string {
   return new Date().toISOString().split('T')[0]
 }
 
+/**
+ * A segunda-feira da semana que o planejamento deve abrir, em YYYY-MM-DD.
+ *
+ * No sábado ou domingo devolve a semana que vem: quem planeja no fim de semana
+ * está planejando a semana seguinte, e abrir na que já acabou seria mostrar
+ * trabalho feito.
+ *
+ * Datas montadas componente a componente de propósito — `new Date('2026-08-03')`
+ * é meia-noite UTC, que no Brasil cai no dia 2.
+ */
+export function semanaDeTrabalho(): string {
+  const d = new Date()
+  const dow = d.getDay()                       // 0 = domingo
+  if (dow === 0 || dow === 6) d.setDate(d.getDate() + 2)
+  const dow2 = d.getDay()
+  d.setDate(d.getDate() + (dow2 === 0 ? -6 : 1 - dow2))
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+}
+
 export function daysUntil(dateStr: string): number {
   const target = new Date(dateStr + 'T00:00:00')
   const now = new Date()

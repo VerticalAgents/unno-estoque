@@ -70,6 +70,59 @@ Nas fichas Odara, **1 fornada = 1 forma = 60 unidades** de ~67,5 g.
   `UNIQUE(sessao_id, local_id, lote_id)`).
 - Tela: `src/pages/producao/PlanejadorRecipientesPage.tsx` (`/producao/planejador`).
 
+## ⚠️ Views vazavam sem login (migration 050)
+
+Tabela com RLS recusa leitura anônima; **view não**. No Postgres a view roda com
+as permissões de quem a criou (postgres), e dono de tabela ignora RLS. Bastava a
+chave publicável — que vai no JavaScript da tela — para ler estoque, fichas e
+plano de produção **sem login**. Verificado com `curl` sem token.
+
+Corrigido com `security_invoker = true` nas 7 views. **Ao criar view nova,
+repetir a linha** — o padrão do Postgres é o inseguro.
+
+Testado depois com papel `authenticated` simulado: as views e as RPCs
+(`planejar_abastecimento`, `sugerir_lotes_transferencia`, `planejar_recipientes`)
+continuam devolvendo dados para quem está logado.
+
+## Planejador Semanal (migration 049)
+
+Tela em `/producao/planejador`, que virou **duas abas** —
+`src/pages/producao/PlanejadorPage.tsx` é a casca:
+
+| Aba | Arquivo |
+|---|---|
+| Semana | `PlanejadorSemanaPage.tsx` (nova) |
+| Dia | `PlanejadorRecipientesPage.tsx` (a de sempre, sem o `<h1>`) |
+
+As duas ficam montadas (`hidden`), então trocar de aba não perde o digitado.
+
+**A regra que define o algoritmo:** trocar de sabor obriga a lavar os
+utensílios. A semana não se divide igual — enche-se cada dia com um sabor só, na
+ordem do código da ficha, e cada produto só transborda **uma vez** para o dia
+seguinte. Daí no máximo uma lavagem por troca de produto.
+
+A conta corre em **bateladas** (4 formas) e converte para formas no fim, com o
+último dia de cada produto levando o resto — a última batelada costuma ser
+parcial. Testado com 300 combinações: a soma dos dias bate exata com a meta.
+
+- `planos_semana.dias_ativos DATE[]` guarda os dias marcados **inclusive os
+  vazios**; sem isso um dia marcado sem produção sumiria ao recarregar.
+- Editar um dia liga `ajustado` e para o auto-distribuir. **Redistribuir** volta.
+- A meta do topo é reconstruída **na carga**, não por efeito reativo — reagir a
+  `grade` faria a meta seguir o ajuste manual, e o aviso de divergência nunca
+  apareceria.
+- Aviso de "duas rodadas de abastecimento" compara a demanda do dia com a
+  **capacidade** dos recipientes, não com o conteúdo: o que estará nos potes na
+  quinta depende do consumo até lá.
+- `semanaDeTrabalho()` em `src/lib/utils.ts`: no sábado e domingo devolve a
+  semana **seguinte**. Usada também pelo botão do Reabastecimento.
+
+Datas sempre como string `YYYY-MM-DD` e montadas componente a componente —
+`new Date('2026-08-03')` é meia-noite UTC e no Brasil cai no dia 2.
+
+**Falta a Parte 2:** planejado × realizado na tela. A view `v_plano_semana` já
+existe e já traz `formas_realizadas`, `unidades_produzidas` e `em_andamento`.
+
 ## Reabastecimento — Fase 3 (migrations 046-048)
 
 Tela em `/reabastecimento` (`src/pages/reabastecimento/ReabastecimentoPage.tsx`).

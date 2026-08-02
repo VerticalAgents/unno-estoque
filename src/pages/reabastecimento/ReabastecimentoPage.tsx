@@ -3,6 +3,8 @@ import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../contexts/AuthContext'
 import { Button } from '../../components/ui/Button'
 import { Card, CardBody, CardHeader } from '../../components/ui/Card'
+// A mesma regra de qual semana é "esta": no fim de semana, a que vem.
+import { semanaDeTrabalho } from '../../lib/utils'
 
 /**
  * Planejamento de Reabastecimento — substitui a aba "Projeção de Produção"
@@ -258,6 +260,44 @@ export function ReabastecimentoPage() {
   const totalUnidades = conversoes.reduce((s, c) => s + c.unidades, 0)
   const totalFormas = conversoes.reduce((s, c) => s + c.formas, 0)
 
+  /**
+   * Puxa a meta do plano da semana atual.
+   *
+   * As duas telas seguem independentes de propósito — às vezes se compra para
+   * mais de uma semana. Por isso é um botão, e não uma leitura automática.
+   */
+  async function puxarDoPlano() {
+    if (!profile) return
+    setErro('')
+    const { data, error } = await supabase
+      .from('planos_semana')
+      .select('itens:planos_semana_itens(ficha_id, formas)')
+      .eq('empresa_id', profile.empresa_id)
+      .eq('semana_inicio', semanaDeTrabalho())
+      .maybeSingle()
+
+    if (error) { setErro(error.message); return }
+    if (!data) {
+      setErro('Não há plano salvo para esta semana. Monte a semana no Planejador → aba Semana.')
+      return
+    }
+
+    const itens = (data as unknown as { itens: { ficha_id: string; formas: number }[] }).itens ?? []
+    const novo: Record<string, string> = {}
+    for (const f of fichas) {
+      const formas = itens.filter(i => i.ficha_id === f.id).reduce((s, i) => s + i.formas, 0)
+      const un = formas * (f.rendimento_fornada ?? 0)
+      if (un > 0) novo[f.id] = String(un)
+    }
+
+    if (Object.keys(novo).length === 0) {
+      setErro('O plano desta semana está sem produção lançada.')
+      return
+    }
+    setModo('unidades')
+    setAlvo(novo)
+  }
+
   /** Quanto cada ficha representa da produção total. */
   const participacao = (unidades: number) =>
     totalUnidades > 0 ? (100 * unidades) / totalUnidades : 0
@@ -329,6 +369,12 @@ export function ReabastecimentoPage() {
           subtitle={modo === 'unidades'
             ? 'Quantas unidades de cada produto você quer produzir'
             : 'Quanto no total e como isso se reparte entre os produtos'}
+          action={
+            <Button variant="ghost" size="sm" onClick={puxarDoPlano}
+                    title="Preenche com o plano de produção desta semana">
+              Usar o plano da semana
+            </Button>
+          }
         />
         <CardBody className="space-y-3">
           {/* Dois caminhos para a mesma coisa: às vezes se sabe a meta de cada

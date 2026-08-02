@@ -182,12 +182,25 @@ const printStyles = `
   }
 `
 
-export function PlanejadorRecipientesPage() {
+/**
+ * Vive dentro do PlanejadorPage, como a aba "Dia". A aba "Semana" manda para
+ * cá as formas de um dia — daí `formasIniciais` chegar por prop em vez de por
+ * navegação: as duas abas são a mesma página.
+ */
+export function PlanejadorRecipientesPage({
+  formasIniciais,
+}: { formasIniciais?: Record<string, string> } = {}) {
   const { profile } = useAuth()
   const navigate = useNavigate()
 
   const [fichas, setFichas] = useState<FichaOption[]>([])
-  const [formas, setFormas] = useState<Record<string, string>>({})
+  const [formas, setFormas] = useState<Record<string, string>>(formasIniciais ?? {})
+
+  // Veio de um dia da semana: substitui o que estava digitado. O objeto é
+  // recriado a cada clique lá, então a identidade serve de gatilho.
+  useEffect(() => {
+    if (formasIniciais) setFormas(formasIniciais)
+  }, [formasIniciais])
   const [linhas, setLinhas] = useState<LinhaPlano[]>([])
   const [lotes, setLotes] = useState<LoteSugerido[]>([])
   const [abastecimento, setAbastecimento] = useState<LinhaAbastecimento[]>([])
@@ -290,14 +303,7 @@ export function PlanejadorRecipientesPage() {
   if (loading) return <p className="p-6 text-sm text-gray-500">Carregando fichas…</p>
 
   return (
-    <div className="p-4 sm:p-6 space-y-5 max-w-6xl">
-      <div>
-        <h1 className="text-xl font-bold text-gray-900 dark:text-gray-100">Planejador de Recipientes</h1>
-        <p className="text-sm text-gray-500 dark:text-unno-muted mt-1">
-          Quantos recipientes precisam estar abastecidos antes de a produção começar.
-        </p>
-      </div>
-
+    <div className="space-y-5">
       {/* ── Entrada: formas por ficha ─────────────────────── */}
       <Card>
         <CardHeader
