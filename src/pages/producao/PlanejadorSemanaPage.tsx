@@ -155,7 +155,8 @@ function CampoNumerico({
   onDigitar: (v: string) => void
   onPasso: (delta: -1 | 1) => void
   onSair?: () => void
-  sufixo: string
+  /** Rótulo à direita. Omitido quando a unidade já está clara pelo contexto. */
+  sufixo?: string
   passo?: number
   min?: number
   max?: number
@@ -237,7 +238,7 @@ function CampoNumerico({
                    [&::-webkit-inner-spin-button]:appearance-none`}
       />
       {botao(1, '+', max != null && numero >= max)}
-      <span className="text-xs text-gray-400 w-14 shrink-0">{sufixo}</span>
+      {sufixo && <span className="text-xs text-gray-400 w-14 shrink-0">{sufixo}</span>}
     </div>
   )
 }
@@ -658,6 +659,16 @@ export function PlanejadorSemanaPage({
     setAjustado(false)   // ordem nova pede distribuição nova
   }
 
+  /** Tira toda a produção de um dia. Redistribuir a mão pede um ponto zero. */
+  function zerarDia(dia: string) {
+    setAjustado(true)
+    setGrade(g => {
+      const novo = { ...g }
+      for (const f of fichas) delete novo[chave(dia, f.id)]
+      return novo
+    })
+  }
+
   function alternarDia(dia: string) {
     setDiasAtivos(d => (d.includes(dia) ? d.filter(x => x !== dia) : [...d, dia].sort()))
     setAjustado(false)
@@ -816,332 +827,68 @@ export function PlanejadorSemanaPage({
     <div className="space-y-5" ref={topoRef}>
       <style>{printStyles}</style>
 
-      {/* ── Semana ──────────────────────────────────────────── */}
-      <Card>
-        <CardBody className="flex items-center justify-between gap-3 py-3">
-          <Button variant="ghost" size="sm" onClick={() => setSemana(s => somarDias(s, -7))}>
-            ‹ Anterior
-          </Button>
-          <div className="text-center">
-            <p className="text-sm font-semibold text-gray-900 dark:text-unno-text">
-              {diaCurto(semana).slice(4)} a {diaCurto(fimSemana).slice(4)}
-            </p>
-            <p className="text-xs text-gray-500 dark:text-unno-muted">
-              {salvoEm ? 'plano salvo' : 'não salvo ainda'}
-            </p>
-          </div>
-          <Button variant="ghost" size="sm" onClick={() => setSemana(s => somarDias(s, 7))}>
-            Próxima ›
-          </Button>
-        </CardBody>
-      </Card>
-
-      {/* ── Meta da semana ──────────────────────────────────── */}
-      <Card>
-        <CardHeader
-          title="Meta da semana"
-          subtitle={modo === 'unidades'
-            ? 'Quantas unidades de cada produto na semana toda'
-            : 'Quanto no total e como isso se reparte'}
-        />
-        <CardBody className="space-y-3">
-          <div className="flex gap-1 p-1 bg-gray-100 dark:bg-white/[.04] rounded-lg">
-            {([['unidades', 'Por produto'], ['percentual', 'Total e %']] as const).map(([key, label]) => (
-              <button
-                key={key}
-                type="button"
-                onClick={() => {
-                  if (key === modo) return
-                  if (key === 'percentual') {
-                    setTotalDigitado(totalUnidadesMeta > 0 ? String(totalUnidadesMeta) : '')
-                    setPct(Object.fromEntries(fichas.map(f => {
-                      const u = alvoEfetivo[f.id] ?? 0
-                      const p = totalUnidadesMeta > 0 ? (100 * u) / totalUnidadesMeta : 0
-                      return [f.id, p > 0 ? String(Math.round(p * 10) / 10) : '']
-                    })))
-                  } else {
-                    setAlvo(Object.fromEntries(fichas.map(f => {
-                      const u = alvoEfetivo[f.id] ?? 0
-                      return [f.id, u > 0 ? String(u) : '']
-                    })))
-                  }
-                  setModo(key)
-                }}
-                className={[
-                  'flex-1 px-3 py-1.5 text-sm font-medium rounded-md transition-colors',
-                  modo === key
-                    ? 'bg-white dark:bg-unno-raised text-gray-900 dark:text-unno-text shadow-sm'
-                    : 'text-gray-500 hover:text-gray-700 dark:text-unno-muted',
-                ].join(' ')}
-              >
-                {label}
-              </button>
-            ))}
-          </div>
-
-          {/* Tudo num grid só — total e produtos.
-              Cada linha era um bloco independente, então nada compartilhava as
-              mesmas colunas: as caixas de número acabavam em posições
-              diferentes e as barras tinham comprimentos diferentes. Num grid
-              único a coluna da direita é dimensionada pelo controle mais largo
-              e todas as linhas terminam no mesmo lugar. */}
-          <div className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-3 gap-y-1.5">
-            {modo === 'percentual' && (
-              <>
-                <p className="text-sm font-medium text-gray-900 dark:text-unno-text">
-                  Produção total da semana
-                </p>
-                <CampoNumerico
-                  valor={totalDigitado}
-                  onDigitar={v => { setTotalDigitado(v); setAjustado(false) }}
-                  onPasso={d => {
-                    setTotalDigitado(v => {
-                      const atual = parseFloat((v ?? '').replace(',', '.')) || 0
-                      const n = Math.max(0, Math.round(atual / passoTotalEfetivo) + d) * passoTotalEfetivo
-                      return n > 0 ? String(n) : ''
-                    })
-                    setAjustado(false)
-                  }}
-                  passo={passoTotalEfetivo}
-                  sufixo="unidades"
-                />
-                {/* separador entre o total e os produtos */}
-                <div className="col-span-2 h-px bg-gray-100 dark:bg-white/[.06] my-1" />
-              </>
-            )}
-
-            {fichas.map(f => {
-              const m = metas.find(x => x.ficha.id === f.id)
-              const unidades = alvoEfetivo[f.id] ?? 0
-              const part = totalUnidadesMeta > 0 ? (100 * unidades) / totalUnidadesMeta : 0
-              const ultima = m ? formasNaUltimaBatelada(m.formas) : 0
-              // Escada de quatro degraus: quanto menos massa sobra na última
-              // batelada, mais o forno precisa ser reprogramado. Uma forma
-              // sozinha é o pior caso.
-              // O limão vai como valor direto e não pelo token do tema
-              // (`unno.lime`): cor nova no tailwind.config só aparece depois de
-              // reiniciar o servidor, e escrita assim funciona na hora.
-              const cor = { 1: 'bg-red-500', 2: 'bg-unno-amber',
-                            3: 'bg-[#8cbf3f]', 4: 'bg-brand-500' }[ultima] ?? 'bg-brand-500'
-              const corTexto = { 1: 'text-red-600', 2: 'text-amber-700',
-                                 3: 'text-lime-700',
-                                 4: 'text-gray-500 dark:text-unno-muted' }[ultima]
-                ?? 'text-gray-500 dark:text-unno-muted'
-
-              return (
-                <Fragment key={f.id}>
-                  <p className="text-sm font-medium text-gray-900 dark:text-unno-text truncate">
-                    {f.codigo} — {f.nome}
-                  </p>
-
-                  {modo === 'unidades' ? (
-                    <CampoNumerico
-                      valor={alvo[f.id] ?? ''}
-                      onDigitar={v => { setAlvo(s => ({ ...s, [f.id]: v })); setAjustado(false) }}
-                      onPasso={d => passoFormas(f, d)}
-                      onSair={() => encaixarFormas(f)}
-                      passo={passoDe(f.rendimento_fornada ?? 0) || 1}
-                      sufixo="unidades"
-                      desabilitado={!f.rendimento_fornada}
-                    />
-                  ) : (
-                    <CampoNumerico
-                      valor={pct[f.id] ?? ''}
-                      onDigitar={v => { setPct(s => ({ ...s, [f.id]: v })); setAjustado(false) }}
-                      onPasso={d => {
-                        setPct(s => {
-                          const atual = parseFloat((s[f.id] ?? '').replace(',', '.')) || 0
-                          const n = Math.min(100, Math.max(0, Math.round(atual) + d))
-                          return { ...s, [f.id]: n > 0 ? String(n) : '' }
-                        })
-                        setAjustado(false)
-                      }}
-                      passo={1}
-                      max={100}
-                      sufixo="%"
-                    />
-                  )}
-
-                  {/* Participação na produção total */}
-                  {unidades > 0 && (
-                    <>
-                      <div className="h-1.5 rounded-full bg-gray-100 dark:bg-white/[.06] overflow-hidden">
-                        <div className="h-full bg-brand-500 rounded-full"
-                             style={{ width: `${Math.min(part, 100)}%` }} />
-                      </div>
-                      {/* No percentual quem foi digitado é o %, então o número
-                          que falta ver é quantas unidades a fatia virou. */}
-                      <span className="text-xs text-gray-500 dark:text-unno-muted tabular-nums whitespace-nowrap text-right">
-                        {modo === 'percentual' && `${fmt(unidades)} un · `}
-                        {m ? `${m.formas} formas · ${m.bateladas} bat` : ''}
-                        {modo === 'unidades' && ` · ${fmt(part, 1)}%`}
-                      </span>
-                    </>
-                  )}
-
-                  {/* A última batelada, em quatro divisões */}
-                  {m && m.formas > 0 && (
-                    <>
-                      <div className="flex gap-0.5">
-                        {Array.from({ length: FORMAS_POR_BATELADA }, (_, i) => (
-                          <div
-                            key={i}
-                            className={`h-1.5 flex-1 rounded-[2px] ${
-                              i < ultima ? cor : 'bg-gray-100 dark:bg-white/[.06]'
-                            }`}
-                          />
-                        ))}
-                      </div>
-                      <span className={`text-xs tabular-nums whitespace-nowrap text-right ${corTexto}`}>
-                        última batelada: {ultima} de {FORMAS_POR_BATELADA} formas
-                      </span>
-                    </>
-                  )}
-
-                  {unidades > 0 && !f.rendimento_fornada && (
-                    <p className="col-span-2 text-xs text-red-600">
-                      Sem rendimento cadastrado — Configurações → Produção.
-                    </p>
-                  )}
-
-                  {/* respiro entre produtos, sem quebrar as colunas */}
-                  <div className="col-span-2 h-1" />
-                </Fragment>
-              )
-            })}
-          </div>
-
-          {/* Encaixar em bateladas cheias: o passo vira 4 formas e a última
-              batelada nunca sai pela metade. Fica como escolha, e não como
-              regra fixa — às vezes a meta importa mais que o forno. */}
-          <label className="flex items-start gap-2 cursor-pointer select-none">
-            <input
-              type="checkbox"
-              checked={fecharBateladas}
-              onChange={e => {
-                setFecharBateladas(e.target.checked)
-                if (e.target.checked) {
-                  // Encaixa o que já está digitado, senão a opção só valeria
-                  // para os próximos números.
-                  setAlvo(s => Object.fromEntries(fichas.map(f => {
-                    const passo = (f.rendimento_fornada ?? 0) * FORMAS_POR_BATELADA
-                    const atual = parseFloat((s[f.id] ?? '').replace(',', '.')) || 0
-                    const n = passo > 0 ? snapUnidades(atual, passo) : atual
-                    return [f.id, n > 0 ? String(n) : '']
-                  })))
-                }
-                setAjustado(false)
-              }}
-              className="mt-0.5 w-4 h-4 rounded border-gray-300 text-brand-600
-                         focus:ring-brand-500/30 dark:border-white/[.15]"
-            />
-            <span className="text-sm text-gray-700 dark:text-unno-text">
-              Fechar bateladas cheias
-              <span className="block text-xs text-gray-500 dark:text-unno-muted">
-                A meta anda de {FORMAS_POR_BATELADA} em {FORMAS_POR_BATELADA} formas
-                e a última batelada nunca sai pela metade — o forno não precisa
-                ser reprogramado no fim.
-              </span>
-            </span>
-          </label>
-
-          {/* O total acompanha a digitação. Antes só existia no rodapé da
-              página, longe de onde os números são mexidos. */}
-          {metas.length > 0 && (
-            <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1
-                            bg-gray-50 dark:bg-white/[.03] rounded-lg px-3 py-2">
-              <span className="text-sm font-medium text-gray-900 dark:text-unno-text">
-                {fmt(totalUnidadesMeta)} unidades na semana
-              </span>
-              <span className="text-xs text-gray-600 dark:text-unno-muted tabular-nums">
-                {metas.reduce((s, m) => s + m.formas, 0)} formas ·{' '}
-                {metas.reduce((s, m) => s + m.bateladas, 0)} bateladas
-                {diasAtivos.length > 0 && (
-                  <> · {fmt(
-                    Math.round(metas.reduce((s, m) => s + m.formas, 0) / diasAtivos.length),
-                  )} formas/dia em média</>
-                )}
-              </span>
-            </div>
-          )}
-
-          {modo === 'percentual' && totalPct > 0 && Math.abs(totalPct - 100) > 0.05 && (
-            <div className={`p-3 rounded-lg text-sm ${
-              totalPct > 100
-                ? 'bg-red-50 border border-red-200 text-red-700'
-                : 'bg-amber-50 border border-amber-200 text-amber-800'
-            }`}>
-              Os percentuais somam <strong>{fmt(totalPct, 1)}%</strong>.
-              {totalPct > 100 ? ' Passa de 100%.' : ` Faltam ${fmt(100 - totalPct, 1)}%.`}
-            </div>
-          )}
-        </CardBody>
-      </Card>
-
-      {/* ── Dias ────────────────────────────────────────────── */}
-      <Card>
-        <CardHeader
-          title="Dias e distribuição"
-          subtitle="Desmarque feriado ou dia de parada, e escolha como a meta vira dias."
-          action={
-            <Button
-              variant="ghost" size="sm"
-              disabled={!ajustado || preenchimento === 'manual'}
-              onClick={() => { setAjustado(false); setGrade(distribuir()) }}
-              title={preenchimento === 'manual'
-                ? 'No modo manual o sistema não distribui'
-                : ajustado ? 'Desfaz os ajustes manuais' : 'Já está distribuído automaticamente'}
-            >
-              Redistribuir
+      {/* ── Página em duas colunas ─────────────────────────────
+          A coluna da direita acompanha desde o topo, e não só a partir dos
+          cards de dia: quem está mexendo na meta também quer ver o saldo e o
+          botão de salvar. As três áreas são posicionadas explicitamente para
+          que, no celular (uma coluna só), a ordem continue sendo configuração
+          → acompanhamento → dias. */}
+      <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_20rem]">
+        <div className="space-y-5 lg:col-start-1 lg:row-start-1">
+        {/* ── Semana ──────────────────────────────────────────── */}
+        <Card>
+          <CardBody className="flex items-center justify-between gap-3 py-3">
+            <Button variant="ghost" size="sm" onClick={() => setSemana(s => somarDias(s, -7))}>
+              ‹ Anterior
             </Button>
-          }
-        />
-        <CardBody className="space-y-4">
-          <div className="flex flex-wrap gap-2">
-            {diasDaSemana.map(d => {
-              const ativo = diasAtivos.includes(d)
-              return (
-                <button
-                  key={d}
-                  type="button"
-                  onClick={() => alternarDia(d)}
-                  className={[
-                    'px-3 py-1.5 rounded-lg text-sm font-medium border transition-colors',
-                    ativo
-                      ? 'bg-brand-50 border-brand-300 text-brand-700 dark:bg-brand-500/10 dark:border-brand-500/40 dark:text-brand-300'
-                      : 'bg-white border-gray-200 text-gray-400 dark:bg-transparent dark:border-white/[.08]',
-                  ].join(' ')}
-                >
-                  {diaCurto(d)}
-                </button>
-              )
-            })}
-          </div>
+            <div className="text-center">
+              <p className="text-sm font-semibold text-gray-900 dark:text-unno-text">
+                {diaCurto(semana).slice(4)} a {diaCurto(fimSemana).slice(4)}
+              </p>
+              <p className="text-xs text-gray-500 dark:text-unno-muted">
+                {salvoEm ? 'plano salvo' : 'não salvo ainda'}
+              </p>
+            </div>
+            <Button variant="ghost" size="sm" onClick={() => setSemana(s => somarDias(s, 7))}>
+              Próxima ›
+            </Button>
+          </CardBody>
+        </Card>
 
-          {/* Como preencher — mesma ideia do toggle da meta */}
-          <div>
-            <p className="text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-unno-muted mb-1.5">
-              Como preencher a semana
-            </p>
+        {/* ── Meta da semana ──────────────────────────────────── */}
+        <Card>
+          <CardHeader
+            title="Meta da semana"
+            subtitle={modo === 'unidades'
+              ? 'Quantas unidades de cada produto na semana toda'
+              : 'Quanto no total e como isso se reparte'}
+          />
+          <CardBody className="space-y-3">
             <div className="flex gap-1 p-1 bg-gray-100 dark:bg-white/[.04] rounded-lg">
-              {([
-                ['blocos', 'Um sabor por dia'],
-                ['igual', 'Mix igual todo dia'],
-                ['manual', 'Eu distribuo'],
-              ] as const).map(([key, label]) => (
+              {([['unidades', 'Por produto'], ['percentual', 'Total e %']] as const).map(([key, label]) => (
                 <button
                   key={key}
                   type="button"
                   onClick={() => {
-                    if (key === preenchimento) return
-                    setPreenchimento(key)
-                    // Trocar de modo é pedir para recalcular; manual mantém o
-                    // que está na tela para servir de ponto de partida.
-                    setAjustado(key === 'manual')
+                    if (key === modo) return
+                    if (key === 'percentual') {
+                      setTotalDigitado(totalUnidadesMeta > 0 ? String(totalUnidadesMeta) : '')
+                      setPct(Object.fromEntries(fichas.map(f => {
+                        const u = alvoEfetivo[f.id] ?? 0
+                        const p = totalUnidadesMeta > 0 ? (100 * u) / totalUnidadesMeta : 0
+                        return [f.id, p > 0 ? String(Math.round(p * 10) / 10) : '']
+                      })))
+                    } else {
+                      setAlvo(Object.fromEntries(fichas.map(f => {
+                        const u = alvoEfetivo[f.id] ?? 0
+                        return [f.id, u > 0 ? String(u) : '']
+                      })))
+                    }
+                    setModo(key)
                   }}
                   className={[
-                    'flex-1 px-2 py-1.5 text-sm font-medium rounded-md transition-colors',
-                    preenchimento === key
+                    'flex-1 px-3 py-1.5 text-sm font-medium rounded-md transition-colors',
+                    modo === key
                       ? 'bg-white dark:bg-unno-raised text-gray-900 dark:text-unno-text shadow-sm'
                       : 'text-gray-500 hover:text-gray-700 dark:text-unno-muted',
                   ].join(' ')}
@@ -1150,66 +897,336 @@ export function PlanejadorSemanaPage({
                 </button>
               ))}
             </div>
-            <p className="text-xs text-gray-500 dark:text-unno-muted mt-1.5">
-              {preenchimento === 'blocos'
-                ? 'Enche cada dia com um sabor só; a lavagem acontece na troca.'
-                : preenchimento === 'igual'
-                  ? 'Todo dia produz os dois, na mesma proporção da meta.'
-                  : 'O sistema não distribui — você preenche os dias como quiser.'}
-            </p>
-          </div>
 
-          {/* Prioridade: só muda o resultado no modo blocos */}
-          {preenchimento === 'blocos' && fichasOrdenadas.length > 1 && (
+            {/* Tudo num grid só — total e produtos.
+                Cada linha era um bloco independente, então nada compartilhava as
+                mesmas colunas: as caixas de número acabavam em posições
+                diferentes e as barras tinham comprimentos diferentes. Num grid
+                único a coluna da direita é dimensionada pelo controle mais largo
+                e todas as linhas terminam no mesmo lugar. */}
+            <div className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-3 gap-y-1.5">
+              {modo === 'percentual' && (
+                <>
+                  <p className="text-sm font-medium text-gray-900 dark:text-unno-text">
+                    Produção total da semana
+                  </p>
+                  <CampoNumerico
+                    valor={totalDigitado}
+                    onDigitar={v => { setTotalDigitado(v); setAjustado(false) }}
+                    onPasso={d => {
+                      setTotalDigitado(v => {
+                        const atual = parseFloat((v ?? '').replace(',', '.')) || 0
+                        const n = Math.max(0, Math.round(atual / passoTotalEfetivo) + d) * passoTotalEfetivo
+                        return n > 0 ? String(n) : ''
+                      })
+                      setAjustado(false)
+                    }}
+                    passo={passoTotalEfetivo}
+                    sufixo="unidades"
+                  />
+                  {/* separador entre o total e os produtos */}
+                  <div className="col-span-2 h-px bg-gray-100 dark:bg-white/[.06] my-1" />
+                </>
+              )}
+
+              {fichas.map(f => {
+                const m = metas.find(x => x.ficha.id === f.id)
+                const unidades = alvoEfetivo[f.id] ?? 0
+                const part = totalUnidadesMeta > 0 ? (100 * unidades) / totalUnidadesMeta : 0
+                const ultima = m ? formasNaUltimaBatelada(m.formas) : 0
+                // Escada de quatro degraus: quanto menos massa sobra na última
+                // batelada, mais o forno precisa ser reprogramado. Uma forma
+                // sozinha é o pior caso.
+                // O limão vai como valor direto e não pelo token do tema
+                // (`unno.lime`): cor nova no tailwind.config só aparece depois de
+                // reiniciar o servidor, e escrita assim funciona na hora.
+                const cor = { 1: 'bg-red-500', 2: 'bg-unno-amber',
+                              3: 'bg-[#8cbf3f]', 4: 'bg-brand-500' }[ultima] ?? 'bg-brand-500'
+                const corTexto = { 1: 'text-red-600', 2: 'text-amber-700',
+                                   3: 'text-lime-700',
+                                   4: 'text-gray-500 dark:text-unno-muted' }[ultima]
+                  ?? 'text-gray-500 dark:text-unno-muted'
+
+                return (
+                  <Fragment key={f.id}>
+                    <p className="text-sm font-medium text-gray-900 dark:text-unno-text truncate">
+                      {f.codigo} — {f.nome}
+                    </p>
+
+                    {modo === 'unidades' ? (
+                      <CampoNumerico
+                        valor={alvo[f.id] ?? ''}
+                        onDigitar={v => { setAlvo(s => ({ ...s, [f.id]: v })); setAjustado(false) }}
+                        onPasso={d => passoFormas(f, d)}
+                        onSair={() => encaixarFormas(f)}
+                        passo={passoDe(f.rendimento_fornada ?? 0) || 1}
+                        sufixo="unidades"
+                        desabilitado={!f.rendimento_fornada}
+                      />
+                    ) : (
+                      <CampoNumerico
+                        valor={pct[f.id] ?? ''}
+                        onDigitar={v => { setPct(s => ({ ...s, [f.id]: v })); setAjustado(false) }}
+                        onPasso={d => {
+                          setPct(s => {
+                            const atual = parseFloat((s[f.id] ?? '').replace(',', '.')) || 0
+                            const n = Math.min(100, Math.max(0, Math.round(atual) + d))
+                            return { ...s, [f.id]: n > 0 ? String(n) : '' }
+                          })
+                          setAjustado(false)
+                        }}
+                        passo={1}
+                        max={100}
+                        sufixo="%"
+                      />
+                    )}
+
+                    {/* Participação na produção total */}
+                    {unidades > 0 && (
+                      <>
+                        <div className="h-1.5 rounded-full bg-gray-100 dark:bg-white/[.06] overflow-hidden">
+                          <div className="h-full bg-brand-500 rounded-full"
+                               style={{ width: `${Math.min(part, 100)}%` }} />
+                        </div>
+                        {/* No percentual quem foi digitado é o %, então o número
+                            que falta ver é quantas unidades a fatia virou. */}
+                        <span className="text-xs text-gray-500 dark:text-unno-muted tabular-nums whitespace-nowrap text-right">
+                          {modo === 'percentual' && `${fmt(unidades)} un · `}
+                          {m ? `${m.formas} formas · ${m.bateladas} bat` : ''}
+                          {modo === 'unidades' && ` · ${fmt(part, 1)}%`}
+                        </span>
+                      </>
+                    )}
+
+                    {/* A última batelada, em quatro divisões */}
+                    {m && m.formas > 0 && (
+                      <>
+                        <div className="flex gap-0.5">
+                          {Array.from({ length: FORMAS_POR_BATELADA }, (_, i) => (
+                            <div
+                              key={i}
+                              className={`h-1.5 flex-1 rounded-[2px] ${
+                                i < ultima ? cor : 'bg-gray-100 dark:bg-white/[.06]'
+                              }`}
+                            />
+                          ))}
+                        </div>
+                        <span className={`text-xs tabular-nums whitespace-nowrap text-right ${corTexto}`}>
+                          última batelada: {ultima} de {FORMAS_POR_BATELADA} formas
+                        </span>
+                      </>
+                    )}
+
+                    {unidades > 0 && !f.rendimento_fornada && (
+                      <p className="col-span-2 text-xs text-red-600">
+                        Sem rendimento cadastrado — Configurações → Produção.
+                      </p>
+                    )}
+
+                    {/* respiro entre produtos, sem quebrar as colunas */}
+                    <div className="col-span-2 h-1" />
+                  </Fragment>
+                )
+              })}
+            </div>
+
+            {/* Encaixar em bateladas cheias: o passo vira 4 formas e a última
+                batelada nunca sai pela metade. Fica como escolha, e não como
+                regra fixa — às vezes a meta importa mais que o forno. */}
+            <label className="flex items-start gap-2 cursor-pointer select-none">
+              <input
+                type="checkbox"
+                checked={fecharBateladas}
+                onChange={e => {
+                  setFecharBateladas(e.target.checked)
+                  if (e.target.checked) {
+                    // Encaixa o que já está digitado, senão a opção só valeria
+                    // para os próximos números.
+                    setAlvo(s => Object.fromEntries(fichas.map(f => {
+                      const passo = (f.rendimento_fornada ?? 0) * FORMAS_POR_BATELADA
+                      const atual = parseFloat((s[f.id] ?? '').replace(',', '.')) || 0
+                      const n = passo > 0 ? snapUnidades(atual, passo) : atual
+                      return [f.id, n > 0 ? String(n) : '']
+                    })))
+                  }
+                  setAjustado(false)
+                }}
+                className="mt-0.5 w-4 h-4 rounded border-gray-300 text-brand-600
+                           focus:ring-brand-500/30 dark:border-white/[.15]"
+              />
+              <span className="text-sm text-gray-700 dark:text-unno-text">
+                Fechar bateladas cheias
+                <span className="block text-xs text-gray-500 dark:text-unno-muted">
+                  A meta anda de {FORMAS_POR_BATELADA} em {FORMAS_POR_BATELADA} formas
+                  e a última batelada nunca sai pela metade — o forno não precisa
+                  ser reprogramado no fim.
+                </span>
+              </span>
+            </label>
+
+            {/* O total acompanha a digitação. Antes só existia no rodapé da
+                página, longe de onde os números são mexidos. */}
+            {metas.length > 0 && (
+              <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1
+                              bg-gray-50 dark:bg-white/[.03] rounded-lg px-3 py-2">
+                <span className="text-sm font-medium text-gray-900 dark:text-unno-text">
+                  {fmt(totalUnidadesMeta)} unidades na semana
+                </span>
+                <span className="text-xs text-gray-600 dark:text-unno-muted tabular-nums">
+                  {metas.reduce((s, m) => s + m.formas, 0)} formas ·{' '}
+                  {metas.reduce((s, m) => s + m.bateladas, 0)} bateladas
+                  {diasAtivos.length > 0 && (
+                    <> · {fmt(
+                      Math.round(metas.reduce((s, m) => s + m.formas, 0) / diasAtivos.length),
+                    )} formas/dia em média</>
+                  )}
+                </span>
+              </div>
+            )}
+
+            {modo === 'percentual' && totalPct > 0 && Math.abs(totalPct - 100) > 0.05 && (
+              <div className={`p-3 rounded-lg text-sm ${
+                totalPct > 100
+                  ? 'bg-red-50 border border-red-200 text-red-700'
+                  : 'bg-amber-50 border border-amber-200 text-amber-800'
+              }`}>
+                Os percentuais somam <strong>{fmt(totalPct, 1)}%</strong>.
+                {totalPct > 100 ? ' Passa de 100%.' : ` Faltam ${fmt(100 - totalPct, 1)}%.`}
+              </div>
+            )}
+          </CardBody>
+        </Card>
+
+        {/* ── Dias ────────────────────────────────────────────── */}
+        <Card>
+          <CardHeader
+            title="Dias e distribuição"
+            subtitle="Desmarque feriado ou dia de parada, e escolha como a meta vira dias."
+            action={
+              <Button
+                variant="ghost" size="sm"
+                disabled={!ajustado || preenchimento === 'manual'}
+                onClick={() => { setAjustado(false); setGrade(distribuir()) }}
+                title={preenchimento === 'manual'
+                  ? 'No modo manual o sistema não distribui'
+                  : ajustado ? 'Desfaz os ajustes manuais' : 'Já está distribuído automaticamente'}
+              >
+                Redistribuir
+              </Button>
+            }
+          />
+          <CardBody className="space-y-4">
+            <div className="flex flex-wrap gap-2">
+              {diasDaSemana.map(d => {
+                const ativo = diasAtivos.includes(d)
+                return (
+                  <button
+                    key={d}
+                    type="button"
+                    onClick={() => alternarDia(d)}
+                    className={[
+                      'px-3 py-1.5 rounded-lg text-sm font-medium border transition-colors',
+                      ativo
+                        ? 'bg-brand-50 border-brand-300 text-brand-700 dark:bg-brand-500/10 dark:border-brand-500/40 dark:text-brand-300'
+                        : 'bg-white border-gray-200 text-gray-400 dark:bg-transparent dark:border-white/[.08]',
+                    ].join(' ')}
+                  >
+                    {diaCurto(d)}
+                  </button>
+                )
+              })}
+            </div>
+
+            {/* Como preencher — mesma ideia do toggle da meta */}
             <div>
               <p className="text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-unno-muted mb-1.5">
-                Ordem na semana
+                Como preencher a semana
               </p>
-              <div className="space-y-1">
-                {fichasOrdenadas.map((f, i) => (
-                  <div key={f.id} className="flex items-center gap-2">
-                    <span className="w-5 text-xs text-gray-400 tabular-nums">{i + 1}º</span>
-                    <p className="flex-1 min-w-0 text-sm text-gray-700 dark:text-unno-text truncate">
-                      <span className="text-gray-400 mr-1.5">{f.codigo}</span>{f.nome}
-                    </p>
-                    <button
-                      type="button"
-                      disabled={i === 0}
-                      onClick={() => moverFicha(i, -1)}
-                      className="px-2 py-1 rounded border border-gray-200 text-gray-600 text-xs
-                                 disabled:opacity-30 hover:bg-gray-50 dark:border-white/[.08]"
-                      title="Subir"
-                    >
-                      ↑
-                    </button>
-                    <button
-                      type="button"
-                      disabled={i === fichasOrdenadas.length - 1}
-                      onClick={() => moverFicha(i, 1)}
-                      className="px-2 py-1 rounded border border-gray-200 text-gray-600 text-xs
-                                 disabled:opacity-30 hover:bg-gray-50 dark:border-white/[.08]"
-                      title="Descer"
-                    >
-                      ↓
-                    </button>
-                  </div>
+              <div className="flex gap-1 p-1 bg-gray-100 dark:bg-white/[.04] rounded-lg">
+                {([
+                  ['blocos', 'Um sabor por dia'],
+                  ['igual', 'Mix igual todo dia'],
+                  ['manual', 'Eu distribuo'],
+                ] as const).map(([key, label]) => (
+                  <button
+                    key={key}
+                    type="button"
+                    onClick={() => {
+                      if (key === preenchimento) return
+                      setPreenchimento(key)
+                      // Trocar de modo é pedir para recalcular; manual mantém o
+                      // que está na tela para servir de ponto de partida.
+                      setAjustado(key === 'manual')
+                    }}
+                    className={[
+                      'flex-1 px-2 py-1.5 text-sm font-medium rounded-md transition-colors',
+                      preenchimento === key
+                        ? 'bg-white dark:bg-unno-raised text-gray-900 dark:text-unno-text shadow-sm'
+                        : 'text-gray-500 hover:text-gray-700 dark:text-unno-muted',
+                    ].join(' ')}
+                  >
+                    {label}
+                  </button>
                 ))}
               </div>
               <p className="text-xs text-gray-500 dark:text-unno-muted mt-1.5">
-                Quem está em cima ocupa os primeiros dias da semana.
+                {preenchimento === 'blocos'
+                  ? 'Enche cada dia com um sabor só; a lavagem acontece na troca.'
+                  : preenchimento === 'igual'
+                    ? 'Todo dia produz os dois, na mesma proporção da meta.'
+                    : 'O sistema não distribui — você preenche os dias como quiser.'}
               </p>
             </div>
-          )}
-        </CardBody>
-      </Card>
 
-      {/* ── A semana repartida, com a coluna de acompanhamento ──
-          Os dias são longos e o saldo estava só no topo: para saber quanto
-          faltava era preciso subir e descer a cada dia preenchido. A coluna
-          fica grudada na tela enquanto se rola. No celular ela volta a ser um
-          card antes dos dias — não há espaço lateral para grudar. */}
-      <div className="grid gap-4 items-start lg:grid-cols-[minmax(0,1fr)_20rem]">
-        <aside className="order-1 lg:order-2 lg:sticky lg:top-4 space-y-3">
+            {/* Prioridade: só muda o resultado no modo blocos */}
+            {preenchimento === 'blocos' && fichasOrdenadas.length > 1 && (
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-unno-muted mb-1.5">
+                  Ordem na semana
+                </p>
+                <div className="space-y-1">
+                  {fichasOrdenadas.map((f, i) => (
+                    <div key={f.id} className="flex items-center gap-2">
+                      <span className="w-5 text-xs text-gray-400 tabular-nums">{i + 1}º</span>
+                      <p className="flex-1 min-w-0 text-sm text-gray-700 dark:text-unno-text truncate">
+                        <span className="text-gray-400 mr-1.5">{f.codigo}</span>{f.nome}
+                      </p>
+                      <button
+                        type="button"
+                        disabled={i === 0}
+                        onClick={() => moverFicha(i, -1)}
+                        className="px-2 py-1 rounded border border-gray-200 text-gray-600 text-xs
+                                   disabled:opacity-30 hover:bg-gray-50 dark:border-white/[.08]"
+                        title="Subir"
+                      >
+                        ↑
+                      </button>
+                      <button
+                        type="button"
+                        disabled={i === fichasOrdenadas.length - 1}
+                        onClick={() => moverFicha(i, 1)}
+                        className="px-2 py-1 rounded border border-gray-200 text-gray-600 text-xs
+                                   disabled:opacity-30 hover:bg-gray-50 dark:border-white/[.08]"
+                        title="Descer"
+                      >
+                        ↓
+                      </button>
+                    </div>
+                  ))}
+                </div>
+                <p className="text-xs text-gray-500 dark:text-unno-muted mt-1.5">
+                  Quem está em cima ocupa os primeiros dias da semana.
+                </p>
+              </div>
+            )}
+          </CardBody>
+        </Card>
+
+        </div>
+
+        {/* `self-start` é o que deixa a coluna grudar: sem ele o item de grid
+            estica até o fim das duas linhas e não sobra folga para rolar. */}
+        <aside className="space-y-3 self-start lg:col-start-2 lg:row-start-1 lg:row-span-2 lg:sticky lg:top-4">
           {/* Resumo do que ficou lá em cima, para não precisar voltar */}
           {metas.length > 0 && (
             <Card>
@@ -1314,7 +1331,7 @@ export function PlanejadorSemanaPage({
           )}
         </aside>
 
-        <div className="order-2 lg:order-1 space-y-3">
+        <div className="space-y-3 lg:col-start-1 lg:row-start-2">
           {porDia.map(d => (
             <Card key={d.dia}>
               <CardBody className="space-y-3">
@@ -1354,14 +1371,19 @@ export function PlanejadorSemanaPage({
                         <p className="flex-1 min-w-0 text-sm text-gray-700 dark:text-unno-text truncate">
                           <span className="text-gray-400 mr-1.5">{f.codigo}</span>{f.nome}
                         </p>
-                        <input
-                          type="number" min={0} step={1} inputMode="numeric"
-                          value={v || ''}
-                          onChange={e => editarDia(d.dia, f.id, e.target.value)}
-                          placeholder="0"
-                          className="w-20 rounded-lg border border-gray-300 bg-white px-2 py-1.5 text-sm text-right
-                                     focus:outline-none focus:border-brand-500 focus:ring-[3px] focus:ring-brand-500/10
-                                     dark:border-white/[.08] dark:bg-unno-raised dark:text-unno-text"
+                        {/* Aqui o campo é em FORMAS, não em unidades: o passo
+                            é uma forma, ou uma batelada com a opção ligada. */}
+                        <CampoNumerico
+                          valor={v ? String(v) : ''}
+                          onDigitar={valor => editarDia(d.dia, f.id, valor)}
+                          onPasso={delta => {
+                            const passo = fecharBateladas ? FORMAS_POR_BATELADA : 1
+                            const atual = grade[chave(d.dia, f.id)] ?? 0
+                            editarDia(d.dia, f.id,
+                              String(Math.max(0, Math.round(atual / passo) + delta) * passo))
+                          }}
+                          passo={fecharBateladas ? FORMAS_POR_BATELADA : 1}
+                          largura="w-20"
                         />
                         {/* O saldo desce de segunda em diante: o que sobra da
                             meta depois de abater este dia e os anteriores. */}
@@ -1454,6 +1476,9 @@ export function PlanejadorSemanaPage({
                             onClick={() => navigate('/producao/abrir', { state: { formas: formasDoDia(d.dia) } })}>
                       Abrir sessão
                     </Button>
+                    <Button size="sm" variant="ghost" onClick={() => zerarDia(d.dia)}>
+                      Zerar dia
+                    </Button>
                   </div>
                 )}
               </CardBody>
@@ -1461,7 +1486,6 @@ export function PlanejadorSemanaPage({
           ))}
         </div>
       </div>
-
       {/* ── Planejado × realizado ───────────────────────────── */}
       {temRealizado && (
         <Card>
