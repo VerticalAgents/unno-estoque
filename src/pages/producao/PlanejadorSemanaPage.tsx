@@ -139,6 +139,109 @@ const printStyles = `
   }
 `
 
+/**
+ * Campo numérico com as setas do lado de fora.
+ *
+ * As setas nativas são miúdas, só aparecem no hover e andam sempre de 1 em 1.
+ * Aqui o passo é definido por quem usa o campo (uma forma, um por cento), e
+ * segurar o botão acelera — meio segundo parado, depois cada vez mais rápido.
+ * Sem isso, sair de zero a seis mil é clicar cem vezes.
+ */
+function CampoNumerico({
+  valor, onDigitar, onPasso, onSair, sufixo,
+  passo = 1, min = 0, max, largura = 'w-24', desabilitado = false,
+}: {
+  valor: string
+  onDigitar: (v: string) => void
+  onPasso: (delta: -1 | 1) => void
+  onSair?: () => void
+  sufixo: string
+  passo?: number
+  min?: number
+  max?: number
+  largura?: string
+  desabilitado?: boolean
+}) {
+  const rep = useRef<{ espera?: number; timer?: number; repetiu?: boolean }>({})
+
+  function parar() {
+    window.clearTimeout(rep.current.espera)
+    window.clearTimeout(rep.current.timer)
+    rep.current.espera = undefined
+    rep.current.timer = undefined
+  }
+
+  function segurar(delta: -1 | 1) {
+    parar()
+    rep.current.espera = window.setTimeout(() => {
+      let ritmo = 140
+      const bater = () => {
+        rep.current.repetiu = true
+        onPasso(delta)
+        ritmo = Math.max(45, ritmo - 10)
+        rep.current.timer = window.setTimeout(bater, ritmo)
+      }
+      bater()
+    }, 450)
+  }
+
+  // Soltar fora da tela ou sair da página não pode deixar o contador correndo.
+  useEffect(() => () => parar(), [])
+
+  const numero = parseFloat((valor ?? '').replace(',', '.')) || 0
+
+  const botao = (delta: -1 | 1, rotulo: string, off: boolean) => (
+    <button
+      type="button"
+      disabled={desabilitado || off}
+      title={delta < 0 ? 'Diminuir' : 'Aumentar'}
+      // O clique dá o passo simples; segurar entra em repetição. Quando a
+      // repetição rodou, o clique da soltura é descartado para não somar
+      // um passo a mais no fim.
+      onClick={() => {
+        if (rep.current.repetiu) { rep.current.repetiu = false; return }
+        onPasso(delta)
+      }}
+      onPointerDown={() => segurar(delta)}
+      onPointerUp={parar}
+      onPointerLeave={parar}
+      onPointerCancel={parar}
+      className="w-8 h-9 shrink-0 rounded-lg border border-gray-300 text-gray-600 text-lg leading-none
+                 hover:bg-gray-50 disabled:opacity-30
+                 dark:border-white/[.08] dark:text-unno-muted"
+    >
+      {rotulo}
+    </button>
+  )
+
+  return (
+    <div className="flex items-center gap-1">
+      {botao(-1, '−', numero <= min)}
+      <input
+        type="number"
+        min={min}
+        max={max}
+        step={passo}
+        inputMode="decimal"
+        value={valor}
+        disabled={desabilitado}
+        onChange={e => onDigitar(e.target.value)}
+        onBlur={onSair}
+        placeholder="0"
+        className={`${largura} rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-right
+                   focus:outline-none focus:border-brand-500 focus:ring-[3px] focus:ring-brand-500/10
+                   disabled:bg-gray-50 disabled:text-gray-400
+                   dark:border-white/[.08] dark:bg-unno-raised dark:text-unno-text
+                   [appearance:textfield]
+                   [&::-webkit-outer-spin-button]:appearance-none
+                   [&::-webkit-inner-spin-button]:appearance-none`}
+      />
+      {botao(1, '+', max != null && numero >= max)}
+      <span className="text-xs text-gray-400 w-14 shrink-0">{sufixo}</span>
+    </div>
+  )
+}
+
 export function PlanejadorSemanaPage({
   onVerAbastecimento,
 }: {
@@ -191,12 +294,6 @@ export function PlanejadorSemanaPage({
 
   // Alvo do botão "editar" da coluna fixa.
   const topoRef = useRef<HTMLDivElement>(null)
-  // Estado do "segurar para acelerar" dos botões de forma.
-  const repeticao = useRef<{ espera?: number; timer?: number; repetiu?: boolean }>({})
-
-  // Soltar o botão fora da tela, trocar de aba ou sair da página não pode
-  // deixar o contador correndo sozinho.
-  useEffect(() => () => pararRepeticao(), [])
 
   const num = (s: string | undefined) => parseFloat((s ?? '').replace(',', '.')) || 0
 
@@ -372,6 +469,17 @@ export function PlanejadorSemanaPage({
     ]))
   }, [modo, fichas, alvo, totalDigitado, pct])
 
+  /**
+   * Passo do campo de produção total: uma forma, quando todos os produtos
+   * rendem igual. Rendimentos diferentes não têm passo comum — aí usa o menor,
+   * que é o que garante formas inteiras para todo mundo.
+   */
+  const passoTotal = useMemo(() => {
+    const rends = fichas.map(f => f.rendimento_fornada ?? 0).filter(r => r > 0)
+    if (rends.length === 0) return 1
+    return rends.every(r => r === rends[0]) ? rends[0] : Math.min(...rends)
+  }, [fichas])
+
   const totalPct = useMemo(() => fichas.reduce((s, f) => s + num(pct[f.id]), 0), [fichas, pct])
 
   /** As fichas na ordem de prioridade escolhida. */
@@ -508,32 +616,6 @@ export function PlanejadorSemanaPage({
       return { ...s, [f.id]: formas > 0 ? String(formas * rend) : '' }
     })
     setAjustado(false)
-  }
-
-  /**
-   * Segurar o botão acelera, como num campo numérico de verdade: meio segundo
-   * parado, depois passos cada vez mais rápidos. Sem isso, sair de 0 a 6.000
-   * unidades é clicar cem vezes.
-   */
-  function iniciarRepeticao(f: FichaOption, delta: -1 | 1) {
-    pararRepeticao()
-    repeticao.current.espera = window.setTimeout(() => {
-      let ritmo = 140
-      const passo = () => {
-        repeticao.current.repetiu = true
-        passoFormas(f, delta)
-        ritmo = Math.max(45, ritmo - 10)   // vai ganhando velocidade
-        repeticao.current.timer = window.setTimeout(passo, ritmo)
-      }
-      passo()
-    }, 450)
-  }
-
-  function pararRepeticao() {
-    window.clearTimeout(repeticao.current.espera)
-    window.clearTimeout(repeticao.current.timer)
-    repeticao.current.espera = undefined
-    repeticao.current.timer = undefined
   }
 
   /**
@@ -789,16 +871,21 @@ export function PlanejadorSemanaPage({
               <p className="flex-1 text-sm font-medium text-gray-900 dark:text-unno-text">
                 Produção total da semana
               </p>
-              <input
-                type="number" min={0} step={100} inputMode="numeric"
-                value={totalDigitado}
-                onChange={e => { setTotalDigitado(e.target.value); setAjustado(false) }}
-                placeholder="0"
-                className="w-32 rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-right font-semibold
-                           focus:outline-none focus:border-brand-500 focus:ring-[3px] focus:ring-brand-500/10
-                           dark:border-white/[.08] dark:bg-unno-raised dark:text-unno-text"
+              <CampoNumerico
+                valor={totalDigitado}
+                onDigitar={v => { setTotalDigitado(v); setAjustado(false) }}
+                onPasso={d => {
+                  setTotalDigitado(v => {
+                    const atual = parseFloat((v ?? '').replace(',', '.')) || 0
+                    const n = Math.max(0, Math.round(atual / passoTotal) + d) * passoTotal
+                    return n > 0 ? String(n) : ''
+                  })
+                  setAjustado(false)
+                }}
+                passo={passoTotal}
+                sufixo="unidades"
+                largura="w-28"
               />
-              <span className="text-xs text-gray-400 w-14">unidades</span>
             </div>
           )}
 
@@ -812,77 +899,33 @@ export function PlanejadorSemanaPage({
                   <p className="flex-1 min-w-0 text-sm font-medium text-gray-900 dark:text-unno-text truncate">
                     {f.codigo} — {f.nome}
                   </p>
-                  {/* As setas ficam fora da caixa: as nativas são miúdas, só
-                      aparecem no hover e andam de 1 em 1 — aqui cada clique é
-                      uma forma inteira. */}
-                  <div className="flex items-center gap-1">
-                    {modo === 'unidades' && (
-                      <button
-                        type="button"
-                        // O clique dá o passo simples; segurar entra em repetição.
-                        // Quando a repetição rodou, o clique da soltura é
-                        // descartado para não somar uma forma a mais no fim.
-                        onClick={() => {
-                          if (repeticao.current.repetiu) { repeticao.current.repetiu = false; return }
-                          passoFormas(f, -1)
-                        }}
-                        onPointerDown={() => iniciarRepeticao(f, -1)}
-                        onPointerUp={pararRepeticao}
-                        onPointerLeave={pararRepeticao}
-                        onPointerCancel={pararRepeticao}
-                        disabled={!f.rendimento_fornada || (alvoEfetivo[f.id] ?? 0) <= 0}
-                        title="Uma forma a menos"
-                        className="w-8 h-9 rounded-lg border border-gray-300 text-gray-600 text-lg leading-none
-                                   hover:bg-gray-50 disabled:opacity-30
-                                   dark:border-white/[.08] dark:text-unno-muted"
-                      >
-                        −
-                      </button>
-                    )}
-                    <input
-                      type="number" min={0} step={modo === 'unidades' ? 60 : 0.5} inputMode="decimal"
-                      value={modo === 'unidades' ? (alvo[f.id] ?? '') : (pct[f.id] ?? '')}
-                      onChange={e => {
-                        if (modo === 'unidades') setAlvo(s => ({ ...s, [f.id]: e.target.value }))
-                        else setPct(s => ({ ...s, [f.id]: e.target.value }))
+                  {modo === 'unidades' ? (
+                    <CampoNumerico
+                      valor={alvo[f.id] ?? ''}
+                      onDigitar={v => { setAlvo(s => ({ ...s, [f.id]: v })); setAjustado(false) }}
+                      onPasso={d => passoFormas(f, d)}
+                      onSair={() => encaixarFormas(f)}
+                      passo={f.rendimento_fornada ?? 1}
+                      sufixo="unidades"
+                      desabilitado={!f.rendimento_fornada}
+                    />
+                  ) : (
+                    <CampoNumerico
+                      valor={pct[f.id] ?? ''}
+                      onDigitar={v => { setPct(s => ({ ...s, [f.id]: v })); setAjustado(false) }}
+                      onPasso={d => {
+                        setPct(s => {
+                          const atual = parseFloat((s[f.id] ?? '').replace(',', '.')) || 0
+                          const n = Math.min(100, Math.max(0, Math.round(atual) + d))
+                          return { ...s, [f.id]: n > 0 ? String(n) : '' }
+                        })
                         setAjustado(false)
                       }}
-                      onBlur={() => { if (modo === 'unidades') encaixarFormas(f) }}
-                      placeholder="0"
-                      className="w-24 rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-right
-                                 focus:outline-none focus:border-brand-500 focus:ring-[3px] focus:ring-brand-500/10
-                                 dark:border-white/[.08] dark:bg-unno-raised dark:text-unno-text
-                                 [appearance:textfield]
-                                 [&::-webkit-outer-spin-button]:appearance-none
-                                 [&::-webkit-inner-spin-button]:appearance-none"
+                      passo={1}
+                      max={100}
+                      sufixo="%"
                     />
-                    {modo === 'unidades' && (
-                      <button
-                        type="button"
-                        // O clique dá o passo simples; segurar entra em repetição.
-                        // Quando a repetição rodou, o clique da soltura é
-                        // descartado para não somar uma forma a mais no fim.
-                        onClick={() => {
-                          if (repeticao.current.repetiu) { repeticao.current.repetiu = false; return }
-                          passoFormas(f, 1)
-                        }}
-                        onPointerDown={() => iniciarRepeticao(f, 1)}
-                        onPointerUp={pararRepeticao}
-                        onPointerLeave={pararRepeticao}
-                        onPointerCancel={pararRepeticao}
-                        disabled={!f.rendimento_fornada}
-                        title="Uma forma a mais"
-                        className="w-8 h-9 rounded-lg border border-gray-300 text-gray-600 text-lg leading-none
-                                   hover:bg-gray-50 disabled:opacity-30
-                                   dark:border-white/[.08] dark:text-unno-muted"
-                      >
-                        +
-                      </button>
-                    )}
-                  </div>
-                  <span className="text-xs text-gray-400 w-14">
-                    {modo === 'unidades' ? 'unidades' : '%'}
-                  </span>
+                  )}
                 </div>
                 {unidades > 0 && (
                   <div className="flex items-center gap-2 mt-1.5">
@@ -890,8 +933,12 @@ export function PlanejadorSemanaPage({
                       <div className="h-full bg-brand-500 rounded-full"
                            style={{ width: `${Math.min(part, 100)}%` }} />
                     </div>
+                    {/* No percentual quem foi digitado é o %, então o número
+                        que falta ver é quantas unidades aquela fatia virou. */}
                     <span className="text-xs text-gray-500 dark:text-unno-muted tabular-nums whitespace-nowrap">
-                      {m ? `${m.formas} formas · ${m.bateladas} bat · ` : ''}{fmt(part, 1)}%
+                      {modo === 'percentual' && `${fmt(unidades)} un · `}
+                      {m ? `${m.formas} formas · ${m.bateladas} bat` : ''}
+                      {modo === 'unidades' && ` · ${fmt(part, 1)}%`}
                     </span>
                   </div>
                 )}
