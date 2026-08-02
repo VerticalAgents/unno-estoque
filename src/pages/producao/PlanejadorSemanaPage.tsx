@@ -760,14 +760,15 @@ export function PlanejadorSemanaPage({
                     formas que sobram nela. Incompleta muda o tempo de forno. */}
                 {m && m.formas > 0 && (() => {
                   const ultima = formasNaUltimaBatelada(m.formas)
-                  const cheia = ultima === FORMAS_POR_BATELADA
-                  // Uma forma sozinha no forno é o pior caso: o tempo muda
-                  // muito e a batelada quase não rende. Vermelho.
-                  const critica = ultima === 1
-                  const cor = cheia ? 'bg-brand-500' : critica ? 'bg-red-500' : 'bg-unno-amber'
-                  const corTexto = cheia
-                    ? 'text-gray-500 dark:text-unno-muted'
-                    : critica ? 'text-red-600' : 'text-amber-700'
+                  // Escada de quatro degraus: quanto menos massa sobra na
+                  // última batelada, mais o forno precisa ser reprogramado.
+                  // Uma forma sozinha é o pior caso.
+                  const cor = { 1: 'bg-red-500', 2: 'bg-unno-amber',
+                                3: 'bg-unno-lime', 4: 'bg-brand-500' }[ultima] ?? 'bg-brand-500'
+                  const corTexto = { 1: 'text-red-600', 2: 'text-amber-700',
+                                     3: 'text-lime-700',
+                                     4: 'text-gray-500 dark:text-unno-muted' }[ultima]
+                    ?? 'text-gray-500 dark:text-unno-muted'
                   return (
                     <div className="flex items-center gap-2 mt-1">
                       <div className="flex-1 flex gap-0.5">

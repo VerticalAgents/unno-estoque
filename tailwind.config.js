@@ -33,6 +33,10 @@ export default {
           dim: '#4a4e5c',
           amber: '#f5a623', // --unno-accent2
           danger: '#ff4d6a',
+          // Meio-termo entre o verde da marca e o âmbar, para escalas de
+          // "quase lá". O ponto médio puro (#86a742) fica oliva; este é o
+          // mesmo tom com um pouco mais de saturação.
+          lime: '#8cbf3f',
         },
       },
       boxShadow: {
