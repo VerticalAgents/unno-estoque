@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../contexts/AuthContext'
@@ -161,6 +161,9 @@ export function PlanejadorSemanaPage({
   const [erro, setErro] = useState('')
   const [salvoEm, setSalvoEm] = useState<string | null>(null)
   const [empresaNome, setEmpresaNome] = useState('')
+
+  // Alvo do botão "editar" da coluna fixa.
+  const topoRef = useRef<HTMLDivElement>(null)
 
   const num = (s: string | undefined) => parseFloat((s ?? '').replace(',', '.')) || 0
 
@@ -616,7 +619,7 @@ export function PlanejadorSemanaPage({
   const fimSemana = somarDias(semana, 6)
 
   return (
-    <div className="space-y-5">
+    <div className="space-y-5" ref={topoRef}>
       <style>{printStyles}</style>
 
       {/* ── Semana ──────────────────────────────────────────── */}
@@ -905,49 +908,118 @@ export function PlanejadorSemanaPage({
         </CardBody>
       </Card>
 
-      {/* ── Quanto falta distribuir ─────────────────────────── */}
-      {mostrarSaldo && balanco.length > 0 && (
-        <Card>
-          <CardBody className="py-3 space-y-2">
-            <p className="text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-unno-muted">
-              Falta distribuir
-            </p>
-            {balanco.map(b => (
-              <div key={b.ficha.id} className="flex items-center gap-3">
-                <p className="flex-1 min-w-0 text-sm text-gray-700 dark:text-unno-text truncate">
-                  <span className="text-gray-400 mr-1.5">{b.ficha.codigo}</span>{b.ficha.nome}
-                </p>
-                <div className="w-32 h-1.5 rounded-full bg-gray-100 dark:bg-white/[.06] overflow-hidden">
-                  <div
-                    className={`h-full rounded-full ${b.falta < 0 ? 'bg-red-500' : 'bg-brand-500'}`}
-                    style={{ width: `${Math.min(100, (b.distribuido / (b.meta || 1)) * 100)}%` }}
-                  />
+      {/* ── A semana repartida, com a coluna de acompanhamento ──
+          Os dias são longos e o saldo estava só no topo: para saber quanto
+          faltava era preciso subir e descer a cada dia preenchido. A coluna
+          fica grudada na tela enquanto se rola. No celular ela volta a ser um
+          card antes dos dias — não há espaço lateral para grudar. */}
+      <div className="grid gap-4 items-start lg:grid-cols-[minmax(0,1fr)_20rem]">
+        <aside className="order-1 lg:order-2 lg:sticky lg:top-4 space-y-3">
+          {/* Resumo do que ficou lá em cima, para não precisar voltar */}
+          {metas.length > 0 && (
+            <Card>
+              <CardBody className="py-3 space-y-1.5">
+                <div className="flex items-baseline justify-between gap-2">
+                  <p className="text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-unno-muted">
+                    Meta da semana
+                  </p>
+                  <button
+                    type="button"
+                    // Quem rola é o <main> do Layout, não a janela — window.scrollTo
+                    // não moveria nada aqui.
+                    onClick={() => topoRef.current?.scrollIntoView({
+                      behavior: 'smooth', block: 'start',
+                    })}
+                    className="text-xs text-brand-700 dark:text-brand-400 hover:underline"
+                  >
+                    editar
+                  </button>
                 </div>
-                <span className={`text-xs tabular-nums whitespace-nowrap w-40 text-right ${
-                  b.falta === 0 ? 'text-emerald-700'
-                    : b.falta < 0 ? 'text-red-600'
-                    : 'text-gray-500 dark:text-unno-muted'
-                }`}>
-                  {b.distribuido} de {b.meta} formas
-                  {b.falta === 0
-                    ? ' · completo'
-                    : b.falta > 0 ? ` · faltam ${b.falta}`
-                    : ` · ${-b.falta} a mais`}
-                </span>
-              </div>
-            ))}
-            {!faltaDistribuir && (
-              <p className="text-xs text-emerald-700">
-                A semana toda está distribuída.
-              </p>
-            )}
-          </CardBody>
-        </Card>
-      )}
+                <p className="text-sm font-semibold text-gray-900 dark:text-unno-text">
+                  {fmt(totalUnidadesMeta)} unidades
+                </p>
+                <p className="text-xs text-gray-500 dark:text-unno-muted tabular-nums">
+                  {metas.reduce((s, m) => s + m.formas, 0)} formas ·{' '}
+                  {metas.reduce((s, m) => s + m.bateladas, 0)} bateladas
+                </p>
+                <p className="text-xs text-gray-500 dark:text-unno-muted">
+                  {diasAtivos.length} dia(s) ·{' '}
+                  {preenchimento === 'blocos' ? 'um sabor por dia'
+                    : preenchimento === 'igual' ? 'mix igual todo dia'
+                    : 'você distribui'}
+                </p>
+              </CardBody>
+            </Card>
+          )}
 
-      {/* ── A semana repartida ──────────────────────────────── */}
-      {porDia.length > 0 && (
-        <div className="space-y-3">
+          {/* Falta distribuir */}
+          {balanco.length > 0 && (
+            <Card>
+              <CardBody className="py-3 space-y-2">
+                <p className="text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-unno-muted">
+                  Falta distribuir
+                </p>
+                {balanco.map(b => (
+                  <div key={b.ficha.id} className="space-y-1">
+                    <p className="text-sm text-gray-700 dark:text-unno-text truncate">
+                      <span className="text-gray-400 mr-1.5">{b.ficha.codigo}</span>{b.ficha.nome}
+                    </p>
+                    <div className="flex items-center gap-2">
+                      <div className="flex-1 h-1.5 rounded-full bg-gray-100 dark:bg-white/[.06] overflow-hidden">
+                        <div
+                          className={`h-full rounded-full ${b.falta < 0 ? 'bg-red-500' : 'bg-brand-500'}`}
+                          style={{ width: `${Math.min(100, (b.distribuido / (b.meta || 1)) * 100)}%` }}
+                        />
+                      </div>
+                      <span className={`text-xs tabular-nums whitespace-nowrap ${
+                        b.falta === 0 ? 'text-emerald-700'
+                          : b.falta < 0 ? 'text-red-600'
+                          : 'text-gray-500 dark:text-unno-muted'
+                      }`}>
+                        {b.falta === 0
+                          ? 'completo'
+                          : b.falta > 0 ? `faltam ${b.falta}`
+                          : `${-b.falta} a mais`}
+                      </span>
+                    </div>
+                    <p className="text-xs text-gray-400 tabular-nums">
+                      {b.distribuido} de {b.meta} formas
+                    </p>
+                  </div>
+                ))}
+                {!faltaDistribuir && (
+                  <p className="text-xs text-emerald-700">
+                    A semana toda está distribuída.
+                  </p>
+                )}
+              </CardBody>
+            </Card>
+          )}
+
+          {/* Salvar perto de onde se trabalha, e não no fim da página */}
+          {totalFormas > 0 && (
+            <Card>
+              <CardBody className="py-3 space-y-2">
+                <p className="text-xs text-gray-600 dark:text-unno-muted tabular-nums">
+                  Distribuído: <strong className="text-gray-900 dark:text-unno-text">
+                    {totalFormas} formas
+                  </strong> · {totalBateladas} bateladas · {fmt(totalUnidades)} un
+                </p>
+                <Button fullWidth size="sm" loading={salvando} onClick={salvar}>
+                  Salvar plano
+                </Button>
+                <Button fullWidth variant="secondary" size="sm" onClick={() => window.print()}>
+                  Imprimir
+                </Button>
+                {salvoEm && !faltaDistribuir && (
+                  <p className="text-xs text-gray-400 text-center">plano salvo</p>
+                )}
+              </CardBody>
+            </Card>
+          )}
+        </aside>
+
+        <div className="order-2 lg:order-1 space-y-3">
           {porDia.map(d => (
             <Card key={d.dia}>
               <CardBody className="space-y-3">
@@ -1093,10 +1165,7 @@ export function PlanejadorSemanaPage({
             </Card>
           ))}
         </div>
-      )}
-
-      {/* O aviso de "não bate com a meta" virou o painel "Falta distribuir",
-          acima dos dias — perto de onde se digita, e não no fim da página. */}
+      </div>
 
       {/* ── Planejado × realizado ───────────────────────────── */}
       {temRealizado && (
@@ -1154,25 +1223,7 @@ export function PlanejadorSemanaPage({
         </Card>
       )}
 
-      {totalFormas > 0 && (
-        <Card>
-          <CardBody className="flex flex-wrap items-center justify-between gap-3">
-            <p className="text-sm text-gray-600 dark:text-unno-muted">
-              Semana: <strong className="text-gray-900 dark:text-unno-text">{totalFormas} formas</strong>
-              {' '}· {totalBateladas} bateladas ·{' '}
-              {fmt(totalUnidades)} unidades
-            </p>
-            <div className="flex gap-2">
-              <Button variant="secondary" size="sm" onClick={() => window.print()}>
-                Imprimir
-              </Button>
-              <Button size="sm" loading={salvando} onClick={salvar}>
-                Salvar plano
-              </Button>
-            </div>
-          </CardBody>
-        </Card>
-      )}
+      {/* Salvar e imprimir moraram aqui; foram para a coluna fixa. */}
 
       {erro && (
         <div className="p-3 bg-red-50 border border-red-200 rounded-lg text-sm text-red-700">{erro}</div>
