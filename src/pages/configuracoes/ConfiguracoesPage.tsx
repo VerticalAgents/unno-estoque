@@ -8,7 +8,7 @@ import { Input, Select } from '../../components/ui/Input'
 import { Badge } from '../../components/ui/Badge'
 import { ALL_ROUTES } from '../../lib/permissions'
 
-type Tab = 'perfil' | 'senha' | 'empresa' | 'funcionarios' | 'categorias' | 'travas'
+type Tab = 'perfil' | 'senha' | 'empresa' | 'funcionarios' | 'categorias' | 'producao' | 'travas'
 
 /**
  * As regras que o sistema pode impor. Cada uma pode BLOQUEAR (recusa sempre)
@@ -76,6 +76,7 @@ export function ConfiguracoesPage() {
     { key: 'empresa', label: 'Empresa' },
     { key: 'funcionarios', label: 'Funcionários', adminOnly: true },
     { key: 'categorias', label: 'Categorias' },
+    { key: 'producao', label: 'Produção' },
     { key: 'travas', label: 'Travas', adminOnly: true },
   ]
 
@@ -113,12 +114,161 @@ export function ConfiguracoesPage() {
       {activeTab === 'empresa' && <EmpresaTab />}
       {activeTab === 'funcionarios' && isAdmin && <FuncionariosTab />}
       {activeTab === 'categorias' && <CategoriasTab />}
+      {activeTab === 'producao' && <ProducaoTab />}
       {activeTab === 'travas' && isAdmin && <TravasTab />}
     </div>
   )
 }
 
 // ── Perfil ──────────────────────────────────────────────────
+
+// ── Produção ──────────────────────────────────────────────────
+
+/**
+ * Quantas unidades saem de uma forma, por produto.
+ *
+ * O dado não é global: cada ficha tem o seu, guardado na versão ativa
+ * (`fichas_tecnicas_versoes.rendimento_fornada`). Esta aba só o traz para um
+ * lugar fácil de achar — antes só dava para mexer criando uma versão nova da
+ * ficha.
+ *
+ * Mudar aqui vale para os cálculos daqui para a frente. Sessões já fechadas
+ * guardam o consumo do dia em que aconteceram e não são recalculadas.
+ */
+function ProducaoTab() {
+  const { profile } = useAuth()
+  const [fichas, setFichas] = useState<
+    { id: string; codigo: string; nome: string; versao_id: string; rendimento: string; peso: string }[]
+  >([])
+  const [salvandoId, setSalvandoId] = useState<string | null>(null)
+  const [okId, setOkId] = useState<string | null>(null)
+  const [erro, setErro] = useState('')
+
+  useEffect(() => {
+    if (!profile) return
+    supabase
+      .from('fichas_tecnicas')
+      .select('id, codigo, nome, versoes:fichas_tecnicas_versoes!inner(id, rendimento_fornada, peso_medio_g, ativa)')
+      .eq('empresa_id', profile.empresa_id)
+      .eq('ativo', true)
+      .eq('tipo', 'produto')
+      .order('codigo')
+      .then(({ data }) => {
+        const rows = (data ?? []) as unknown as {
+          id: string; codigo: string; nome: string
+          versoes: { id: string; rendimento_fornada: number | null; peso_medio_g: number | null; ativa: boolean }[]
+        }[]
+        setFichas(
+          rows.flatMap(f => {
+            const v = f.versoes.find(x => x.ativa)
+            if (!v) return []
+            return [{
+              id: f.id, codigo: f.codigo, nome: f.nome, versao_id: v.id,
+              rendimento: v.rendimento_fornada != null ? String(v.rendimento_fornada) : '',
+              peso: v.peso_medio_g != null ? String(v.peso_medio_g) : '',
+            }]
+          }),
+        )
+      })
+  }, [profile])
+
+  async function salvar(fichaId: string) {
+    const f = fichas.find(x => x.id === fichaId)
+    if (!f) return
+    setSalvandoId(fichaId)
+    setErro('')
+
+    const rendimento = parseInt(f.rendimento)
+    if (!rendimento || rendimento < 1) {
+      setErro(`${f.codigo}: informe um rendimento maior que zero.`)
+      setSalvandoId(null)
+      return
+    }
+
+    const peso = parseFloat(f.peso.replace(',', '.'))
+    const { error } = await supabase
+      .from('fichas_tecnicas_versoes')
+      .update({
+        rendimento_fornada: rendimento,
+        peso_medio_g: Number.isFinite(peso) && peso > 0 ? peso : null,
+      })
+      .eq('id', f.versao_id)
+
+    setSalvandoId(null)
+    if (error) { setErro(error.message); return }
+    setOkId(fichaId)
+    setTimeout(() => setOkId(null), 2000)
+  }
+
+  function setCampo(id: string, campo: 'rendimento' | 'peso', valor: string) {
+    setFichas(s => s.map(f => (f.id === id ? { ...f, [campo]: valor } : f)))
+  }
+
+  return (
+    <Card className="p-5">
+      <h2 className="text-base font-semibold text-gray-900">Rendimento por forma</h2>
+      <p className="text-sm text-gray-500 mt-0.5 mb-4">
+        Quantas unidades saem de uma forma (fornada) de cada produto. É deste número
+        que sai a conta de quantas formas o Reabastecimento precisa.
+      </p>
+
+      {fichas.length === 0 ? (
+        <p className="text-sm text-gray-500">Nenhuma ficha de produto com versão ativa.</p>
+      ) : (
+        <div className="space-y-4">
+          {fichas.map(f => (
+            <div key={f.id} className="pb-4 border-b border-gray-100 last:border-0 last:pb-0">
+              <p className="text-sm font-medium text-gray-900">
+                <span className="text-gray-400 mr-1.5">{f.codigo}</span>{f.nome}
+              </p>
+              <div className="flex items-end gap-3 mt-2">
+                <div className="w-32">
+                  <label className="text-xs text-gray-500">Unidades por forma</label>
+                  <input
+                    type="number" min={1} step={1} inputMode="numeric"
+                    value={f.rendimento}
+                    onChange={e => setCampo(f.id, 'rendimento', e.target.value)}
+                    className="mt-1 w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-right
+                               focus:outline-none focus:border-brand-500 focus:ring-[3px] focus:ring-brand-500/10"
+                  />
+                </div>
+                <div className="w-32">
+                  <label className="text-xs text-gray-500">Peso médio (g)</label>
+                  <input
+                    type="number" min={0} step="0.1" inputMode="decimal"
+                    value={f.peso}
+                    onChange={e => setCampo(f.id, 'peso', e.target.value)}
+                    className="mt-1 w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-right
+                               focus:outline-none focus:border-brand-500 focus:ring-[3px] focus:ring-brand-500/10"
+                  />
+                </div>
+                <Button
+                  size="sm"
+                  variant="secondary"
+                  loading={salvandoId === f.id}
+                  onClick={() => salvar(f.id)}
+                >
+                  {okId === f.id ? 'Salvo' : 'Salvar'}
+                </Button>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {erro && (
+        <div className="mt-4 p-3 bg-red-50 border border-red-200 rounded-lg text-sm text-red-700">
+          {erro}
+        </div>
+      )}
+
+      <p className="mt-4 text-xs text-gray-500">
+        Vale para os cálculos daqui para a frente. Sessões de produção já fechadas
+        guardam o consumo do dia em que aconteceram e não mudam.
+      </p>
+    </Card>
+  )
+}
 
 // ── Travas ────────────────────────────────────────────────────
 

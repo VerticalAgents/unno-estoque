@@ -25,18 +25,22 @@ interface FichaOption {
   id: string
   codigo: string
   nome: string
+  /** Quantas unidades saem de uma forma. Vem da versão ativa da ficha
+   *  (`fichas_tecnicas_versoes.rendimento_fornada`), editável em
+   *  Configurações → Produção. */
+  rendimento_fornada: number | null
 }
 
-interface LinhaFormas {
-  ficha_id: string
-  ficha_codigo: string
-  ficha_nome: string
-  unidades_alvo: number
-  rendimento_fornada: number
+/** A conversão meta → fornadas, calculada na hora em que se digita. */
+interface Conversao {
+  ficha: FichaOption
+  unidades: number
   formas: number
   bateladas: number
   unidades_produzidas: number
 }
+
+const FORMAS_POR_BATELADA = 4
 
 interface LinhaReabastecimento {
   insumo_id: string
@@ -102,8 +106,11 @@ export function ReabastecimentoPage() {
 
   const [fichas, setFichas] = useState<FichaOption[]>([])
   const [alvo, setAlvo] = useState<Record<string, string>>({})
+  // O que está gravado hoje. Serve só para avisar quando a tela mostra número
+  // digitado e lista de compras ainda calculada com o número antigo.
+  const [alvoSalvo, setAlvoSalvo] = useState<Record<string, string>>({})
   const [margem, setMargem] = useState('15')
-  const [formasPorFicha, setFormasPorFicha] = useState<LinhaFormas[]>([])
+  const [margemSalva, setMargemSalva] = useState('15')
   const [linhas, setLinhas] = useState<LinhaReabastecimento[]>([])
   const [loading, setLoading] = useState(true)
   const [salvando, setSalvando] = useState(false)
@@ -112,15 +119,10 @@ export function ReabastecimentoPage() {
 
   const recalcular = useCallback(async () => {
     if (!profile) return
-    const [formasRes, linhasRes] = await Promise.all([
-      supabase.from('v_projecao_formas').select('*')
-        .eq('empresa_id', profile.empresa_id).order('ficha_codigo'),
-      supabase.from('v_reabastecimento').select('*')
-        .eq('empresa_id', profile.empresa_id).order('insumo_codigo'),
-    ])
-    if (linhasRes.error) { setErro(linhasRes.error.message); return }
-    setFormasPorFicha((formasRes.data ?? []) as unknown as LinhaFormas[])
-    setLinhas((linhasRes.data ?? []) as unknown as LinhaReabastecimento[])
+    const { data, error } = await supabase.from('v_reabastecimento').select('*')
+      .eq('empresa_id', profile.empresa_id).order('insumo_codigo')
+    if (error) { setErro(error.message); return }
+    setLinhas((data ?? []) as unknown as LinhaReabastecimento[])
   }, [profile])
 
   useEffect(() => {
@@ -129,7 +131,7 @@ export function ReabastecimentoPage() {
     async function carregar() {
       const [fichasRes, projRes, cfgRes, empRes] = await Promise.all([
         supabase.from('fichas_tecnicas')
-          .select('id, codigo, nome')
+          .select('id, codigo, nome, versoes:fichas_tecnicas_versoes!inner(rendimento_fornada, ativa)')
           .eq('empresa_id', profile!.empresa_id)
           .eq('ativo', true).eq('tipo', 'produto').order('codigo'),
         supabase.from('projecao_producao')
@@ -142,11 +144,25 @@ export function ReabastecimentoPage() {
           .select('nome').eq('id', profile!.empresa_id).maybeSingle(),
       ])
 
-      setFichas((fichasRes.data ?? []) as FichaOption[])
-      setAlvo(Object.fromEntries(
+      const rows = (fichasRes.data ?? []) as unknown as {
+        id: string; codigo: string; nome: string
+        versoes: { rendimento_fornada: number | null; ativa: boolean }[]
+      }[]
+      setFichas(rows.map(f => ({
+        id: f.id, codigo: f.codigo, nome: f.nome,
+        rendimento_fornada: f.versoes.find(v => v.ativa)?.rendimento_fornada ?? null,
+      })))
+
+      const salvos = Object.fromEntries(
         (projRes.data ?? []).map(p => [p.ficha_id, String(Number(p.unidades_alvo))]),
-      ))
-      if (cfgRes.data) setMargem(String(Number(cfgRes.data.reabastecimento_margem_pct)))
+      )
+      setAlvo(salvos)
+      setAlvoSalvo(salvos)
+      if (cfgRes.data) {
+        const m = String(Number(cfgRes.data.reabastecimento_margem_pct))
+        setMargem(m)
+        setMargemSalva(m)
+      }
       setEmpresaNome(empRes.data?.nome ?? '')
       await recalcular()
       setLoading(false)
@@ -179,15 +195,52 @@ export function ReabastecimentoPage() {
       setErro(cfgErr?.message ?? error?.message ?? 'Não foi possível salvar.')
       return
     }
+    setAlvoSalvo(alvo)
+    setMargemSalva(margem)
     await recalcular()
   }
 
-  const totalUnidades = useMemo(
-    () => fichas.reduce(
-      (s, f) => s + (parseFloat((alvo[f.id] ?? '').replace(',', '.')) || 0), 0),
+  /**
+   * A conversão acontece na tela, enquanto se digita. Antes ela vinha do banco
+   * e só mudava depois de salvar — o que fazia a tela somar unidades novas com
+   * formas antigas.
+   */
+  const conversoes = useMemo<Conversao[]>(
+    () => fichas
+      .map(f => {
+        const unidades = parseFloat((alvo[f.id] ?? '').replace(',', '.')) || 0
+        const rend = f.rendimento_fornada ?? 0
+        const formas = rend > 0 ? Math.ceil(unidades / rend) : 0
+        return {
+          ficha: f,
+          unidades,
+          formas,
+          bateladas: Math.ceil(formas / FORMAS_POR_BATELADA),
+          unidades_produzidas: formas * rend,
+        }
+      })
+      .filter(c => c.unidades > 0),
     [fichas, alvo],
   )
-  const totalFormas = formasPorFicha.reduce((s, f) => s + f.formas, 0)
+
+  const totalUnidades = conversoes.reduce((s, c) => s + c.unidades, 0)
+  const totalFormas = conversoes.reduce((s, c) => s + c.formas, 0)
+
+  // Digitou e ainda não salvou: a lista de compras abaixo é a antiga.
+  const naoSalvo = useMemo(() => {
+    if (margem !== margemSalva) return true
+    const ids = new Set([...Object.keys(alvo), ...Object.keys(alvoSalvo)])
+    for (const id of ids) {
+      const a = parseFloat((alvo[id] ?? '0').replace(',', '.')) || 0
+      const b = parseFloat((alvoSalvo[id] ?? '0').replace(',', '.')) || 0
+      if (a !== b) return true
+    }
+    return false
+  }, [alvo, alvoSalvo, margem, margemSalva])
+
+  const semRendimento = fichas.filter(
+    f => !f.rendimento_fornada && (parseFloat((alvo[f.id] ?? '0').replace(',', '.')) || 0) > 0,
+  )
 
   const aComprar = linhas.filter(l => l.comprar > 0)
   const semEmbalagem = aComprar.filter(l => l.embalagens == null)
@@ -222,7 +275,7 @@ export function ReabastecimentoPage() {
         />
         <CardBody className="space-y-3">
           {fichas.map(f => {
-            const linha = formasPorFicha.find(l => l.ficha_id === f.id)
+            const c = conversoes.find(x => x.ficha.id === f.id)
             return (
               <div key={f.id}>
                 <div className="flex items-center gap-3">
@@ -245,14 +298,20 @@ export function ReabastecimentoPage() {
                   />
                   <span className="text-xs text-gray-400 w-14">unidades</span>
                 </div>
-                {/* A conversão que o sistema fez, para conferência */}
-                {linha && (
+                {/* A conversão, para conferência. Muda enquanto se digita. */}
+                {c && c.ficha.rendimento_fornada && (
                   <p className="text-xs text-gray-500 dark:text-unno-dim mt-1 ml-0.5">
-                    {linha.formas} formas · {linha.bateladas} bateladas ·{' '}
-                    {linha.rendimento_fornada} un/forma
-                    {linha.unidades_produzidas > linha.unidades_alvo && (
-                      <> · saem {fmt(linha.unidades_produzidas, 0)} un, a última forma vai inteira</>
+                    {fmt(c.unidades, 0)} ÷ {c.ficha.rendimento_fornada} un/forma ={' '}
+                    <strong>{c.formas} formas</strong> · {c.bateladas} bateladas
+                    {c.unidades_produzidas > c.unidades && (
+                      <> · saem {fmt(c.unidades_produzidas, 0)} un, a última forma vai inteira</>
                     )}
+                  </p>
+                )}
+                {c && !c.ficha.rendimento_fornada && (
+                  <p className="text-xs text-red-600 mt-1 ml-0.5">
+                    Sem rendimento cadastrado — o sistema não sabe quantas unidades
+                    saem de uma forma. Configurações → Produção.
                   </p>
                 )}
               </div>
@@ -276,15 +335,23 @@ export function ReabastecimentoPage() {
             </p>
           </div>
 
-          {totalUnidades > 0 && formasPorFicha.length > 0 && (
+          {totalUnidades > 0 && (
             <div className="bg-gray-50 dark:bg-white/[.03] rounded-lg px-3 py-2 text-xs text-gray-600 dark:text-unno-muted">
               {fmt(totalUnidades, 0)} unidades no total —{' '}
               <strong>{totalFormas} formas</strong>
+              {' '}· {Math.ceil(totalFormas / FORMAS_POR_BATELADA)} bateladas
+            </div>
+          )}
+
+          {semRendimento.length > 0 && (
+            <div className="p-3 rounded-lg bg-red-50 border border-red-200 text-sm text-red-700">
+              {semRendimento.map(f => f.codigo).join(', ')} sem rendimento cadastrado.
+              O insumo dessas fichas não entra na conta.
             </div>
           )}
 
           <Button onClick={salvar} loading={salvando} fullWidth>
-            Salvar e recalcular
+            {naoSalvo ? 'Salvar e recalcular a lista de compras' : 'Salvar e recalcular'}
           </Button>
 
           {erro && (
@@ -308,9 +375,19 @@ export function ReabastecimentoPage() {
         <Card>
           <CardHeader
             title="O que comprar"
-            subtitle={`${aComprar.length} insumo(s) · margem de ${margem}% já embutida`}
+            subtitle={naoSalvo
+              ? 'Calculado com os números anteriores — salve para atualizar'
+              : `${aComprar.length} insumo(s) · margem de ${margemSalva}% já embutida`}
             action={
-              <Button variant="secondary" size="sm" onClick={() => window.print()}>
+              // Imprimir com a tela desatualizada geraria um pedido que não
+              // corresponde a nada. Salvar primeiro.
+              <Button
+                variant="secondary"
+                size="sm"
+                disabled={naoSalvo}
+                title={naoSalvo ? 'Salve antes de imprimir' : ''}
+                onClick={() => window.print()}
+              >
                 Imprimir
               </Button>
             }
@@ -395,11 +472,11 @@ export function ReabastecimentoPage() {
           </h1>
           <p className="small" style={{ margin: '3px 0 0' }}>
             {empresaNome && <>{empresaNome} · </>}
-            Emitido em {hoje} · Margem de segurança de {margem}%
+            Emitido em {hoje} · Margem de segurança de {margemSalva}%
           </p>
         </div>
 
-        {formasPorFicha.length > 0 && (
+        {conversoes.length > 0 && (
           <table style={{ marginBottom: '12px' }}>
             <thead>
               <tr>
@@ -410,12 +487,12 @@ export function ReabastecimentoPage() {
               </tr>
             </thead>
             <tbody>
-              {formasPorFicha.map(f => (
-                <tr key={f.ficha_id}>
-                  <td><span className="mono">{f.ficha_codigo}</span> {f.ficha_nome}</td>
-                  <td className="num">{fmt(f.unidades_alvo, 0)}</td>
-                  <td className="num">{f.formas}</td>
-                  <td className="num">{f.bateladas}</td>
+              {conversoes.map(c => (
+                <tr key={c.ficha.id}>
+                  <td><span className="mono">{c.ficha.codigo}</span> {c.ficha.nome}</td>
+                  <td className="num">{fmt(c.unidades, 0)}</td>
+                  <td className="num">{c.formas}</td>
+                  <td className="num">{c.bateladas}</td>
                 </tr>
               ))}
             </tbody>

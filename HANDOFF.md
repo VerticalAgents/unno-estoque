@@ -90,6 +90,9 @@ cima — não existe meia fornada, e a última sai inteira.
   `reabastecimento_dias` e `dias_uteis_mes` foram **removidas** na 048: com o
   alvo em unidades o período já está embutido nele.
 - `v_projecao_formas` — unidades → formas, bateladas e unidades produzidas.
+  **A tela não usa esta view** para exibir: refaz a conta em JavaScript enquanto
+  se digita, senão somaria unidade nova com forma antiga (foi um bug real). A
+  view continua sendo a base de `v_reabastecimento`.
 - `v_reabastecimento` — necessário com margem, estoque, quanto comprar.
 
 **O estoque soma EC + EP.** O açúcar que está no pote da produção é açúcar que
@@ -103,6 +106,11 @@ Conferido: meta 30.000 TRD + 20.000 DDL → 500 + 334 formas → açúcar
 descontando os 120 kg em casa.
 
 A auditoria de estoque da planilha é o módulo de Contagem, que já existe.
+
+**Unidades por forma** (`fichas_tecnicas_versoes.rendimento_fornada`) agora é
+editável em **Configurações → Produção**, junto com o peso médio. Antes só dava
+para mexer criando uma versão nova da ficha. Não é valor global — é por ficha;
+a aba só centraliza. Sessões fechadas não são recalculadas.
 
 **Nota de vocabulário:** é uma **fábrica**, não uma padaria (correção do Lucca
 em 02/08/2026). As migrations 026, 030, 039 e 046 ainda dizem "padaria" nos
