@@ -1,34 +1,41 @@
 import { useState } from 'react'
+import { PlanejadorMesPage } from './PlanejadorMesPage'
 import { PlanejadorSemanaPage } from './PlanejadorSemanaPage'
 import { PlanejadorRecipientesPage } from './PlanejadorRecipientesPage'
 
 /**
- * Dois níveis de zoom do mesmo planejamento, num item de menu só:
+ * Três níveis de zoom do mesmo planejamento, num item de menu só:
  *
- *   Semana — a meta da semana repartida em dias
- *   Dia    — quais recipientes encher e quais lotes buscar para um dia
+ *   Mês    — o calendário inteiro, para enxergar
+ *   Semana — a meta da semana repartida em dias, para planejar
+ *   Dia    — quais recipientes encher e quais lotes buscar, para executar
  *
- * Trocar de aba levando as formas de um dia é mudança de estado, não
- * navegação: as duas abas vivem na mesma página. Por isso as formas passam por
- * prop e não pelo `state` da rota.
+ * Trocar de aba levando dados de uma para a outra é mudança de estado, não
+ * navegação: as três vivem na mesma página. Por isso as formas de um dia e a
+ * semana escolhida passam por prop, e não pelo `state` da rota.
  */
 export function PlanejadorPage() {
-  const [aba, setAba] = useState<'semana' | 'dia'>('semana')
+  const [aba, setAba] = useState<'mes' | 'semana' | 'dia'>('semana')
   const [formasDoDia, setFormasDoDia] = useState<Record<string, string> | undefined>()
+  // O contador faz o clique valer mesmo quando é a mesma semana de antes:
+  // sem ele, escolher de novo a semana que já está na prop não dispararia nada.
+  const [semanaAlvo, setSemanaAlvo] = useState<{ iso: string; n: number }>()
+
+  const descricao = {
+    mes: 'O mês inteiro, semana a semana.',
+    semana: 'A meta da semana repartida em dias de produção.',
+    dia: 'Quantos recipientes precisam estar abastecidos antes de a produção começar.',
+  }[aba]
 
   return (
     <div className="p-4 sm:p-6 max-w-6xl">
       <div className="mb-4">
         <h1 className="text-xl font-bold text-gray-900 dark:text-gray-100">Planejador</h1>
-        <p className="text-sm text-gray-500 dark:text-unno-muted mt-1">
-          {aba === 'semana'
-            ? 'A meta da semana repartida em dias de produção.'
-            : 'Quantos recipientes precisam estar abastecidos antes de a produção começar.'}
-        </p>
+        <p className="text-sm text-gray-500 dark:text-unno-muted mt-1">{descricao}</p>
       </div>
 
       <div className="flex gap-1 border-b border-gray-200 dark:border-white/[.08] mb-5">
-        {([['semana', 'Semana'], ['dia', 'Dia']] as const).map(([key, label]) => (
+        {([['mes', 'Mês'], ['semana', 'Semana'], ['dia', 'Dia']] as const).map(([key, label]) => (
           <button
             key={key}
             onClick={() => setAba(key)}
@@ -44,10 +51,19 @@ export function PlanejadorPage() {
         ))}
       </div>
 
-      {/* As duas ficam montadas: alternar não pode perder o que foi digitado
+      {/* As três ficam montadas: alternar não pode perder o que foi digitado
           na outra. `hidden` em vez de desmontar. */}
+      <div className={aba === 'mes' ? '' : 'hidden'}>
+        <PlanejadorMesPage
+          onAbrirSemana={segunda => {
+            setSemanaAlvo(a => ({ iso: segunda, n: (a?.n ?? 0) + 1 }))
+            setAba('semana')
+          }}
+        />
+      </div>
       <div className={aba === 'semana' ? '' : 'hidden'}>
         <PlanejadorSemanaPage
+          semanaInicial={semanaAlvo}
           onVerAbastecimento={formas => {
             setFormasDoDia(formas)
             setAba('dia')

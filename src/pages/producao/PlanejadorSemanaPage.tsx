@@ -245,9 +245,12 @@ function CampoNumerico({
 
 export function PlanejadorSemanaPage({
   onVerAbastecimento,
+  semanaInicial,
 }: {
   /** Leva as formas de um dia para a aba "Dia". */
   onVerAbastecimento?: (formas: Record<string, string>) => void
+  /** Semana escolhida na aba Mês. O contador permite reescolher a mesma. */
+  semanaInicial?: { iso: string; n: number }
 }) {
   const { profile } = useAuth()
   const navigate = useNavigate()
@@ -312,6 +315,12 @@ export function PlanejadorSemanaPage({
     () => Array.from({ length: 7 }, (_, i) => somarDias(semana, i)),
     [semana],
   )
+
+  // Veio um clique do calendário do mês.
+  useEffect(() => {
+    if (semanaInicial) setSemana(semanaInicial.iso)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [semanaInicial?.n])
 
   // ── Carga inicial ───────────────────────────────────────────
   useEffect(() => {
@@ -1398,9 +1407,19 @@ export function PlanejadorSemanaPage({
                   Imprimir / PDF
                 </Button>
                 {temAlteracao && salvoEm && (
-                  <p className="text-xs text-amber-700 text-center">
-                    há alterações não salvas
-                  </p>
+                  <div className="text-center space-y-1">
+                    <p className="text-xs text-amber-700">há alterações não salvas</p>
+                    {/* Recarregar do banco é o descarte mais honesto: volta
+                        exatamente o que está gravado, sem tentar desfazer
+                        passo a passo o que foi mexido. */}
+                    <button
+                      type="button"
+                      onClick={carregarSemana}
+                      className="text-xs text-gray-500 underline hover:text-gray-700 dark:text-unno-muted"
+                    >
+                      Descartar alterações
+                    </button>
+                  </div>
                 )}
               </CardBody>
             </Card>
