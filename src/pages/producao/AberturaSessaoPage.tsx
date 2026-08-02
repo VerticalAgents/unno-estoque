@@ -175,11 +175,14 @@ export function AberturaSessaoPage() {
     if (resp?.trava === 'sessao_sem_insumo') {
       setFaltantes(resp.faltantes ?? [])
       setTravaModo(resp.modo === 'bloqueia' ? 'bloqueia' : 'avisa')
-      setError(resp.mensagem ?? '')
+      setError('')
       return
     }
 
     if (rpcError || !resp?.ok) {
+      // A trava passou (ou nem era o caso) e ainda assim não abriu: é outro
+      // motivo, e ele precisa aparecer. Antes ficava escondido atrás da caixa
+      // de "falta insumo", e o clique parecia não fazer nada.
       setError(rpcError?.message ?? resp?.erro ?? 'Erro ao abrir sessão.')
       return
     }
@@ -377,7 +380,7 @@ export function AberturaSessaoPage() {
           </div>
         )}
 
-        {error && !faltantes && (
+        {error && (
           <div className="p-3 bg-red-50 border border-red-200 rounded-lg text-sm text-red-700
                           dark:bg-unno-danger/10 dark:border-unno-danger/30 dark:text-unno-danger">
             {error}
