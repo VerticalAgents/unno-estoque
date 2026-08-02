@@ -940,57 +940,63 @@ export function PlanejadorSemanaPage({
                     />
                   )}
                 </div>
+                {/* As duas barras vivem no mesmo grid para terem exatamente o
+                    mesmo comprimento: a coluna do texto é dimensionada pelo
+                    maior dos dois rótulos, e as barras dividem o resto. Com
+                    dois flex separados cada barra media pelo seu próprio texto
+                    e elas saíam desalinhadas. */}
                 {unidades > 0 && (
-                  <div className="flex items-center gap-2 mt-1.5">
-                    <div className="flex-1 h-1.5 rounded-full bg-gray-100 dark:bg-white/[.06] overflow-hidden">
+                  <div className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-2 gap-y-1 mt-1.5">
+                    <div className="h-1.5 rounded-full bg-gray-100 dark:bg-white/[.06] overflow-hidden">
                       <div className="h-full bg-brand-500 rounded-full"
                            style={{ width: `${Math.min(part, 100)}%` }} />
                     </div>
                     {/* No percentual quem foi digitado é o %, então o número
                         que falta ver é quantas unidades aquela fatia virou. */}
-                    <span className="text-xs text-gray-500 dark:text-unno-muted tabular-nums whitespace-nowrap">
+                    <span className="text-xs text-gray-500 dark:text-unno-muted tabular-nums whitespace-nowrap text-right">
                       {modo === 'percentual' && `${fmt(unidades)} un · `}
                       {m ? `${m.formas} formas · ${m.bateladas} bat` : ''}
                       {modo === 'unidades' && ` · ${fmt(part, 1)}%`}
                     </span>
+
+                    {/* A última batelada: quatro divisões, preenchidas conforme
+                        as formas que sobram nela. Incompleta muda o forno. */}
+                    {m && m.formas > 0 && (() => {
+                      const ultima = formasNaUltimaBatelada(m.formas)
+                      // Escada de quatro degraus: quanto menos massa sobra na
+                      // última batelada, mais o forno precisa ser reprogramado.
+                      // Uma forma sozinha é o pior caso.
+                      // O limão vai como valor direto e não pelo token do tema
+                      // (`unno.lime`): cor nova no tailwind.config só aparece
+                      // depois de reiniciar o servidor, e escrita assim funciona
+                      // na hora. O token continua no tema para reuso.
+                      const cor = { 1: 'bg-red-500', 2: 'bg-unno-amber',
+                                    3: 'bg-[#8cbf3f]', 4: 'bg-brand-500' }[ultima] ?? 'bg-brand-500'
+                      const corTexto = { 1: 'text-red-600', 2: 'text-amber-700',
+                                         3: 'text-lime-700',
+                                         4: 'text-gray-500 dark:text-unno-muted' }[ultima]
+                        ?? 'text-gray-500 dark:text-unno-muted'
+                      return (
+                        <>
+                          <div className="flex gap-0.5">
+                            {Array.from({ length: FORMAS_POR_BATELADA }, (_, i) => (
+                              <div
+                                key={i}
+                                className={`h-1.5 flex-1 rounded-[2px] ${
+                                  i < ultima ? cor : 'bg-gray-100 dark:bg-white/[.06]'
+                                }`}
+                              />
+                            ))}
+                          </div>
+                          <span className={`text-xs tabular-nums whitespace-nowrap text-right ${corTexto}`}>
+                            última batelada: {ultima} de {FORMAS_POR_BATELADA} formas
+                          </span>
+                        </>
+                      )
+                    })()}
                   </div>
                 )}
 
-                {/* A última batelada: quatro divisões, preenchidas conforme as
-                    formas que sobram nela. Incompleta muda o tempo de forno. */}
-                {m && m.formas > 0 && (() => {
-                  const ultima = formasNaUltimaBatelada(m.formas)
-                  // Escada de quatro degraus: quanto menos massa sobra na
-                  // última batelada, mais o forno precisa ser reprogramado.
-                  // Uma forma sozinha é o pior caso.
-                  // O limão vai como valor direto e não pelo token do tema
-                  // (`unno.lime`): cor nova no tailwind.config só aparece
-                  // depois de reiniciar o servidor, e escrita assim funciona
-                  // na hora. O token continua no tema para reuso.
-                  const cor = { 1: 'bg-red-500', 2: 'bg-unno-amber',
-                                3: 'bg-[#8cbf3f]', 4: 'bg-brand-500' }[ultima] ?? 'bg-brand-500'
-                  const corTexto = { 1: 'text-red-600', 2: 'text-amber-700',
-                                     3: 'text-lime-700',
-                                     4: 'text-gray-500 dark:text-unno-muted' }[ultima]
-                    ?? 'text-gray-500 dark:text-unno-muted'
-                  return (
-                    <div className="flex items-center gap-2 mt-1">
-                      <div className="flex-1 flex gap-0.5">
-                        {Array.from({ length: FORMAS_POR_BATELADA }, (_, i) => (
-                          <div
-                            key={i}
-                            className={`h-1.5 flex-1 rounded-[2px] ${
-                              i < ultima ? cor : 'bg-gray-100 dark:bg-white/[.06]'
-                            }`}
-                          />
-                        ))}
-                      </div>
-                      <span className={`text-xs tabular-nums whitespace-nowrap ${corTexto}`}>
-                        última batelada: {ultima} de {FORMAS_POR_BATELADA} formas
-                      </span>
-                    </div>
-                  )
-                })()}
                 {unidades > 0 && !f.rendimento_fornada && (
                   <p className="text-xs text-red-600 mt-1">
                     Sem rendimento cadastrado — Configurações → Produção.
