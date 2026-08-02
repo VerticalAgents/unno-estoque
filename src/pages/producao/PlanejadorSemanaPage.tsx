@@ -518,6 +518,9 @@ export function PlanejadorSemanaPage({
 
   const totalUnidadesMeta = metas.reduce((s, m) => s + m.unidades, 0)
 
+  /** Os produtos que entram na semana, na ordem de prioridade. */
+  const ordemVisivel = metas.map(m => m.ficha)
+
   // ── A distribuição em blocos ────────────────────────────────
   /**
    * Enche dia a dia com um produto só, na ordem do código. Cada produto só
@@ -649,13 +652,19 @@ export function PlanejadorSemanaPage({
     }
   }
 
-  /** Sobe ou desce um produto na prioridade da semana. */
+  /**
+   * Sobe ou desce um produto na prioridade da semana.
+   *
+   * Opera sobre a lista visível — só os produtos que têm meta. Ordenar quem
+   * não vai ser produzido não muda nada e só ocupa a tela. Os demais voltam
+   * ao fim da ordem gravada.
+   */
   function moverFicha(indice: number, direcao: -1 | 1) {
+    const ids = ordemVisivel.map(f => f.id)
     const destino = indice + direcao
-    if (destino < 0 || destino >= fichasOrdenadas.length) return
-    const ids = fichasOrdenadas.map(f => f.id)
+    if (destino < 0 || destino >= ids.length) return
     ;[ids[indice], ids[destino]] = [ids[destino], ids[indice]]
-    setOrdem(ids)
+    setOrdem([...ids, ...fichas.map(f => f.id).filter(id => !ids.includes(id))])
     setAjustado(false)   // ordem nova pede distribuição nova
   }
 
@@ -1179,38 +1188,59 @@ export function PlanejadorSemanaPage({
             </div>
 
             {/* Prioridade: só muda o resultado no modo blocos */}
-            {preenchimento === 'blocos' && fichasOrdenadas.length > 1 && (
+            {preenchimento === 'blocos' && ordemVisivel.length > 1 && (
               <div>
                 <p className="text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-unno-muted mb-1.5">
                   Ordem na semana
                 </p>
                 <div className="space-y-1">
-                  {fichasOrdenadas.map((f, i) => (
+                  {ordemVisivel.map((f, i) => (
                     <div key={f.id} className="flex items-center gap-2">
                       <span className="w-5 text-xs text-gray-400 tabular-nums">{i + 1}º</span>
                       <p className="flex-1 min-w-0 text-sm text-gray-700 dark:text-unno-text truncate">
                         <span className="text-gray-400 mr-1.5">{f.codigo}</span>{f.nome}
                       </p>
-                      <button
-                        type="button"
-                        disabled={i === 0}
-                        onClick={() => moverFicha(i, -1)}
-                        className="px-2 py-1 rounded border border-gray-200 text-gray-600 text-xs
-                                   disabled:opacity-30 hover:bg-gray-50 dark:border-white/[.08]"
-                        title="Subir"
-                      >
-                        ↑
-                      </button>
-                      <button
-                        type="button"
-                        disabled={i === fichasOrdenadas.length - 1}
-                        onClick={() => moverFicha(i, 1)}
-                        className="px-2 py-1 rounded border border-gray-200 text-gray-600 text-xs
-                                   disabled:opacity-30 hover:bg-gray-50 dark:border-white/[.08]"
-                        title="Descer"
-                      >
-                        ↓
-                      </button>
+
+                      {/* Com dois produtos, seta para baixo e seta para cima
+                          são a mesma ação: trocar os dois. E como o botão
+                          pertence à linha e não ao produto, clicar duas vezes
+                          no mesmo lugar fazia e desfazia. Aí o certo é chamar
+                          a ação pelo nome. */}
+                      {ordemVisivel.length === 2 ? (
+                        i === 0 && (
+                          <button
+                            type="button"
+                            onClick={() => moverFicha(0, 1)}
+                            className="px-2 py-1 rounded border border-gray-200 text-xs text-gray-600
+                                       hover:bg-gray-50 dark:border-white/[.08] dark:text-unno-muted"
+                          >
+                            Inverter ordem
+                          </button>
+                        )
+                      ) : (
+                        <>
+                          <button
+                            type="button"
+                            disabled={i === 0}
+                            onClick={() => moverFicha(i, -1)}
+                            className="px-2 py-1 rounded border border-gray-200 text-gray-600 text-xs
+                                       disabled:opacity-30 hover:bg-gray-50 dark:border-white/[.08]"
+                            title="Subir"
+                          >
+                            ↑
+                          </button>
+                          <button
+                            type="button"
+                            disabled={i === ordemVisivel.length - 1}
+                            onClick={() => moverFicha(i, 1)}
+                            className="px-2 py-1 rounded border border-gray-200 text-gray-600 text-xs
+                                       disabled:opacity-30 hover:bg-gray-50 dark:border-white/[.08]"
+                            title="Descer"
+                          >
+                            ↓
+                          </button>
+                        </>
+                      )}
                     </div>
                   ))}
                 </div>
