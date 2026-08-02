@@ -75,6 +75,20 @@ function fmt(n: number, casas = 0) {
   return n.toLocaleString('pt-BR', { minimumFractionDigits: 0, maximumFractionDigits: casas })
 }
 
+/**
+ * Quantas formas caem na última batelada.
+ *
+ * Batelada cheia é 4 formas. Uma última batelada de 3 significa menos massa no
+ * forno, e menos massa assa mais rápido — o forno precisa ser reprogramado só
+ * para ela. Por isso o número aparece na tela: dá para mexer na meta em ±60
+ * unidades e fechar redondo antes de a produção começar.
+ */
+function formasNaUltimaBatelada(formas: number): number {
+  if (formas <= 0) return 0
+  const resto = formas % FORMAS_POR_BATELADA
+  return resto === 0 ? FORMAS_POR_BATELADA : resto
+}
+
 const printStyles = `
   .semana-print-target { display: none; }
 
@@ -741,6 +755,34 @@ export function PlanejadorSemanaPage({
                     </span>
                   </div>
                 )}
+
+                {/* A última batelada: quatro divisões, preenchidas conforme as
+                    formas que sobram nela. Incompleta muda o tempo de forno. */}
+                {m && m.formas > 0 && (() => {
+                  const ultima = formasNaUltimaBatelada(m.formas)
+                  const cheia = ultima === FORMAS_POR_BATELADA
+                  return (
+                    <div className="flex items-center gap-2 mt-1">
+                      <div className="flex-1 flex gap-0.5">
+                        {Array.from({ length: FORMAS_POR_BATELADA }, (_, i) => (
+                          <div
+                            key={i}
+                            className={`h-1.5 flex-1 rounded-[2px] ${
+                              i < ultima
+                                ? cheia ? 'bg-brand-500' : 'bg-unno-amber'
+                                : 'bg-gray-100 dark:bg-white/[.06]'
+                            }`}
+                          />
+                        ))}
+                      </div>
+                      <span className={`text-xs tabular-nums whitespace-nowrap ${
+                        cheia ? 'text-gray-500 dark:text-unno-muted' : 'text-amber-700'
+                      }`}>
+                        última batelada: {ultima} de {FORMAS_POR_BATELADA} formas
+                      </span>
+                    </div>
+                  )
+                })()}
                 {unidades > 0 && !f.rendimento_fornada && (
                   <p className="text-xs text-red-600 mt-1">
                     Sem rendimento cadastrado — Configurações → Produção.
