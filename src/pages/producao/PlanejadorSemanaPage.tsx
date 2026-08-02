@@ -191,6 +191,12 @@ export function PlanejadorSemanaPage({
 
   // Alvo do botão "editar" da coluna fixa.
   const topoRef = useRef<HTMLDivElement>(null)
+  // Estado do "segurar para acelerar" dos botões de forma.
+  const repeticao = useRef<{ espera?: number; timer?: number; repetiu?: boolean }>({})
+
+  // Soltar o botão fora da tela, trocar de aba ou sair da página não pode
+  // deixar o contador correndo sozinho.
+  useEffect(() => () => pararRepeticao(), [])
 
   const num = (s: string | undefined) => parseFloat((s ?? '').replace(',', '.')) || 0
 
@@ -486,13 +492,48 @@ export function PlanejadorSemanaPage({
     })
   }
 
-  /** Uma forma para cima ou para baixo, no botão. */
+  /**
+   * Uma forma para cima ou para baixo.
+   *
+   * Lê o valor de dentro do próprio setState porque isto roda em repetição
+   * quando o botão fica pressionado — ler `alvo` de fora congelaria o número
+   * no valor de quando o dedo desceu.
+   */
   function passoFormas(f: FichaOption, delta: -1 | 1) {
     const rend = f.rendimento_fornada ?? 0
     if (rend <= 0) return
-    const formas = Math.max(0, Math.round(num(alvo[f.id]) / rend) + delta)
-    setAlvo(s => ({ ...s, [f.id]: formas > 0 ? String(formas * rend) : '' }))
+    setAlvo(s => {
+      const atual = parseFloat((s[f.id] ?? '').replace(',', '.')) || 0
+      const formas = Math.max(0, Math.round(atual / rend) + delta)
+      return { ...s, [f.id]: formas > 0 ? String(formas * rend) : '' }
+    })
     setAjustado(false)
+  }
+
+  /**
+   * Segurar o botão acelera, como num campo numérico de verdade: meio segundo
+   * parado, depois passos cada vez mais rápidos. Sem isso, sair de 0 a 6.000
+   * unidades é clicar cem vezes.
+   */
+  function iniciarRepeticao(f: FichaOption, delta: -1 | 1) {
+    pararRepeticao()
+    repeticao.current.espera = window.setTimeout(() => {
+      let ritmo = 140
+      const passo = () => {
+        repeticao.current.repetiu = true
+        passoFormas(f, delta)
+        ritmo = Math.max(45, ritmo - 10)   // vai ganhando velocidade
+        repeticao.current.timer = window.setTimeout(passo, ritmo)
+      }
+      passo()
+    }, 450)
+  }
+
+  function pararRepeticao() {
+    window.clearTimeout(repeticao.current.espera)
+    window.clearTimeout(repeticao.current.timer)
+    repeticao.current.espera = undefined
+    repeticao.current.timer = undefined
   }
 
   /**
@@ -778,7 +819,17 @@ export function PlanejadorSemanaPage({
                     {modo === 'unidades' && (
                       <button
                         type="button"
-                        onClick={() => passoFormas(f, -1)}
+                        // O clique dá o passo simples; segurar entra em repetição.
+                        // Quando a repetição rodou, o clique da soltura é
+                        // descartado para não somar uma forma a mais no fim.
+                        onClick={() => {
+                          if (repeticao.current.repetiu) { repeticao.current.repetiu = false; return }
+                          passoFormas(f, -1)
+                        }}
+                        onPointerDown={() => iniciarRepeticao(f, -1)}
+                        onPointerUp={pararRepeticao}
+                        onPointerLeave={pararRepeticao}
+                        onPointerCancel={pararRepeticao}
                         disabled={!f.rendimento_fornada || (alvoEfetivo[f.id] ?? 0) <= 0}
                         title="Uma forma a menos"
                         className="w-8 h-9 rounded-lg border border-gray-300 text-gray-600 text-lg leading-none
@@ -808,7 +859,17 @@ export function PlanejadorSemanaPage({
                     {modo === 'unidades' && (
                       <button
                         type="button"
-                        onClick={() => passoFormas(f, 1)}
+                        // O clique dá o passo simples; segurar entra em repetição.
+                        // Quando a repetição rodou, o clique da soltura é
+                        // descartado para não somar uma forma a mais no fim.
+                        onClick={() => {
+                          if (repeticao.current.repetiu) { repeticao.current.repetiu = false; return }
+                          passoFormas(f, 1)
+                        }}
+                        onPointerDown={() => iniciarRepeticao(f, 1)}
+                        onPointerUp={pararRepeticao}
+                        onPointerLeave={pararRepeticao}
+                        onPointerCancel={pararRepeticao}
                         disabled={!f.rendimento_fornada}
                         title="Uma forma a mais"
                         className="w-8 h-9 rounded-lg border border-gray-300 text-gray-600 text-lg leading-none
@@ -842,8 +903,12 @@ export function PlanejadorSemanaPage({
                   // Escada de quatro degraus: quanto menos massa sobra na
                   // última batelada, mais o forno precisa ser reprogramado.
                   // Uma forma sozinha é o pior caso.
+                  // O limão vai como valor direto e não pelo token do tema
+                  // (`unno.lime`): cor nova no tailwind.config só aparece
+                  // depois de reiniciar o servidor, e escrita assim funciona
+                  // na hora. O token continua no tema para reuso.
                   const cor = { 1: 'bg-red-500', 2: 'bg-unno-amber',
-                                3: 'bg-unno-lime', 4: 'bg-brand-500' }[ultima] ?? 'bg-brand-500'
+                                3: 'bg-[#8cbf3f]', 4: 'bg-brand-500' }[ultima] ?? 'bg-brand-500'
                   const corTexto = { 1: 'text-red-600', 2: 'text-amber-700',
                                      3: 'text-lime-700',
                                      4: 'text-gray-500 dark:text-unno-muted' }[ultima]
