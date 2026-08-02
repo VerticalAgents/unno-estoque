@@ -111,6 +111,12 @@ export function ReabastecimentoPage() {
   const [alvoSalvo, setAlvoSalvo] = useState<Record<string, string>>({})
   const [margem, setMargem] = useState('15')
   const [margemSalva, setMargemSalva] = useState('15')
+  // Dois jeitos de chegar no mesmo lugar. Em 'unidades' você digita a meta de
+  // cada produto; em 'percentual', digita o total e como ele se reparte.
+  // O que vai para o banco é sempre unidades por ficha.
+  const [modo, setModo] = useState<'unidades' | 'percentual'>('unidades')
+  const [totalDigitado, setTotalDigitado] = useState('')
+  const [pct, setPct] = useState<Record<string, string>>({})
   const [linhas, setLinhas] = useState<LinhaReabastecimento[]>([])
   const [loading, setLoading] = useState(true)
   const [salvando, setSalvando] = useState(false)
@@ -185,7 +191,7 @@ export function ReabastecimentoPage() {
       p_empresa_id: profile.empresa_id,
       p_projecao: fichas.map(f => ({
         ficha_id: f.id,
-        unidades_alvo: parseFloat((alvo[f.id] ?? '').replace(',', '.')) || 0,
+        unidades_alvo: alvoEfetivo[f.id] ?? 0,
       })),
     })
 
@@ -195,10 +201,36 @@ export function ReabastecimentoPage() {
       setErro(cfgErr?.message ?? error?.message ?? 'Não foi possível salvar.')
       return
     }
-    setAlvoSalvo(alvo)
+    setAlvoSalvo(Object.fromEntries(
+      Object.entries(alvoEfetivo).map(([k, v]) => [k, String(v)]),
+    ))
     setMargemSalva(margem)
     await recalcular()
   }
+
+  const num = (s: string | undefined) => parseFloat((s ?? '').replace(',', '.')) || 0
+
+  const totalPct = useMemo(
+    () => fichas.reduce((s, f) => s + num(pct[f.id]), 0),
+    [fichas, pct],
+  )
+
+  /**
+   * A meta de cada ficha, venha ela de onde vier.
+   *
+   * No modo percentual as unidades saem da divisão do total; arredondam para
+   * inteiro, então a soma pode ficar uma ou duas unidades longe do total
+   * digitado. A tela mostra a soma real em vez de esconder a diferença.
+   */
+  const alvoEfetivo = useMemo<Record<string, number>>(() => {
+    if (modo === 'unidades') {
+      return Object.fromEntries(fichas.map(f => [f.id, num(alvo[f.id])]))
+    }
+    const total = num(totalDigitado)
+    return Object.fromEntries(
+      fichas.map(f => [f.id, Math.round(total * num(pct[f.id]) / 100)]),
+    )
+  }, [modo, fichas, alvo, totalDigitado, pct])
 
   /**
    * A conversão acontece na tela, enquanto se digita. Antes ela vinha do banco
@@ -208,7 +240,7 @@ export function ReabastecimentoPage() {
   const conversoes = useMemo<Conversao[]>(
     () => fichas
       .map(f => {
-        const unidades = parseFloat((alvo[f.id] ?? '').replace(',', '.')) || 0
+        const unidades = alvoEfetivo[f.id] ?? 0
         const rend = f.rendimento_fornada ?? 0
         const formas = rend > 0 ? Math.ceil(unidades / rend) : 0
         return {
@@ -220,26 +252,49 @@ export function ReabastecimentoPage() {
         }
       })
       .filter(c => c.unidades > 0),
-    [fichas, alvo],
+    [fichas, alvoEfetivo],
   )
 
   const totalUnidades = conversoes.reduce((s, c) => s + c.unidades, 0)
   const totalFormas = conversoes.reduce((s, c) => s + c.formas, 0)
 
+  /** Quanto cada ficha representa da produção total. */
+  const participacao = (unidades: number) =>
+    totalUnidades > 0 ? (100 * unidades) / totalUnidades : 0
+
+  /**
+   * Trocar de modo não pode zerar o que já foi digitado: cada modo entra
+   * mostrando a mesma distribuição que o outro estava mostrando.
+   */
+  function trocarModo(novo: 'unidades' | 'percentual') {
+    if (novo === modo) return
+    if (novo === 'percentual') {
+      setTotalDigitado(totalUnidades > 0 ? String(totalUnidades) : '')
+      setPct(Object.fromEntries(fichas.map(f => {
+        const p = participacao(alvoEfetivo[f.id] ?? 0)
+        return [f.id, p > 0 ? String(Math.round(p * 10) / 10) : '']
+      })))
+    } else {
+      setAlvo(Object.fromEntries(fichas.map(f => {
+        const u = alvoEfetivo[f.id] ?? 0
+        return [f.id, u > 0 ? String(u) : '']
+      })))
+    }
+    setModo(novo)
+  }
+
   // Digitou e ainda não salvou: a lista de compras abaixo é a antiga.
   const naoSalvo = useMemo(() => {
     if (margem !== margemSalva) return true
-    const ids = new Set([...Object.keys(alvo), ...Object.keys(alvoSalvo)])
+    const ids = new Set([...Object.keys(alvoEfetivo), ...Object.keys(alvoSalvo)])
     for (const id of ids) {
-      const a = parseFloat((alvo[id] ?? '0').replace(',', '.')) || 0
-      const b = parseFloat((alvoSalvo[id] ?? '0').replace(',', '.')) || 0
-      if (a !== b) return true
+      if ((alvoEfetivo[id] ?? 0) !== num(alvoSalvo[id])) return true
     }
     return false
-  }, [alvo, alvoSalvo, margem, margemSalva])
+  }, [alvoEfetivo, alvoSalvo, margem, margemSalva])
 
   const semRendimento = fichas.filter(
-    f => !f.rendimento_fornada && (parseFloat((alvo[f.id] ?? '0').replace(',', '.')) || 0) > 0,
+    f => !f.rendimento_fornada && (alvoEfetivo[f.id] ?? 0) > 0,
   )
 
   const aComprar = linhas.filter(l => l.comprar > 0)
@@ -271,11 +326,57 @@ export function ReabastecimentoPage() {
       <Card className="mb-4">
         <CardHeader
           title="Meta de produção"
-          subtitle="Quantas unidades de cada produto você quer produzir"
+          subtitle={modo === 'unidades'
+            ? 'Quantas unidades de cada produto você quer produzir'
+            : 'Quanto no total e como isso se reparte entre os produtos'}
         />
         <CardBody className="space-y-3">
+          {/* Dois caminhos para a mesma coisa: às vezes se sabe a meta de cada
+              produto, às vezes se sabe o total e a divisão. */}
+          <div className="flex gap-1 p-1 bg-gray-100 dark:bg-white/[.04] rounded-lg">
+            {([
+              ['unidades', 'Por produto'],
+              ['percentual', 'Total e %'],
+            ] as const).map(([key, label]) => (
+              <button
+                key={key}
+                type="button"
+                onClick={() => trocarModo(key)}
+                className={[
+                  'flex-1 px-3 py-1.5 text-sm font-medium rounded-md transition-colors',
+                  modo === key
+                    ? 'bg-white dark:bg-unno-raised text-gray-900 dark:text-unno-text shadow-sm'
+                    : 'text-gray-500 hover:text-gray-700 dark:text-unno-muted',
+                ].join(' ')}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+
+          {modo === 'percentual' && (
+            <div className="flex items-center gap-3 pb-1">
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-medium text-gray-900 dark:text-unno-text">
+                  Produção total
+                </p>
+              </div>
+              <input
+                type="number" min={0} step={100} inputMode="numeric"
+                value={totalDigitado}
+                onChange={e => setTotalDigitado(e.target.value)}
+                placeholder="0"
+                className="w-32 rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-right font-semibold
+                           focus:outline-none focus:border-brand-500 focus:ring-[3px] focus:ring-brand-500/10
+                           dark:border-white/[.08] dark:bg-unno-raised dark:text-unno-text"
+              />
+              <span className="text-xs text-gray-400 w-14">unidades</span>
+            </div>
+          )}
+
           {fichas.map(f => {
             const c = conversoes.find(x => x.ficha.id === f.id)
+            const unidades = alvoEfetivo[f.id] ?? 0
             return (
               <div key={f.id}>
                 <div className="flex items-center gap-3">
@@ -284,20 +385,57 @@ export function ReabastecimentoPage() {
                       {f.codigo} — {f.nome}
                     </p>
                   </div>
-                  <input
-                    type="number"
-                    min={0}
-                    step={60}
-                    inputMode="numeric"
-                    value={alvo[f.id] ?? ''}
-                    onChange={e => setAlvo(s => ({ ...s, [f.id]: e.target.value }))}
-                    placeholder="0"
-                    className="w-32 rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-right
-                               focus:outline-none focus:border-brand-500 focus:ring-[3px] focus:ring-brand-500/10
-                               dark:border-white/[.08] dark:bg-unno-raised dark:text-unno-text"
-                  />
-                  <span className="text-xs text-gray-400 w-14">unidades</span>
+                  {modo === 'unidades' ? (
+                    <input
+                      type="number"
+                      min={0}
+                      step={60}
+                      inputMode="numeric"
+                      value={alvo[f.id] ?? ''}
+                      onChange={e => setAlvo(s => ({ ...s, [f.id]: e.target.value }))}
+                      placeholder="0"
+                      className="w-32 rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-right
+                                 focus:outline-none focus:border-brand-500 focus:ring-[3px] focus:ring-brand-500/10
+                                 dark:border-white/[.08] dark:bg-unno-raised dark:text-unno-text"
+                    />
+                  ) : (
+                    <input
+                      type="number"
+                      min={0}
+                      max={100}
+                      step="0.5"
+                      inputMode="decimal"
+                      value={pct[f.id] ?? ''}
+                      onChange={e => setPct(s => ({ ...s, [f.id]: e.target.value }))}
+                      placeholder="0"
+                      className="w-32 rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-right
+                                 focus:outline-none focus:border-brand-500 focus:ring-[3px] focus:ring-brand-500/10
+                                 dark:border-white/[.08] dark:bg-unno-raised dark:text-unno-text"
+                    />
+                  )}
+                  <span className="text-xs text-gray-400 w-14">
+                    {modo === 'unidades' ? 'unidades' : '%'}
+                  </span>
                 </div>
+
+                {/* A distribuição, sempre visível: no modo por produto é o que
+                    o sistema calculou; no modo percentual, as unidades que
+                    saíram da divisão. */}
+                {unidades > 0 && (
+                  <div className="flex items-center gap-2 mt-1.5">
+                    <div className="flex-1 h-1.5 rounded-full bg-gray-100 dark:bg-white/[.06] overflow-hidden">
+                      <div
+                        className="h-full bg-brand-500 rounded-full"
+                        style={{ width: `${Math.min(participacao(unidades), 100)}%` }}
+                      />
+                    </div>
+                    <span className="text-xs text-gray-500 dark:text-unno-muted tabular-nums whitespace-nowrap">
+                      {modo === 'unidades'
+                        ? `${fmt(participacao(unidades), 1)}% do total`
+                        : `${fmt(unidades, 0)} un · ${fmt(participacao(unidades), 1)}%`}
+                    </span>
+                  </div>
+                )}
                 {/* A conversão, para conferência. Muda enquanto se digita. */}
                 {c && c.ficha.rendimento_fornada && (
                   <p className="text-xs text-gray-500 dark:text-unno-dim mt-1 ml-0.5">
@@ -335,11 +473,32 @@ export function ReabastecimentoPage() {
             </p>
           </div>
 
+          {/* Os percentuais têm que fechar em 100 — se não fecham, parte da
+              produção ficou de fora e o pedido sairia menor do que deveria. */}
+          {modo === 'percentual' && totalPct > 0 && Math.abs(totalPct - 100) > 0.05 && (
+            <div className={`p-3 rounded-lg text-sm ${
+              totalPct > 100
+                ? 'bg-red-50 border border-red-200 text-red-700'
+                : 'bg-amber-50 border border-amber-200 text-amber-800'
+            }`}>
+              Os percentuais somam <strong>{fmt(totalPct, 1)}%</strong>.
+              {totalPct > 100
+                ? ' Passa de 100% — a soma das metas vai ficar maior que o total.'
+                : ` Faltam ${fmt(100 - totalPct, 1)}% para fechar 100%.`}
+            </div>
+          )}
+
           {totalUnidades > 0 && (
             <div className="bg-gray-50 dark:bg-white/[.03] rounded-lg px-3 py-2 text-xs text-gray-600 dark:text-unno-muted">
               {fmt(totalUnidades, 0)} unidades no total —{' '}
               <strong>{totalFormas} formas</strong>
               {' '}· {Math.ceil(totalFormas / FORMAS_POR_BATELADA)} bateladas
+              {/* Arredondamento da divisão: mostrar em vez de esconder */}
+              {modo === 'percentual' && num(totalDigitado) > 0
+                && totalUnidades !== num(totalDigitado) && (
+                <> · a divisão arredondada deu {totalUnidades > num(totalDigitado) ? '+' : ''}
+                  {fmt(totalUnidades - num(totalDigitado), 0)} un sobre o total digitado</>
+              )}
             </div>
           )}
 
@@ -482,6 +641,7 @@ export function ReabastecimentoPage() {
               <tr>
                 <th>Produto</th>
                 <th className="num">Meta (un)</th>
+                <th className="num">% do total</th>
                 <th className="num">Formas</th>
                 <th className="num">Bateladas</th>
               </tr>
@@ -491,10 +651,18 @@ export function ReabastecimentoPage() {
                 <tr key={c.ficha.id}>
                   <td><span className="mono">{c.ficha.codigo}</span> {c.ficha.nome}</td>
                   <td className="num">{fmt(c.unidades, 0)}</td>
+                  <td className="num">{fmt(participacao(c.unidades), 1)}%</td>
                   <td className="num">{c.formas}</td>
                   <td className="num">{c.bateladas}</td>
                 </tr>
               ))}
+              <tr>
+                <td><strong>Total</strong></td>
+                <td className="num"><strong>{fmt(totalUnidades, 0)}</strong></td>
+                <td className="num">100%</td>
+                <td className="num"><strong>{totalFormas}</strong></td>
+                <td className="num">{Math.ceil(totalFormas / FORMAS_POR_BATELADA)}</td>
+              </tr>
             </tbody>
           </table>
         )}
