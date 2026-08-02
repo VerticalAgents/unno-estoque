@@ -555,8 +555,18 @@ export function ReabastecimentoPage() {
             </div>
           )}
 
-          <Button onClick={salvar} loading={salvando} fullWidth>
-            {naoSalvo ? 'Salvar e recalcular a lista de compras' : 'Salvar e recalcular'}
+          {/* O botão também é o indicador: apagado e escrito "Salvo" quer
+              dizer que a lista de compras abaixo corresponde a estes números. */}
+          <Button
+            onClick={salvar}
+            loading={salvando}
+            fullWidth
+            // Só o "não mudou nada" desativa. Zerar tudo é uma alteração
+            // legítima — é assim que se limpa a projeção.
+            disabled={!naoSalvo}
+            title={naoSalvo ? '' : 'A lista já corresponde a estes números'}
+          >
+            {naoSalvo ? 'Salvar e recalcular' : 'Salvo'}
           </Button>
 
           {erro && (
