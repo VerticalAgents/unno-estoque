@@ -114,6 +114,19 @@ TRD primeiro dá um dia misto (qua: TRD 164 + DDL 4); DDL primeiro dá **zero**
 dias mistos, porque o DDL fecha exatamente em 2 dias. Vale sugerir inverter
 quando o dia misto incomodar.
 
+**Saldo descendo de segunda em diante** (`saldos`): cada linha de dia mostra
+quanto da meta ainda resta depois de abater aquele dia e os anteriores. Sem
+isso, distribuir na mão era adivinhação. Aparece quando `preenchimento` é
+`manual` ou o plano foi ajustado — nos modos automáticos fecha sempre em zero e
+seria ruído. Verde = completo, vermelho = passou.
+
+O painel **"Falta distribuir"** fica acima dos dias, perto de onde se digita. Ele
+substituiu o aviso de divergência que estava no fim da página.
+
+No modo `manual` **todas** as linhas de produto ficam abertas em todos os dias —
+sumir com a linha vizinha ao digitar era o atrito principal. Nos modos
+automáticos elas escondem e voltam pelo botão `+ CÓDIGO`.
+
 Qualquer produto pode ser acrescentado a qualquer dia pelo botão `+ CÓDIGO` —
 sem isso o usuário ficava preso na distribuição sugerida. As linhas abertas na
 mão vivem em `abertos`, estado de digitação que some ao trocar de semana.

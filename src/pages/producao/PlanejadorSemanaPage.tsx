@@ -527,17 +527,44 @@ export function PlanejadorSemanaPage({
   const totalFormas = porDia.reduce((s, d) => s + d.formas, 0)
   const totalUnidades = porDia.reduce((s, d) => s + d.unidades, 0)
 
-  // A soma dos dias tem que bater com a meta de cada ficha. Quando não bate,
-  // é ajuste manual — e o usuário precisa ver, não descobrir depois.
-  const divergencias = useMemo(
-    () => metas
-      .map(m => {
-        const naGrade = diasDaSemana.reduce((s, d) => s + (grade[chave(d, m.ficha.id)] ?? 0), 0)
-        return { codigo: m.ficha.codigo, meta: m.formas, grade: naGrade, dif: naGrade - m.formas }
-      })
-      .filter(d => d.dif !== 0),
+  /**
+   * Quanto de cada ficha ainda falta distribuir, descendo de segunda em diante.
+   *
+   * Sem isto, distribuir na mão é adivinhação: dá para digitar dia a dia sem
+   * nunca saber quanto do total já foi abatido.
+   */
+  const saldos = useMemo(() => {
+    const out: Record<string, { antes: number; depois: number }> = {}
+    const acumulado: Record<string, number> = {}
+    for (const d of porDia) {
+      for (const f of fichas) {
+        const meta = metas.find(m => m.ficha.id === f.id)?.formas ?? 0
+        const antes = meta - (acumulado[f.id] ?? 0)
+        acumulado[f.id] = (acumulado[f.id] ?? 0) + (grade[chave(d.dia, f.id)] ?? 0)
+        out[chave(d.dia, f.id)] = { antes, depois: meta - acumulado[f.id] }
+      }
+    }
+    return out
+  }, [porDia, fichas, metas, grade])
+
+  /** Meta × distribuído × falta, por ficha. */
+  const balanco = useMemo(
+    () => metas.map(m => {
+      const distribuido = diasDaSemana.reduce((s, d) => s + (grade[chave(d, m.ficha.id)] ?? 0), 0)
+      return {
+        ficha: m.ficha,
+        meta: m.formas,
+        distribuido,
+        falta: m.formas - distribuido,
+      }
+    }),
     [metas, grade, diasDaSemana],
   )
+
+  const faltaDistribuir = balanco.some(b => b.falta !== 0)
+  // O saldo interessa quando é você quem está distribuindo — nos modos
+  // automáticos ele fecha sempre em zero e viraria ruído.
+  const mostrarSaldo = preenchimento === 'manual' || ajustado
 
   async function salvar() {
     if (!profile) return
@@ -852,6 +879,46 @@ export function PlanejadorSemanaPage({
         </CardBody>
       </Card>
 
+      {/* ── Quanto falta distribuir ─────────────────────────── */}
+      {mostrarSaldo && balanco.length > 0 && (
+        <Card>
+          <CardBody className="py-3 space-y-2">
+            <p className="text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-unno-muted">
+              Falta distribuir
+            </p>
+            {balanco.map(b => (
+              <div key={b.ficha.id} className="flex items-center gap-3">
+                <p className="flex-1 min-w-0 text-sm text-gray-700 dark:text-unno-text truncate">
+                  <span className="text-gray-400 mr-1.5">{b.ficha.codigo}</span>{b.ficha.nome}
+                </p>
+                <div className="w-32 h-1.5 rounded-full bg-gray-100 dark:bg-white/[.06] overflow-hidden">
+                  <div
+                    className={`h-full rounded-full ${b.falta < 0 ? 'bg-red-500' : 'bg-brand-500'}`}
+                    style={{ width: `${Math.min(100, (b.distribuido / (b.meta || 1)) * 100)}%` }}
+                  />
+                </div>
+                <span className={`text-xs tabular-nums whitespace-nowrap w-40 text-right ${
+                  b.falta === 0 ? 'text-emerald-700'
+                    : b.falta < 0 ? 'text-red-600'
+                    : 'text-gray-500 dark:text-unno-muted'
+                }`}>
+                  {b.distribuido} de {b.meta} formas
+                  {b.falta === 0
+                    ? ' · completo'
+                    : b.falta > 0 ? ` · faltam ${b.falta}`
+                    : ` · ${-b.falta} a mais`}
+                </span>
+              </div>
+            ))}
+            {!faltaDistribuir && (
+              <p className="text-xs text-emerald-700">
+                A semana toda está distribuída.
+              </p>
+            )}
+          </CardBody>
+        </Card>
+      )}
+
       {/* ── A semana repartida ──────────────────────────────── */}
       {porDia.length > 0 && (
         <div className="space-y-3">
@@ -881,9 +948,12 @@ export function PlanejadorSemanaPage({
                 {fichasOrdenadas.map(f => {
                   const v = grade[chave(d.dia, f.id)] ?? 0
                   const r = realizado[chave(d.dia, f.id)]
-                  // Fica escondida a ficha que não produz nem foi produzida —
-                  // mas o botão "+ produto" abaixo traz qualquer uma de volta.
-                  if (v === 0 && r?.formas == null
+                  // No modo manual todas as linhas ficam abertas: você está
+                  // distribuindo, e sumir com a linha ao digitar na vizinha é
+                  // exatamente o atrito que se quer evitar.
+                  // Nos modos automáticos esconde quem não produz, e o botão
+                  // "+ produto" abaixo traz de volta.
+                  if (preenchimento !== 'manual' && v === 0 && r?.formas == null
                       && d.itens.length > 0 && !abertos.includes(chave(d.dia, f.id))) return null
                   return (
                     <div key={f.id}>
@@ -900,9 +970,23 @@ export function PlanejadorSemanaPage({
                                      focus:outline-none focus:border-brand-500 focus:ring-[3px] focus:ring-brand-500/10
                                      dark:border-white/[.08] dark:bg-unno-raised dark:text-unno-text"
                         />
-                        <span className="text-xs text-gray-400 w-20">
-                          {v > 0 ? `${fmt(v * (f.rendimento_fornada ?? 0))} un` : 'formas'}
-                        </span>
+                        {/* O saldo desce de segunda em diante: o que sobra da
+                            meta depois de abater este dia e os anteriores. */}
+                        {mostrarSaldo && (metas.find(m => m.ficha.id === f.id)?.formas ?? 0) > 0 ? (
+                          <span className={`text-xs w-28 text-right tabular-nums ${
+                            (saldos[chave(d.dia, f.id)]?.depois ?? 0) < 0 ? 'text-red-600'
+                              : (saldos[chave(d.dia, f.id)]?.depois ?? 0) === 0 ? 'text-emerald-700'
+                              : 'text-gray-400'
+                          }`}>
+                            {(saldos[chave(d.dia, f.id)]?.depois ?? 0) < 0
+                              ? `${-(saldos[chave(d.dia, f.id)]?.depois ?? 0)} a mais`
+                              : `restam ${saldos[chave(d.dia, f.id)]?.depois ?? 0}`}
+                          </span>
+                        ) : (
+                          <span className="text-xs text-gray-400 w-28 text-right">
+                            {v > 0 ? `${fmt(v * (f.rendimento_fornada ?? 0))} un` : 'formas'}
+                          </span>
+                        )}
                       </div>
 
                       {/* O que a produção registrou naquele dia */}
@@ -927,6 +1011,7 @@ export function PlanejadorSemanaPage({
                 {/* Acrescentar um produto num dia que já tem outro. Sem isto o
                     usuário fica preso na distribuição que o sistema sugeriu. */}
                 {(() => {
+                  if (preenchimento === 'manual') return null   // já estão todas na tela
                   const faltando = fichasOrdenadas.filter(f =>
                     (grade[chave(d.dia, f.id)] ?? 0) === 0
                     && realizado[chave(d.dia, f.id)]?.formas == null
@@ -984,21 +1069,8 @@ export function PlanejadorSemanaPage({
         </div>
       )}
 
-      {/* ── Rodapé ──────────────────────────────────────────── */}
-      {divergencias.length > 0 && (
-        <div className="p-3 rounded-lg bg-amber-50 border border-amber-200 text-sm text-amber-800">
-          <p className="font-medium">A soma dos dias não bate com a meta</p>
-          {divergencias.map(d => (
-            <p key={d.codigo} className="text-xs mt-0.5">
-              {d.codigo}: meta {d.meta} formas, distribuído {d.grade}{' '}
-              ({d.dif > 0 ? '+' : ''}{d.dif})
-            </p>
-          ))}
-          <p className="text-xs mt-1">
-            É o esperado depois de ajustar um dia na mão. "Redistribuir" volta ao cálculo.
-          </p>
-        </div>
-      )}
+      {/* O aviso de "não bate com a meta" virou o painel "Falta distribuir",
+          acima dos dias — perto de onde se digita, e não no fim da página. */}
 
       {/* ── Planejado × realizado ───────────────────────────── */}
       {temRealizado && (
