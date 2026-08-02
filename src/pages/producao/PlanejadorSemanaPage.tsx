@@ -761,6 +761,13 @@ export function PlanejadorSemanaPage({
                 {m && m.formas > 0 && (() => {
                   const ultima = formasNaUltimaBatelada(m.formas)
                   const cheia = ultima === FORMAS_POR_BATELADA
+                  // Uma forma sozinha no forno é o pior caso: o tempo muda
+                  // muito e a batelada quase não rende. Vermelho.
+                  const critica = ultima === 1
+                  const cor = cheia ? 'bg-brand-500' : critica ? 'bg-red-500' : 'bg-unno-amber'
+                  const corTexto = cheia
+                    ? 'text-gray-500 dark:text-unno-muted'
+                    : critica ? 'text-red-600' : 'text-amber-700'
                   return (
                     <div className="flex items-center gap-2 mt-1">
                       <div className="flex-1 flex gap-0.5">
@@ -768,16 +775,12 @@ export function PlanejadorSemanaPage({
                           <div
                             key={i}
                             className={`h-1.5 flex-1 rounded-[2px] ${
-                              i < ultima
-                                ? cheia ? 'bg-brand-500' : 'bg-unno-amber'
-                                : 'bg-gray-100 dark:bg-white/[.06]'
+                              i < ultima ? cor : 'bg-gray-100 dark:bg-white/[.06]'
                             }`}
                           />
                         ))}
                       </div>
-                      <span className={`text-xs tabular-nums whitespace-nowrap ${
-                        cheia ? 'text-gray-500 dark:text-unno-muted' : 'text-amber-700'
-                      }`}>
+                      <span className={`text-xs tabular-nums whitespace-nowrap ${corTexto}`}>
                         última batelada: {ultima} de {FORMAS_POR_BATELADA} formas
                       </span>
                     </div>
