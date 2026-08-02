@@ -399,15 +399,26 @@ export function PlanejadorRecipientesPage({
           </CardBody>
         </Card>
 
-          {/* Gerar é uma decisão, não um efeito colateral de digitar */}
-          <Button fullWidth loading={calculando} disabled={plano.length === 0} onClick={gerar}>
-            {linhas.length > 0 ? 'Gerar de novo' : 'Gerar planejamento'}
+          {/* Gerar é uma decisão, não um efeito colateral de digitar.
+              O botão também é o indicador: "Gerado" e apagado significa que as
+              tabelas ao lado correspondem exatamente ao que está nos campos. */}
+          <Button
+            fullWidth
+            loading={calculando}
+            disabled={plano.length === 0 || (linhas.length > 0 && !desatualizado)}
+            onClick={gerar}
+            title={linhas.length > 0 && !desatualizado
+              ? 'As tabelas já correspondem a estas formas'
+              : ''}
+          >
+            {linhas.length > 0
+              ? (desatualizado ? 'Gerar' : 'Gerado')
+              : 'Gerar planejamento'}
           </Button>
 
           {desatualizado && (
             <p className="text-xs text-amber-700">
-              As formas mudaram desde o último cálculo — gere de novo para as
-              tabelas acompanharem.
+              As formas mudaram — as tabelas ainda são do cálculo anterior.
             </p>
           )}
 
