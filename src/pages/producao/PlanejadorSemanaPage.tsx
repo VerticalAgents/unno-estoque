@@ -494,6 +494,11 @@ export function PlanejadorSemanaPage({
         .filter(i => i.formas > 0 || i.real?.formas != null)
 
       const formas = itens.reduce((s, i) => s + i.formas, 0)
+      // Batelada não mistura produtos: conta-se por ficha e soma. Dividir o
+      // total do dia por 4 daria um número menor e falso quando há dois
+      // produtos com resto — cada um tem a sua última batelada parcial.
+      const bateladas = itens.reduce(
+        (s, i) => s + Math.ceil(i.formas / FORMAS_POR_BATELADA), 0)
       const formasReais = itens.reduce((s, i) => s + (i.real?.formas ?? 0), 0)
       const emAndamento = itens.some(i => i.real?.em_andamento)
       const foraDoPlano = itens.some(i => i.real?.fora_do_plano)
@@ -520,11 +525,12 @@ export function PlanejadorSemanaPage({
         })
         .filter(Boolean) as { nome: string; unidade: string; qtd: number; cap: number; rodadas: number }[]
 
-      return { dia, itens, formas, formasReais, emAndamento, foraDoPlano, unidades, apertados }
+      return { dia, itens, formas, bateladas, formasReais, emAndamento, foraDoPlano, unidades, apertados }
     })
   }, [diasAtivos, diasDaSemana, fichas, grade, receitas, capacidade, realizado])
 
   const totalFormas = porDia.reduce((s, d) => s + d.formas, 0)
+  const totalBateladas = porDia.reduce((s, d) => s + d.bateladas, 0)
   const totalUnidades = porDia.reduce((s, d) => s + d.unidades, 0)
 
   /**
@@ -741,6 +747,26 @@ export function PlanejadorSemanaPage({
             )
           })}
 
+          {/* O total acompanha a digitação. Antes só existia no rodapé da
+              página, longe de onde os números são mexidos. */}
+          {metas.length > 0 && (
+            <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1
+                            bg-gray-50 dark:bg-white/[.03] rounded-lg px-3 py-2">
+              <span className="text-sm font-medium text-gray-900 dark:text-unno-text">
+                {fmt(totalUnidadesMeta)} unidades na semana
+              </span>
+              <span className="text-xs text-gray-600 dark:text-unno-muted tabular-nums">
+                {metas.reduce((s, m) => s + m.formas, 0)} formas ·{' '}
+                {metas.reduce((s, m) => s + m.bateladas, 0)} bateladas
+                {diasAtivos.length > 0 && (
+                  <> · {fmt(
+                    Math.round(metas.reduce((s, m) => s + m.formas, 0) / diasAtivos.length),
+                  )} formas/dia em média</>
+                )}
+              </span>
+            </div>
+          )}
+
           {modo === 'percentual' && totalPct > 0 && Math.abs(totalPct - 100) > 0.05 && (
             <div className={`p-3 rounded-lg text-sm ${
               totalPct > 100
@@ -940,7 +966,7 @@ export function PlanejadorSemanaPage({
                     )}
                   </p>
                   <p className="text-xs text-gray-500 dark:text-unno-muted tabular-nums">
-                    {d.formas} formas · {Math.ceil(d.formas / FORMAS_POR_BATELADA)} bateladas ·{' '}
+                    {d.formas} formas · {d.bateladas} bateladas ·{' '}
                     {fmt(d.unidades)} un
                   </p>
                 </div>
@@ -1133,7 +1159,7 @@ export function PlanejadorSemanaPage({
           <CardBody className="flex flex-wrap items-center justify-between gap-3">
             <p className="text-sm text-gray-600 dark:text-unno-muted">
               Semana: <strong className="text-gray-900 dark:text-unno-text">{totalFormas} formas</strong>
-              {' '}· {Math.ceil(totalFormas / FORMAS_POR_BATELADA)} bateladas ·{' '}
+              {' '}· {totalBateladas} bateladas ·{' '}
               {fmt(totalUnidades)} unidades
             </p>
             <div className="flex gap-2">
@@ -1204,7 +1230,7 @@ export function PlanejadorSemanaPage({
             <tr className="dia">
               <td colSpan={2}><strong>Total da semana</strong></td>
               <td className="num"><strong>{totalFormas}</strong></td>
-              <td className="num">{Math.ceil(totalFormas / FORMAS_POR_BATELADA)}</td>
+              <td className="num">{totalBateladas}</td>
               <td className="num"><strong>{fmt(totalUnidades)}</strong></td>
               {temRealizado && (
                 <td className="num">
