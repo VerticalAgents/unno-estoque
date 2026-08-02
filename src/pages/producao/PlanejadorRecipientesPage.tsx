@@ -199,7 +199,7 @@ export function PlanejadorRecipientesPage({
   // Veio de um dia da semana: substitui o que estava digitado. O objeto é
   // recriado a cada clique lá, então a identidade serve de gatilho.
   //
-  // Aqui o cálculo sai sozinho: quem clicou em "ver o que abastecer" já pediu
+  // Aqui o cálculo sai sozinho: quem clicou em "planejar recipientes" já pediu
   // o resultado, e obrigar a clicar de novo seria pedir duas vezes a mesma
   // coisa. Digitar à mão continua exigindo o botão.
   const [gerarAoChegar, setGerarAoChegar] = useState(false)

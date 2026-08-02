@@ -690,6 +690,17 @@ export function PlanejadorSemanaPage({
     setAjustado(false)   // ordem nova pede distribuição nova
   }
 
+  /**
+   * Esvazia a distribuição pelos dias — não o plano gravado.
+   *
+   * A meta continua onde está e o banco não é tocado: só depois de salvar é
+   * que a semana some de verdade. Serve para redistribuir do zero à mão.
+   */
+  function zerarSemana() {
+    setAjustado(true)
+    setGrade({})
+  }
+
   /** Tira toda a produção de um dia. Redistribuir a mão pede um ponto zero. */
   function zerarDia(dia: string) {
     setAjustado(true)
@@ -1369,18 +1380,32 @@ export function PlanejadorSemanaPage({
                 {/* Fica aqui, ao lado do saldo: é olhando o quanto falta que se
                     decide refazer a divisão. No modo manual não aparece — ali o
                     sistema não distribui, por definição. */}
-                {preenchimento !== 'manual' && (
+                {/* Os dois mexem só na distribuição pelos dias — a meta e o
+                    plano salvo ficam onde estão. Nada aqui toca o banco. */}
+                <div className="flex gap-2">
+                  {preenchimento !== 'manual' && (
+                    <Button
+                      size="sm" variant="secondary"
+                      className="flex-1 whitespace-normal leading-tight"
+                      disabled={!ajustado}
+                      onClick={() => { setAjustado(false); setGrade(distribuir()) }}
+                      title={ajustado
+                        ? 'Refaz a divisão pelos dias e descarta os ajustes manuais'
+                        : 'A semana já está como o sistema distribuiu'}
+                    >
+                      Auto distribuir
+                    </Button>
+                  )}
                   <Button
-                    fullWidth size="sm" variant="secondary"
-                    disabled={!ajustado}
-                    onClick={() => { setAjustado(false); setGrade(distribuir()) }}
-                    title={ajustado
-                      ? 'Refaz a divisão pelos dias e descarta os ajustes manuais'
-                      : 'A semana já está como o sistema distribuiu'}
+                    size="sm" variant="ghost"
+                    className="flex-1 whitespace-normal leading-tight"
+                    disabled={totalFormas === 0}
+                    onClick={zerarSemana}
+                    title="Esvazia os dias da semana. O plano gravado só muda quando você salvar."
                   >
-                    Distribuir automaticamente
+                    Zerar distribuição
                   </Button>
-                )}
+                </div>
               </CardBody>
             </Card>
           )}
@@ -1540,7 +1565,7 @@ export function PlanejadorSemanaPage({
                     {onVerAbastecimento && (
                       <Button size="sm" variant="secondary"
                               onClick={() => onVerAbastecimento(formasDoDia(d.dia))}>
-                        Ver o que abastecer
+                        Planejar recipientes
                       </Button>
                     )}
                     <Button size="sm" variant="ghost"

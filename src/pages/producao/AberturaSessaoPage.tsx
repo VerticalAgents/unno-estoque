@@ -347,7 +347,7 @@ export function AberturaSessaoPage() {
                 size="sm"
                 onClick={() => navigate('/producao/planejador', { state: { formas } })}
               >
-                Ver o que abastecer
+                Planejar recipientes
               </Button>
             </div>
 
