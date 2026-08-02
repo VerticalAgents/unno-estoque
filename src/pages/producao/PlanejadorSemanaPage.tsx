@@ -83,6 +83,19 @@ function fmt(n: number, casas = 0) {
  * para ela. Por isso o número aparece na tela: dá para mexer na meta em ±60
  * unidades e fechar redondo antes de a produção começar.
  */
+/**
+ * Arredonda a meta para o múltiplo de `rendimento` mais próximo.
+ *
+ * Meia forma não existe: ou a fornada entra no forno, ou não entra. Digitar
+ * 6.230 unidades com 60 por forma daria 103,83 formas, que na prática vira 104
+ * — e aí a meta na tela mente sobre o que vai ser produzido. Melhor a tela
+ * ajustar o número do que carregar uma meta impossível.
+ */
+function snapUnidades(unidades: number, rendimento: number): number {
+  if (rendimento <= 0) return Math.max(0, Math.round(unidades))
+  return Math.max(0, Math.round(unidades / rendimento)) * rendimento
+}
+
 function formasNaUltimaBatelada(formas: number): number {
   if (formas <= 0) return 0
   const resto = formas % FORMAS_POR_BATELADA
@@ -344,8 +357,13 @@ export function PlanejadorSemanaPage({
     if (modo === 'unidades') {
       return Object.fromEntries(fichas.map(f => [f.id, num(alvo[f.id])]))
     }
+    // Também no percentual a fatia fecha formas inteiras, senão a divisão por
+    // porcentagem reintroduziria a meia forma pela porta dos fundos.
     const total = num(totalDigitado)
-    return Object.fromEntries(fichas.map(f => [f.id, Math.round(total * num(pct[f.id]) / 100)]))
+    return Object.fromEntries(fichas.map(f => [
+      f.id,
+      snapUnidades(total * num(pct[f.id]) / 100, f.rendimento_fornada ?? 0),
+    ]))
   }, [modo, fichas, alvo, totalDigitado, pct])
 
   const totalPct = useMemo(() => fichas.reduce((s, f) => s + num(pct[f.id]), 0), [fichas, pct])
@@ -466,6 +484,32 @@ export function PlanejadorSemanaPage({
       else delete novo[chave(dia, fichaId)]
       return novo
     })
+  }
+
+  /** Uma forma para cima ou para baixo, no botão. */
+  function passoFormas(f: FichaOption, delta: -1 | 1) {
+    const rend = f.rendimento_fornada ?? 0
+    if (rend <= 0) return
+    const formas = Math.max(0, Math.round(num(alvo[f.id]) / rend) + delta)
+    setAlvo(s => ({ ...s, [f.id]: formas > 0 ? String(formas * rend) : '' }))
+    setAjustado(false)
+  }
+
+  /**
+   * Ao sair do campo, encaixa o número digitado em formas inteiras.
+   *
+   * O ajuste acontece só na saída, e não a cada tecla — corrigir enquanto se
+   * digita faria o campo brigar com o usuário no meio do número.
+   */
+  function encaixarFormas(f: FichaOption) {
+    const rend = f.rendimento_fornada ?? 0
+    const atual = num(alvo[f.id])
+    if (rend <= 0 || atual <= 0) return
+    const encaixado = snapUnidades(atual, rend)
+    if (encaixado !== atual) {
+      setAlvo(s => ({ ...s, [f.id]: String(encaixado) }))
+      setAjustado(false)
+    }
   }
 
   /** Sobe ou desce um produto na prioridade da semana. */
@@ -727,19 +771,54 @@ export function PlanejadorSemanaPage({
                   <p className="flex-1 min-w-0 text-sm font-medium text-gray-900 dark:text-unno-text truncate">
                     {f.codigo} — {f.nome}
                   </p>
-                  <input
-                    type="number" min={0} step={modo === 'unidades' ? 60 : 0.5} inputMode="decimal"
-                    value={modo === 'unidades' ? (alvo[f.id] ?? '') : (pct[f.id] ?? '')}
-                    onChange={e => {
-                      if (modo === 'unidades') setAlvo(s => ({ ...s, [f.id]: e.target.value }))
-                      else setPct(s => ({ ...s, [f.id]: e.target.value }))
-                      setAjustado(false)
-                    }}
-                    placeholder="0"
-                    className="w-32 rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-right
-                               focus:outline-none focus:border-brand-500 focus:ring-[3px] focus:ring-brand-500/10
-                               dark:border-white/[.08] dark:bg-unno-raised dark:text-unno-text"
-                  />
+                  {/* As setas ficam fora da caixa: as nativas são miúdas, só
+                      aparecem no hover e andam de 1 em 1 — aqui cada clique é
+                      uma forma inteira. */}
+                  <div className="flex items-center gap-1">
+                    {modo === 'unidades' && (
+                      <button
+                        type="button"
+                        onClick={() => passoFormas(f, -1)}
+                        disabled={!f.rendimento_fornada || (alvoEfetivo[f.id] ?? 0) <= 0}
+                        title="Uma forma a menos"
+                        className="w-8 h-9 rounded-lg border border-gray-300 text-gray-600 text-lg leading-none
+                                   hover:bg-gray-50 disabled:opacity-30
+                                   dark:border-white/[.08] dark:text-unno-muted"
+                      >
+                        −
+                      </button>
+                    )}
+                    <input
+                      type="number" min={0} step={modo === 'unidades' ? 60 : 0.5} inputMode="decimal"
+                      value={modo === 'unidades' ? (alvo[f.id] ?? '') : (pct[f.id] ?? '')}
+                      onChange={e => {
+                        if (modo === 'unidades') setAlvo(s => ({ ...s, [f.id]: e.target.value }))
+                        else setPct(s => ({ ...s, [f.id]: e.target.value }))
+                        setAjustado(false)
+                      }}
+                      onBlur={() => { if (modo === 'unidades') encaixarFormas(f) }}
+                      placeholder="0"
+                      className="w-24 rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-right
+                                 focus:outline-none focus:border-brand-500 focus:ring-[3px] focus:ring-brand-500/10
+                                 dark:border-white/[.08] dark:bg-unno-raised dark:text-unno-text
+                                 [appearance:textfield]
+                                 [&::-webkit-outer-spin-button]:appearance-none
+                                 [&::-webkit-inner-spin-button]:appearance-none"
+                    />
+                    {modo === 'unidades' && (
+                      <button
+                        type="button"
+                        onClick={() => passoFormas(f, 1)}
+                        disabled={!f.rendimento_fornada}
+                        title="Uma forma a mais"
+                        className="w-8 h-9 rounded-lg border border-gray-300 text-gray-600 text-lg leading-none
+                                   hover:bg-gray-50 disabled:opacity-30
+                                   dark:border-white/[.08] dark:text-unno-muted"
+                      >
+                        +
+                      </button>
+                    )}
+                  </div>
                   <span className="text-xs text-gray-400 w-14">
                     {modo === 'unidades' ? 'unidades' : '%'}
                   </span>
