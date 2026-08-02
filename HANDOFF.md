@@ -120,8 +120,25 @@ parcial. Testado com 300 combinações: a soma dos dias bate exata com a meta.
 Datas sempre como string `YYYY-MM-DD` e montadas componente a componente —
 `new Date('2026-08-03')` é meia-noite UTC e no Brasil cai no dia 2.
 
-**Falta a Parte 2:** planejado × realizado na tela. A view `v_plano_semana` já
-existe e já traz `formas_realizadas`, `unidades_produzidas` e `em_andamento`.
+### Planejado × realizado (migration 051)
+
+A `v_plano_semana` da 049 partia dos itens do plano, então era cega para
+produção feita **fora** do plano — e essa é a metade que explica por que o
+insumo acabou antes. Virou `FULL OUTER JOIN` entre planejado e produzido dentro
+da semana; linha sem plano vem com `fora_do_plano = true`.
+
+`formas_realizadas` **NULL** = ainda não aconteceu, diferente de aconteceu zero.
+É o que distingue "em andamento" de "não cumprido" — somar zero apagaria a
+diferença.
+
+Na tela: cada ficha do dia mostra o produzido abaixo do campo (verde igual ao
+plano, âmbar diferente, azul sessão aberta), o dia ganha etiqueta quando há
+sessão aberta ou produção fora do plano, e a semana fecha numa tabela
+planejado × produzido × diferença. A folha impressa ganha a coluna Produzido
+só quando há o que comparar — e as larguras do `colgroup` acompanham.
+
+**Recriar view apaga as opções:** a 051 repete
+`ALTER VIEW ... SET (security_invoker = true)`. Sem isso voltaria a vazar.
 
 ## Reabastecimento — Fase 3 (migrations 046-048)
 

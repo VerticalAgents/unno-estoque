@@ -32,6 +32,19 @@ interface FichaOption {
 /** formas por dia (chave `${data}|${ficha_id}`) */
 type Grade = Record<string, number>
 
+/**
+ * O que as sessões de produção registraram, vindo de `v_plano_semana`
+ * (migration 051). `formas` NULL significa que ainda não aconteceu — é
+ * diferente de ter acontecido zero, e é o que distingue "em andamento" de
+ * "não cumprido".
+ */
+interface Realizado {
+  formas: number | null
+  unidades: number | null
+  em_andamento: boolean
+  fora_do_plano: boolean
+}
+
 const chave = (data: string, fichaId: string) => `${data}|${fichaId}`
 
 // ── Datas ─────────────────────────────────────────────────────
@@ -126,6 +139,8 @@ export function PlanejadorSemanaPage({
   // edição sem ida ao banco
   const [capacidade, setCapacidade] = useState<Record<string, { nome: string; unidade: string; capacidade: number }>>({})
   const [receitas, setReceitas] = useState<Record<string, { insumo_id: string; quantidade: number }[]>>({})
+
+  const [realizado, setRealizado] = useState<Record<string, Realizado>>({})
 
   const [loading, setLoading] = useState(true)
   const [salvando, setSalvando] = useState(false)
@@ -224,8 +239,33 @@ export function PlanejadorSemanaPage({
       setPct({})
       setAjustado(false)
       setSalvoEm(null)
+      setRealizado({})
       return
     }
+
+    // O que a produção registrou. Só existe para semana com plano salvo — sem
+    // plano não há com o que comparar.
+    const { data: real } = await supabase
+      .from('v_plano_semana')
+      .select('data, ficha_id, formas_realizadas, unidades_produzidas, em_andamento, fora_do_plano')
+      .eq('empresa_id', profile.empresa_id)
+      .eq('semana_inicio', semana)
+
+    setRealizado(Object.fromEntries(
+      ((real ?? []) as unknown as {
+        data: string; ficha_id: string
+        formas_realizadas: number | null; unidades_produzidas: number | null
+        em_andamento: boolean; fora_do_plano: boolean
+      }[]).map(r => [
+        chave(String(r.data).slice(0, 10), r.ficha_id),
+        {
+          formas: r.formas_realizadas == null ? null : Number(r.formas_realizadas),
+          unidades: r.unidades_produzidas == null ? null : Number(r.unidades_produzidas),
+          em_andamento: r.em_andamento,
+          fora_do_plano: r.fora_do_plano,
+        },
+      ]),
+    ))
 
     const p = plano as unknown as {
       dias_ativos: string[]; updated_at: string
@@ -358,14 +398,37 @@ export function PlanejadorSemanaPage({
     setAjustado(false)
   }
 
+  const temRealizado = useMemo(
+    () => Object.values(realizado).some(r => r.formas != null),
+    [realizado],
+  )
+
   // ── Números por dia ─────────────────────────────────────────
   const porDia = useMemo(() => {
-    return diasAtivos.filter(d => diasDaSemana.includes(d)).sort().map(dia => {
+    // Dia que produziu sem estar marcado também precisa aparecer — é metade da
+    // resposta de "o que aconteceu nesta semana".
+    const diasComProducao = Object.entries(realizado)
+      .filter(([, r]) => r.formas != null)
+      .map(([k]) => k.split('|')[0])
+
+    const dias = [...new Set([...diasAtivos, ...diasComProducao])]
+      .filter(d => diasDaSemana.includes(d))
+      .sort()
+
+    return dias.map(dia => {
       const itens = fichas
-        .map(f => ({ ficha: f, formas: grade[chave(dia, f.id)] ?? 0 }))
-        .filter(i => i.formas > 0)
+        .map(f => ({
+          ficha: f,
+          formas: grade[chave(dia, f.id)] ?? 0,
+          real: realizado[chave(dia, f.id)],
+        }))
+        // Entra quem está planejado ou quem foi produzido
+        .filter(i => i.formas > 0 || i.real?.formas != null)
 
       const formas = itens.reduce((s, i) => s + i.formas, 0)
+      const formasReais = itens.reduce((s, i) => s + (i.real?.formas ?? 0), 0)
+      const emAndamento = itens.some(i => i.real?.em_andamento)
+      const foraDoPlano = itens.some(i => i.real?.fora_do_plano)
       const unidades = itens.reduce((s, i) => s + i.formas * (i.ficha.rendimento_fornada ?? 0), 0)
 
       // Demanda de insumo daquele dia, para saber se cabe nos recipientes
@@ -389,9 +452,9 @@ export function PlanejadorSemanaPage({
         })
         .filter(Boolean) as { nome: string; unidade: string; qtd: number; cap: number; rodadas: number }[]
 
-      return { dia, itens, formas, unidades, apertados }
+      return { dia, itens, formas, formasReais, emAndamento, foraDoPlano, unidades, apertados }
     })
-  }, [diasAtivos, diasDaSemana, fichas, grade, receitas, capacidade])
+  }, [diasAtivos, diasDaSemana, fichas, grade, receitas, capacidade, realizado])
 
   const totalFormas = porDia.reduce((s, d) => s + d.formas, 0)
   const totalUnidades = porDia.reduce((s, d) => s + d.unidades, 0)
@@ -640,9 +703,19 @@ export function PlanejadorSemanaPage({
           {porDia.map(d => (
             <Card key={d.dia}>
               <CardBody className="space-y-3">
-                <div className="flex items-baseline justify-between gap-3">
+                <div className="flex items-baseline justify-between gap-3 flex-wrap">
                   <p className="font-semibold text-gray-900 dark:text-unno-text capitalize">
                     {diaCurto(d.dia)}
+                    {d.emAndamento && (
+                      <span className="ml-2 text-xs font-normal px-1.5 py-0.5 rounded bg-blue-50 text-blue-700 border border-blue-200">
+                        em andamento
+                      </span>
+                    )}
+                    {d.foraDoPlano && (
+                      <span className="ml-2 text-xs font-normal px-1.5 py-0.5 rounded bg-amber-50 text-amber-800 border border-amber-200">
+                        produção fora do plano
+                      </span>
+                    )}
                   </p>
                   <p className="text-xs text-gray-500 dark:text-unno-muted tabular-nums">
                     {d.formas} formas · {Math.ceil(d.formas / FORMAS_POR_BATELADA)} bateladas ·{' '}
@@ -652,26 +725,45 @@ export function PlanejadorSemanaPage({
 
                 {fichas.map(f => {
                   const v = grade[chave(d.dia, f.id)] ?? 0
-                  // Só mostra a ficha se ela produz nesse dia, ou se o dia está
-                  // vazio (aí dá para acrescentar na mão).
-                  if (v === 0 && d.itens.length > 0) return null
+                  const r = realizado[chave(d.dia, f.id)]
+                  // Só mostra a ficha se ela produz nesse dia, se foi produzida,
+                  // ou se o dia está vazio (aí dá para acrescentar na mão).
+                  if (v === 0 && r?.formas == null && d.itens.length > 0) return null
                   return (
-                    <div key={f.id} className="flex items-center gap-3">
-                      <p className="flex-1 min-w-0 text-sm text-gray-700 dark:text-unno-text truncate">
-                        <span className="text-gray-400 mr-1.5">{f.codigo}</span>{f.nome}
-                      </p>
-                      <input
-                        type="number" min={0} step={1} inputMode="numeric"
-                        value={v || ''}
-                        onChange={e => editarDia(d.dia, f.id, e.target.value)}
-                        placeholder="0"
-                        className="w-20 rounded-lg border border-gray-300 bg-white px-2 py-1.5 text-sm text-right
-                                   focus:outline-none focus:border-brand-500 focus:ring-[3px] focus:ring-brand-500/10
-                                   dark:border-white/[.08] dark:bg-unno-raised dark:text-unno-text"
-                      />
-                      <span className="text-xs text-gray-400 w-20">
-                        {v > 0 ? `${fmt(v * (f.rendimento_fornada ?? 0))} un` : 'formas'}
-                      </span>
+                    <div key={f.id}>
+                      <div className="flex items-center gap-3">
+                        <p className="flex-1 min-w-0 text-sm text-gray-700 dark:text-unno-text truncate">
+                          <span className="text-gray-400 mr-1.5">{f.codigo}</span>{f.nome}
+                        </p>
+                        <input
+                          type="number" min={0} step={1} inputMode="numeric"
+                          value={v || ''}
+                          onChange={e => editarDia(d.dia, f.id, e.target.value)}
+                          placeholder="0"
+                          className="w-20 rounded-lg border border-gray-300 bg-white px-2 py-1.5 text-sm text-right
+                                     focus:outline-none focus:border-brand-500 focus:ring-[3px] focus:ring-brand-500/10
+                                     dark:border-white/[.08] dark:bg-unno-raised dark:text-unno-text"
+                        />
+                        <span className="text-xs text-gray-400 w-20">
+                          {v > 0 ? `${fmt(v * (f.rendimento_fornada ?? 0))} un` : 'formas'}
+                        </span>
+                      </div>
+
+                      {/* O que a produção registrou naquele dia */}
+                      {r?.formas != null && (
+                        <p className={`text-xs mt-1 ml-0.5 ${
+                          r.em_andamento ? 'text-blue-700'
+                            : r.formas === v ? 'text-emerald-700'
+                            : 'text-amber-700'
+                        }`}>
+                          Produzido: <strong>{r.formas} formas</strong>
+                          {r.unidades != null && <> · {fmt(r.unidades)} un</>}
+                          {r.em_andamento
+                            ? ' · sessão ainda aberta'
+                            : r.formas === v ? ' · igual ao plano'
+                            : ` · ${r.formas > v ? '+' : ''}${r.formas - v} em relação ao plano`}
+                        </p>
+                      )}
                     </div>
                   )
                 })}
@@ -726,6 +818,62 @@ export function PlanejadorSemanaPage({
         </div>
       )}
 
+      {/* ── Planejado × realizado ───────────────────────────── */}
+      {temRealizado && (
+        <Card>
+          <CardHeader
+            title="Planejado × realizado"
+            subtitle="O que as sessões de produção registraram nesta semana"
+          />
+          <CardBody className="p-0 overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead className="text-xs uppercase text-gray-500 dark:text-unno-muted border-b border-gray-200 dark:border-white/[.06]">
+                <tr>
+                  <th className="text-left px-4 py-2 font-medium">Produto</th>
+                  <th className="text-right px-3 py-2 font-medium">Planejado</th>
+                  <th className="text-right px-3 py-2 font-medium">Produzido</th>
+                  <th className="text-right px-4 py-2 font-medium">Diferença</th>
+                </tr>
+              </thead>
+              <tbody>
+                {fichas.map(f => {
+                  const plan = diasDaSemana.reduce((s, d) => s + (grade[chave(d, f.id)] ?? 0), 0)
+                  const real = diasDaSemana.reduce(
+                    (s, d) => s + (realizado[chave(d, f.id)]?.formas ?? 0), 0)
+                  const aberta = diasDaSemana.some(d => realizado[chave(d, f.id)]?.em_andamento)
+                  if (plan === 0 && real === 0) return null
+                  const dif = real - plan
+                  return (
+                    <tr key={f.id} className="border-b border-gray-100 dark:border-white/[.04] last:border-0">
+                      <td className="px-4 py-2">
+                        <span className="text-gray-400 text-xs mr-1.5">{f.codigo}</span>
+                        <span className="text-gray-900 dark:text-unno-text">{f.nome}</span>
+                      </td>
+                      <td className="px-3 py-2 text-right tabular-nums text-gray-600 dark:text-unno-muted">
+                        {plan} formas
+                      </td>
+                      <td className="px-3 py-2 text-right tabular-nums text-gray-900 dark:text-unno-text">
+                        {real} formas
+                      </td>
+                      <td className={`px-4 py-2 text-right tabular-nums font-medium ${
+                        dif === 0 ? 'text-emerald-700' : dif > 0 ? 'text-blue-700' : 'text-amber-700'
+                      }`}>
+                        {dif === 0 ? 'em dia' : `${dif > 0 ? '+' : ''}${dif}`}
+                        {aberta && (
+                          <span className="block text-xs font-normal text-gray-400">
+                            há sessão aberta
+                          </span>
+                        )}
+                      </td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
+          </CardBody>
+        </Card>
+      )}
+
       {totalFormas > 0 && (
         <Card>
           <CardBody className="flex flex-wrap items-center justify-between gap-3">
@@ -762,12 +910,15 @@ export function PlanejadorSemanaPage({
         </div>
 
         <table>
+          {/* A coluna de produzido só existe quando há o que comparar; as
+              larguras acompanham, senão a tabela estoura a folha. */}
           <colgroup>
-            <col style={{ width: '16%' }} />
-            <col style={{ width: '38%' }} />
-            <col style={{ width: '15%' }} />
-            <col style={{ width: '15%' }} />
-            <col style={{ width: '16%' }} />
+            <col style={{ width: temRealizado ? '14%' : '16%' }} />
+            <col style={{ width: temRealizado ? '32%' : '38%' }} />
+            <col style={{ width: temRealizado ? '13%' : '15%' }} />
+            <col style={{ width: temRealizado ? '13%' : '15%' }} />
+            <col style={{ width: temRealizado ? '14%' : '16%' }} />
+            {temRealizado && <col style={{ width: '14%' }} />}
           </colgroup>
           <thead>
             <tr>
@@ -776,6 +927,7 @@ export function PlanejadorSemanaPage({
               <th className="num">Formas</th>
               <th className="num">Bateladas</th>
               <th className="num">Unidades</th>
+              {temRealizado && <th className="num">Produzido</th>}
             </tr>
           </thead>
           <tbody>
@@ -787,6 +939,11 @@ export function PlanejadorSemanaPage({
                   <td className="num">{it.formas}</td>
                   <td className="num">{Math.ceil(it.formas / FORMAS_POR_BATELADA)}</td>
                   <td className="num">{fmt(it.formas * (it.ficha.rendimento_fornada ?? 0))}</td>
+                  {temRealizado && (
+                    <td className="num">
+                      {it.real?.formas != null ? `${it.real.formas} f` : '—'}
+                    </td>
+                  )}
                 </tr>
               ))
             ))}
@@ -795,6 +952,11 @@ export function PlanejadorSemanaPage({
               <td className="num"><strong>{totalFormas}</strong></td>
               <td className="num">{Math.ceil(totalFormas / FORMAS_POR_BATELADA)}</td>
               <td className="num"><strong>{fmt(totalUnidades)}</strong></td>
+              {temRealizado && (
+                <td className="num">
+                  <strong>{porDia.reduce((s, d) => s + d.formasReais, 0)} f</strong>
+                </td>
+              )}
             </tr>
           </tbody>
         </table>
