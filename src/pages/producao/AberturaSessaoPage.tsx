@@ -16,7 +16,7 @@ interface FichaOption {
 }
 
 /**
- * Uma sessão pode ter mais de uma ficha: a padaria mistura receitas no mesmo
+ * Uma sessão pode ter mais de uma ficha: a fábrica mistura receitas no mesmo
  * dia ("24 formas de Tradicional + 20 de Doce de Leite"). Cada ficha entra
  * com a sua quantidade de formas; 1 forma = 1 fornada da ficha.
  *

@@ -70,30 +70,43 @@ Nas fichas Odara, **1 fornada = 1 forma = 60 unidades** de ~67,5 g.
   `UNIQUE(sessao_id, local_id, lote_id)`).
 - Tela: `src/pages/producao/PlanejadorRecipientesPage.tsx` (`/producao/planejador`).
 
-## Reabastecimento — Fase 3 (migrations 046-047)
+## Reabastecimento — Fase 3 (migrations 046-048)
 
-Substitui a aba *Projeção de Produção Mensal* da planilha. Tela em
-`/reabastecimento` (`src/pages/reabastecimento/ReabastecimentoPage.tsx`).
+Tela em `/reabastecimento` (`src/pages/reabastecimento/ReabastecimentoPage.tsx`).
 
-- `projecao_producao` — formas/dia por ficha. Grava via `salvar_projecao`;
-  ficha com 0 é apagada em vez de ficar guardada valendo nada.
-- Parâmetros em `configuracoes_sistema`: `reabastecimento_dias` (7),
-  `reabastecimento_margem_pct` (15), `dias_uteis_mes` (22).
-- `v_reabastecimento` — consumo/dia, necessário no período, estoque, quanto
-  comprar e em quantas embalagens.
+O caminho é o que a fábrica usa para pensar:
+
+```
+meta de unidades → formas (fornadas) → insumo necessário → o que comprar
+```
+
+A **046** tinha invertido isso, pedindo "formas por dia". A **048** corrigiu:
+a entrada é a meta de unidades, porque é o que se sabe. Formas arredonda para
+cima — não existe meia fornada, e a última sai inteira.
+
+- `projecao_producao.unidades_alvo` — meta por ficha. Grava via
+  `salvar_projecao`; ficha com 0 é apagada.
+- `configuracoes_sistema.reabastecimento_margem_pct` (15). As colunas
+  `reabastecimento_dias` e `dias_uteis_mes` foram **removidas** na 048: com o
+  alvo em unidades o período já está embutido nele.
+- `v_projecao_formas` — unidades → formas, bateladas e unidades produzidas.
+- `v_reabastecimento` — necessário com margem, estoque, quanto comprar.
 
 **O estoque soma EC + EP.** O açúcar que está no pote da produção é açúcar que
-a padaria tem; ignorá-lo encheria o depósito.
+a fábrica tem; ignorá-lo encheria o depósito.
 
 `embalagens` só sai quando `insumos.tamanho_embalagem` está preenchido — hoje
-só o INS001 tem. Os outros saem em kg, com aviso na tela.
+só o INS001 tem. Os outros saem em peso, com aviso na tela.
 
-Conferido com 18 formas TRD + 12 DDL/dia: açúcar **20,5521 kg/dia**,
-**165,44441 kg** para 7 dias com 15%. A planilha diz 20,5524 / 165,44682 — a
-diferença é a ficha da DDL guardar 0,663875 kg/forma onde a planilha arredonda
-para 0,6639.
+Conferido: meta 30.000 TRD + 20.000 DDL → 500 + 334 formas → açúcar
+**571,334 kg** de receita, **657,034 kg** com 15%, **54 sacos** de 10 kg
+descontando os 120 kg em casa.
 
 A auditoria de estoque da planilha é o módulo de Contagem, que já existe.
+
+**Nota de vocabulário:** é uma **fábrica**, não uma padaria (correção do Lucca
+em 02/08/2026). As migrations 026, 030, 039 e 046 ainda dizem "padaria" nos
+comentários — não foram editadas para não mexer em migration já aplicada.
 
 ---
 
