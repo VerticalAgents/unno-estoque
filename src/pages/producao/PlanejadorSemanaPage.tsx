@@ -270,6 +270,13 @@ export function PlanejadorSemanaPage({
   /** Prioridade: quem vem primeiro ocupa os primeiros dias da semana. */
   const [ordem, setOrdem] = useState<string[]>([])
 
+  /**
+   * Quando ligado, a meta encaixa em bateladas cheias em vez de formas soltas:
+   * o passo vira 4 formas e a última batelada nunca sai pela metade. Custa
+   * flexibilidade na meta e ganha um forno que não precisa ser reprogramado.
+   */
+  const [fecharBateladas, setFecharBateladas] = useState(false)
+
   // Meta da semana — mesmo desenho da tela de Reabastecimento
   const [modo, setModo] = useState<'unidades' | 'percentual'>('unidades')
   const [alvo, setAlvo] = useState<Record<string, string>>({})
@@ -296,6 +303,10 @@ export function PlanejadorSemanaPage({
   const topoRef = useRef<HTMLDivElement>(null)
 
   const num = (s: string | undefined) => parseFloat((s ?? '').replace(',', '.')) || 0
+
+  /** Quantas unidades valem um passo: uma forma, ou uma batelada inteira. */
+  const passoDe = (rendimento: number) =>
+    rendimento * (fecharBateladas ? FORMAS_POR_BATELADA : 1)
 
   const diasDaSemana = useMemo(
     () => Array.from({ length: 7 }, (_, i) => somarDias(semana, i)),
@@ -465,9 +476,9 @@ export function PlanejadorSemanaPage({
     const total = num(totalDigitado)
     return Object.fromEntries(fichas.map(f => [
       f.id,
-      snapUnidades(total * num(pct[f.id]) / 100, f.rendimento_fornada ?? 0),
+      snapUnidades(total * num(pct[f.id]) / 100, passoDe(f.rendimento_fornada ?? 0)),
     ]))
-  }, [modo, fichas, alvo, totalDigitado, pct])
+  }, [modo, fichas, alvo, totalDigitado, pct, fecharBateladas])
 
   /**
    * Passo do campo de produção total: uma forma, quando todos os produtos
@@ -479,6 +490,8 @@ export function PlanejadorSemanaPage({
     if (rends.length === 0) return 1
     return rends.every(r => r === rends[0]) ? rends[0] : Math.min(...rends)
   }, [fichas])
+
+  const passoTotalEfetivo = passoTotal * (fecharBateladas ? FORMAS_POR_BATELADA : 1)
 
   const totalPct = useMemo(() => fichas.reduce((s, f) => s + num(pct[f.id]), 0), [fichas, pct])
 
@@ -608,12 +621,12 @@ export function PlanejadorSemanaPage({
    * no valor de quando o dedo desceu.
    */
   function passoFormas(f: FichaOption, delta: -1 | 1) {
-    const rend = f.rendimento_fornada ?? 0
-    if (rend <= 0) return
+    const passo = passoDe(f.rendimento_fornada ?? 0)
+    if (passo <= 0) return
     setAlvo(s => {
       const atual = parseFloat((s[f.id] ?? '').replace(',', '.')) || 0
-      const formas = Math.max(0, Math.round(atual / rend) + delta)
-      return { ...s, [f.id]: formas > 0 ? String(formas * rend) : '' }
+      const n = Math.max(0, Math.round(atual / passo) + delta)
+      return { ...s, [f.id]: n > 0 ? String(n * passo) : '' }
     })
     setAjustado(false)
   }
@@ -625,10 +638,10 @@ export function PlanejadorSemanaPage({
    * digita faria o campo brigar com o usuário no meio do número.
    */
   function encaixarFormas(f: FichaOption) {
-    const rend = f.rendimento_fornada ?? 0
+    const passo = passoDe(f.rendimento_fornada ?? 0)
     const atual = num(alvo[f.id])
-    if (rend <= 0 || atual <= 0) return
-    const encaixado = snapUnidades(atual, rend)
+    if (passo <= 0 || atual <= 0) return
+    const encaixado = snapUnidades(atual, passo)
     if (encaixado !== atual) {
       setAlvo(s => ({ ...s, [f.id]: String(encaixado) }))
       setAjustado(false)
@@ -877,12 +890,12 @@ export function PlanejadorSemanaPage({
                 onPasso={d => {
                   setTotalDigitado(v => {
                     const atual = parseFloat((v ?? '').replace(',', '.')) || 0
-                    const n = Math.max(0, Math.round(atual / passoTotal) + d) * passoTotal
+                    const n = Math.max(0, Math.round(atual / passoTotalEfetivo) + d) * passoTotalEfetivo
                     return n > 0 ? String(n) : ''
                   })
                   setAjustado(false)
                 }}
-                passo={passoTotal}
+                passo={passoTotalEfetivo}
                 sufixo="unidades"
                 largura="w-28"
               />
@@ -905,7 +918,7 @@ export function PlanejadorSemanaPage({
                       onDigitar={v => { setAlvo(s => ({ ...s, [f.id]: v })); setAjustado(false) }}
                       onPasso={d => passoFormas(f, d)}
                       onSair={() => encaixarFormas(f)}
-                      passo={f.rendimento_fornada ?? 1}
+                      passo={passoDe(f.rendimento_fornada ?? 0) || 1}
                       sufixo="unidades"
                       desabilitado={!f.rendimento_fornada}
                     />
@@ -986,6 +999,40 @@ export function PlanejadorSemanaPage({
               </div>
             )
           })}
+
+          {/* Encaixar em bateladas cheias: o passo vira 4 formas e a última
+              batelada nunca sai pela metade. Fica como escolha, e não como
+              regra fixa — às vezes a meta importa mais que o forno. */}
+          <label className="flex items-start gap-2 cursor-pointer select-none">
+            <input
+              type="checkbox"
+              checked={fecharBateladas}
+              onChange={e => {
+                setFecharBateladas(e.target.checked)
+                if (e.target.checked) {
+                  // Encaixa o que já está digitado, senão a opção só valeria
+                  // para os próximos números.
+                  setAlvo(s => Object.fromEntries(fichas.map(f => {
+                    const passo = (f.rendimento_fornada ?? 0) * FORMAS_POR_BATELADA
+                    const atual = parseFloat((s[f.id] ?? '').replace(',', '.')) || 0
+                    const n = passo > 0 ? snapUnidades(atual, passo) : atual
+                    return [f.id, n > 0 ? String(n) : '']
+                  })))
+                }
+                setAjustado(false)
+              }}
+              className="mt-0.5 w-4 h-4 rounded border-gray-300 text-brand-600
+                         focus:ring-brand-500/30 dark:border-white/[.15]"
+            />
+            <span className="text-sm text-gray-700 dark:text-unno-text">
+              Fechar bateladas cheias
+              <span className="block text-xs text-gray-500 dark:text-unno-muted">
+                A meta anda de {FORMAS_POR_BATELADA} em {FORMAS_POR_BATELADA} formas
+                e a última batelada nunca sai pela metade — o forno não precisa
+                ser reprogramado no fim.
+              </span>
+            </span>
+          </label>
 
           {/* O total acompanha a digitação. Antes só existia no rodapé da
               página, longe de onde os números são mexidos. */}
