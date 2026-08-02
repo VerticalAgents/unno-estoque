@@ -348,7 +348,7 @@ export function PlanejadorRecipientesPage({
         {/* ── Entrada: formas por ficha ─────────────────────── */}
         <Card>
           <CardHeader
-            title="Sessão de produção"
+            title="Abastecimento necessário"
             subtitle="Quantas formas de cada ficha entram no dia. Pode misturar fichas."
           />
           <CardBody className="space-y-3">
