@@ -12,6 +12,7 @@ import { ImpressaoLotesPage } from './pages/recebimento/ImpressaoLotesPage'
 import { TransferenciaPage } from './pages/transferencia/TransferenciaPage'
 import { SessoesListPage } from './pages/producao/SessoesListPage'
 import { AberturaSessaoPage } from './pages/producao/AberturaSessaoPage'
+import { PlanejadorRecipientesPage } from './pages/producao/PlanejadorRecipientesPage'
 import { FechamentoSessaoPage } from './pages/producao/FechamentoSessaoPage'
 import { PerdaListPage } from './pages/perdas/PerdaListPage'
 import { NovaPerdaPage } from './pages/perdas/NovaPerdaPage'
@@ -57,6 +58,8 @@ export default function App() {
           <Route path="transferencia" element={<TransferenciaPage />} />
           <Route path="producao" element={<SessoesListPage />} />
           <Route path="producao/abrir" element={<AberturaSessaoPage />} />
+          <Route path="producao/planejador" element={<PlanejadorRecipientesPage />} />
+          <Route path="producao/:id/editar" element={<AberturaSessaoPage />} />
           <Route path="producao/:id/fechar" element={<FechamentoSessaoPage />} />
           <Route path="contagem" element={<ContagemListPage />} />
           <Route path="contagem/ec/:id" element={<NovaContagemEcPage />} />

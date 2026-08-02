@@ -87,9 +87,16 @@ export function SessoesListPage() {
                   )}
                 </div>
                 {s.status === 'aberta' && (
-                  <Link to={`/producao/${s.id}/fechar`}>
-                    <Button size="sm" variant="secondary">Fechar</Button>
-                  </Link>
+                  <div className="flex gap-2 shrink-0">
+                    {/* A decisão de fazer algumas formas a mais ou a menos
+                        acontece durante a produção, não antes dela. */}
+                    <Link to={`/producao/${s.id}/editar`}>
+                      <Button size="sm" variant="ghost">Editar formas</Button>
+                    </Link>
+                    <Link to={`/producao/${s.id}/fechar`}>
+                      <Button size="sm" variant="secondary">Fechar</Button>
+                    </Link>
+                  </div>
                 )}
               </div>
             </Card>

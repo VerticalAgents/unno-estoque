@@ -9,6 +9,9 @@ interface NavItem {
   label: string
   icon: ReactNode
   exact?: boolean
+  /** Sub-rotas que têm item próprio no menu e não devem acender este.
+   *  Ex: /producao/planejador não pode acender "Produção" junto. */
+  exceto?: string[]
 }
 
 const mainNavItems: NavItem[] = [
@@ -41,8 +44,18 @@ const mainNavItems: NavItem[] = [
     ),
   },
   {
+    to: '/producao/planejador',
+    label: 'Planejador',
+    icon: (
+      <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
+        <path strokeLinecap="round" strokeLinejoin="round" d="M6.75 3v2.25M17.25 3v2.25M3 18.75V7.5a2.25 2.25 0 012.25-2.25h13.5A2.25 2.25 0 0121 7.5v11.25m-18 0A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75m-18 0v-7.5A2.25 2.25 0 015.25 9h13.5A2.25 2.25 0 0121 11.25v7.5M12 12.75h.008v.008H12v-.008zM12 15h.008v.008H12V15zm0 2.25h.008v.008H12v-.008zM9.75 15h.008v.008H9.75V15zm0 2.25h.008v.008H9.75v-.008zM7.5 15h.008v.008H7.5V15zm0 2.25h.008v.008H7.5v-.008zm6.75-4.5h.008v.008h-.008v-.008zm0 2.25h.008v.008h-.008V15zm0 2.25h.008v.008h-.008v-.008zm2.25-4.5h.008v.008H16.5v-.008zm0 2.25h.008v.008H16.5V15z" />
+      </svg>
+    ),
+  },
+  {
     to: '/producao',
     label: 'Produção',
+    exceto: ['/producao/planejador'],
     icon: (
       <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
         <path strokeLinecap="round" strokeLinejoin="round" d="M9.75 3.104v5.714a2.25 2.25 0 01-.659 1.591L5 14.5M9.75 3.104c-.251.023-.501.05-.75.082m.75-.082a24.301 24.301 0 014.5 0m0 0v5.714c0 .597.237 1.17.659 1.591L19.8 15.3M14.25 3.104c.251.023.501.05.75.082M19.8 15.3l-1.57.393A9.065 9.065 0 0112 15a9.065 9.065 0 00-6.23-.693L5 14.5m14.8.8l1.402 1.402c1 1 .23 2.717-1.07 2.717H3.868c-1.3 0-2.07-1.716-1.07-2.716L4.198 15.3" />
@@ -193,14 +206,18 @@ export function Sidebar({ open, onClose }: SidebarProps) {
   const content = (
     <nav className="flex flex-col h-full">
       {/* Logo */}
-      <div className="px-5 py-5 border-b border-gray-100 dark:border-[#1a1a24]">
-        <div className="flex items-center gap-2">
-          <div className="w-8 h-8 rounded-lg bg-brand-600 flex items-center justify-center">
-            <span className="text-white text-sm font-bold">U</span>
+      <div className="px-5 py-5 border-b border-gray-100 dark:border-white/[.08]">
+        <div className="flex items-center gap-2.5">
+          <div className="w-8 h-8 rounded-lg bg-brand-500 flex items-center justify-center dark:shadow-glow-sm">
+            <span className="font-display text-white text-sm font-extrabold">U</span>
           </div>
           <div>
-            <p className="text-sm font-bold text-gray-900 dark:text-gray-100 leading-none">Unno</p>
-            <p className="text-xs text-gray-400">Estoque</p>
+            <p className="font-display text-sm font-extrabold uppercase tracking-[3px] text-gray-900 dark:text-brand-400 leading-none">
+              Unno
+            </p>
+            <p className="text-[0.65rem] uppercase tracking-[1.5px] text-gray-400 dark:text-unno-dim mt-1">
+              Estoque
+            </p>
           </div>
         </div>
       </div>
@@ -210,7 +227,8 @@ export function Sidebar({ open, onClose }: SidebarProps) {
         {filteredMainNav.map((item) => {
           const isActive = item.exact
             ? location.pathname === item.to
-            : location.pathname.startsWith(item.to)
+            : location.pathname.startsWith(item.to) &&
+              !(item.exceto ?? []).some(p => location.pathname.startsWith(p))
 
           return (
             <NavLink
@@ -218,10 +236,10 @@ export function Sidebar({ open, onClose }: SidebarProps) {
               to={item.to}
               onClick={onClose}
               className={[
-                'flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors',
+                'flex items-center gap-3 px-3 py-2.5 rounded-lg text-[0.7rem] font-semibold uppercase tracking-[1px] transition-all duration-300',
                 isActive
-                  ? 'bg-brand-50 text-brand-700 dark:bg-brand-900/30 dark:text-brand-400'
-                  : 'text-gray-600 hover:bg-gray-100 hover:text-gray-900 dark:text-gray-400 dark:hover:bg-[#1a1a24] dark:hover:text-gray-200',
+                  ? 'bg-brand-500/10 text-brand-700 dark:text-brand-400'
+                  : 'text-gray-500 hover:bg-gray-100 hover:text-gray-900 dark:text-unno-muted dark:hover:bg-white/[.03] dark:hover:text-unno-text',
               ].join(' ')}
             >
               <span className={isActive ? 'text-brand-600' : 'text-gray-400'}>{item.icon}</span>
@@ -235,10 +253,10 @@ export function Sidebar({ open, onClose }: SidebarProps) {
           <button
             onClick={() => setEstoqueOpen(o => !o)}
             className={[
-              'w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors',
+              'w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-[0.7rem] font-semibold uppercase tracking-[1px] transition-all duration-300',
               isEstoqueActive
-                ? 'bg-brand-50 text-brand-700 dark:bg-brand-900/30 dark:text-brand-400'
-                : 'text-gray-600 hover:bg-gray-100 hover:text-gray-900 dark:text-gray-400 dark:hover:bg-[#1a1a24] dark:hover:text-gray-200',
+                ? 'bg-brand-500/10 text-brand-700 dark:text-brand-400'
+                : 'text-gray-500 hover:bg-gray-100 hover:text-gray-900 dark:text-unno-muted dark:hover:bg-white/[.03] dark:hover:text-unno-text',
             ].join(' ')}
           >
             <span className={isEstoqueActive ? 'text-brand-600' : 'text-gray-400'}>
@@ -265,10 +283,10 @@ export function Sidebar({ open, onClose }: SidebarProps) {
                     to={item.to}
                     onClick={onClose}
                     className={[
-                      'flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm font-medium transition-colors',
+                      'flex items-center gap-2.5 px-3 py-2 rounded-lg text-[0.7rem] font-semibold uppercase tracking-[1px] transition-all duration-300',
                       isActive
-                        ? 'bg-brand-50 text-brand-700 dark:bg-brand-900/30 dark:text-brand-400'
-                        : 'text-gray-600 hover:bg-gray-100 hover:text-gray-900 dark:text-gray-400 dark:hover:bg-[#1a1a24] dark:hover:text-gray-200',
+                        ? 'bg-brand-500/10 text-brand-700 dark:text-brand-400'
+                        : 'text-gray-500 hover:bg-gray-100 hover:text-gray-900 dark:text-unno-muted dark:hover:bg-white/[.03] dark:hover:text-unno-text',
                     ].join(' ')}
                   >
                     <span className={isActive ? 'text-brand-600' : 'text-gray-400'}>{item.icon}</span>
@@ -285,10 +303,10 @@ export function Sidebar({ open, onClose }: SidebarProps) {
           <button
             onClick={() => setCadastrosOpen(o => !o)}
             className={[
-              'w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors',
+              'w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-[0.7rem] font-semibold uppercase tracking-[1px] transition-all duration-300',
               isCadastrosActive
-                ? 'bg-brand-50 text-brand-700 dark:bg-brand-900/30 dark:text-brand-400'
-                : 'text-gray-600 hover:bg-gray-100 hover:text-gray-900 dark:text-gray-400 dark:hover:bg-[#1a1a24] dark:hover:text-gray-200',
+                ? 'bg-brand-500/10 text-brand-700 dark:text-brand-400'
+                : 'text-gray-500 hover:bg-gray-100 hover:text-gray-900 dark:text-unno-muted dark:hover:bg-white/[.03] dark:hover:text-unno-text',
             ].join(' ')}
           >
             <span className={isCadastrosActive ? 'text-brand-600' : 'text-gray-400'}>
@@ -315,10 +333,10 @@ export function Sidebar({ open, onClose }: SidebarProps) {
                     to={item.to}
                     onClick={onClose}
                     className={[
-                      'flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm font-medium transition-colors',
+                      'flex items-center gap-2.5 px-3 py-2 rounded-lg text-[0.7rem] font-semibold uppercase tracking-[1px] transition-all duration-300',
                       isActive
-                        ? 'bg-brand-50 text-brand-700 dark:bg-brand-900/30 dark:text-brand-400'
-                        : 'text-gray-600 hover:bg-gray-100 hover:text-gray-900 dark:text-gray-400 dark:hover:bg-[#1a1a24] dark:hover:text-gray-200',
+                        ? 'bg-brand-500/10 text-brand-700 dark:text-brand-400'
+                        : 'text-gray-500 hover:bg-gray-100 hover:text-gray-900 dark:text-unno-muted dark:hover:bg-white/[.03] dark:hover:text-unno-text',
                     ].join(' ')}
                   >
                     <span className={isActive ? 'text-brand-600' : 'text-gray-400'}>{item.icon}</span>
@@ -335,10 +353,10 @@ export function Sidebar({ open, onClose }: SidebarProps) {
           to="/configuracoes"
           onClick={onClose}
           className={[
-            'flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors',
+            'flex items-center gap-3 px-3 py-2.5 rounded-lg text-[0.7rem] font-semibold uppercase tracking-[1px] transition-all duration-300',
             location.pathname.startsWith('/configuracoes')
-              ? 'bg-brand-50 text-brand-700 dark:bg-brand-900/30 dark:text-brand-400'
-              : 'text-gray-600 hover:bg-gray-100 hover:text-gray-900 dark:text-gray-400 dark:hover:bg-[#1a1a24] dark:hover:text-gray-200',
+              ? 'bg-brand-500/10 text-brand-700 dark:text-brand-400'
+              : 'text-gray-500 hover:bg-gray-100 hover:text-gray-900 dark:text-unno-muted dark:hover:bg-white/[.03] dark:hover:text-unno-text',
           ].join(' ')}
         >
           <span className={location.pathname.startsWith('/configuracoes') ? 'text-brand-600' : 'text-gray-400'}>
@@ -356,7 +374,7 @@ export function Sidebar({ open, onClose }: SidebarProps) {
             to="/dev"
             onClick={onClose}
             className={[
-              'flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors',
+              'flex items-center gap-3 px-3 py-2.5 rounded-lg text-[0.7rem] font-semibold uppercase tracking-[1px] transition-all duration-300',
               location.pathname.startsWith('/dev')
                 ? 'bg-amber-50 text-amber-700'
                 : 'text-amber-600 hover:bg-amber-50 hover:text-amber-700',
@@ -373,9 +391,9 @@ export function Sidebar({ open, onClose }: SidebarProps) {
       </div>
 
       {/* Footer */}
-      <div className="px-5 py-4 border-t border-gray-100 dark:border-[#1a1a24]">
-        <p className="text-xs text-gray-400">Unno</p>
-        <p className="text-xs text-gray-300">Porto Alegre · RS</p>
+      <div className="px-5 py-4 border-t border-gray-100 dark:border-white/[.08]">
+        <p className="text-[0.65rem] uppercase tracking-[1.5px] text-gray-400 dark:text-unno-dim">Unno</p>
+        <p className="text-[0.65rem] uppercase tracking-[1.5px] text-gray-300 dark:text-unno-dim/60">Porto Alegre · RS</p>
       </div>
     </nav>
   )
@@ -383,15 +401,16 @@ export function Sidebar({ open, onClose }: SidebarProps) {
   return (
     <>
       {/* Desktop sidebar */}
-      <aside className="hidden lg:flex flex-col w-56 bg-white dark:bg-[#12121a] border-r border-gray-200 dark:border-[#1a1a24] shrink-0 h-full">
+      {/* w-60 (e não w-56): os rótulos em maiúsculas ocupam mais largura */}
+      <aside className="hidden lg:flex flex-col w-60 bg-white dark:bg-unno-raised border-r border-gray-200 dark:border-white/[.08] shrink-0 h-full">
         {content}
       </aside>
 
       {/* Mobile drawer */}
       {open && (
         <div className="lg:hidden fixed inset-0 z-40 flex">
-          <div className="absolute inset-0 bg-black/40" onClick={onClose} />
-          <aside className="relative w-64 bg-white dark:bg-[#12121a] h-full shadow-xl">
+          <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={onClose} />
+          <aside className="relative w-64 bg-white dark:bg-unno-raised h-full shadow-xl border-r border-transparent dark:border-white/[.08]">
             {content}
           </aside>
         </div>

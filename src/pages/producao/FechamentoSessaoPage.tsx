@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback } from 'react'
+import { useEffect, useMemo, useState, useCallback } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../contexts/AuthContext'
@@ -42,6 +42,9 @@ function storageKey(sessaoId: string) {
 interface StoredState {
   skuInputs: Record<string, { perdida: number; descartada_gramatura: number; peso_descartado_g: number }>
   localInputs: Record<string, { sobra: number; zerado: boolean }>
+  /** Sobra pesada por recipiente. A conferência é por pote desde que a mistura
+   *  de lotes foi liberada — a balança dá um número só por recipiente. */
+  localTotais?: Record<string, number>
   obs: string
 }
 
@@ -66,6 +69,61 @@ export function FechamentoSessaoPage() {
   const [sessao, setSessao] = useState<{ codigo: string; data_producao: string } | null>(null)
   const [skus, setSkus] = useState<SkuRow[]>([])
   const [locais, setLocais] = useState<LocalRow[]>([])
+  // Sobra pesada por RECIPIENTE (não por lote). Quando o pote tem mistura, a
+  // balança dá um número só e o banco rateia entre os lotes de dentro.
+  const [sobraLocal, setSobraLocal] = useState<Record<string, number>>({})
+
+  /**
+   * Agrupa as linhas por recipiente. Um pote pode ter vários lotes desde que a
+   * mistura foi liberada (migration 035), e a conferência é feita por pote.
+   *
+   * A ordem é por validade: o pote cujo conteúdo vence antes aparece primeiro.
+   * É apenas SUGESTÃO — na prática a produção usa o que estiver à mão, e o
+   * sistema não impõe nada.
+   */
+  const potes = useMemo(() => {
+    const mapa = new Map<string, {
+      local_id: string; nome: string; insumo: string; unidade: string
+      inicial: number; teorico: number; sobra: number; lotes: LocalRow[]
+    }>()
+
+    for (const l of locais) {
+      const atual = mapa.get(l.local_id) ?? {
+        local_id: l.local_id,
+        nome: l.local?.nome ?? '—',
+        insumo: l.insumo?.nome ?? '—',
+        unidade: l.lote?.unidade ?? l.insumo?.unidade_medida ?? '',
+        inicial: 0, teorico: 0, sobra: 0, lotes: [] as LocalRow[],
+      }
+      atual.inicial += l.quantidade_inicial
+      atual.teorico += l.consumo_teorico ?? 0
+      atual.lotes.push(l)
+      mapa.set(l.local_id, atual)
+    }
+
+    return [...mapa.values()].map(p => ({
+      ...p,
+      sobra: sobraLocal[p.local_id] ?? p.inicial,
+    }))
+  }, [locais, sobraLocal])
+
+  function setSobraLocalValue(localId: string, valor: number) {
+    setSobraLocal(s => {
+      const next = { ...s, [localId]: valor }
+      // guarda o que foi digitado: a conferência é feita no celular, andando
+      // pela cozinha, e recarregar a página não pode apagar o trabalho
+      if (id && dataLoaded) {
+        const anterior = loadState(id)
+        saveState(id, {
+          skuInputs:   anterior?.skuInputs ?? {},
+          localInputs: anterior?.localInputs ?? {},
+          localTotais: next,
+          obs:         anterior?.obs ?? obs,
+        })
+      }
+      return next
+    })
+  }
   const [obs, setObs] = useState('')
   const [showConfirm, setShowConfirm] = useState(false)
   const [loading, setLoading] = useState(false)
@@ -106,6 +164,14 @@ export function FechamentoSessaoPage() {
         }
       })
 
+      // Sobra por recipiente: retoma o que já foi digitado, senão parte do que
+      // os lotes tinham dentro dele.
+      const totais: Record<string, number> = {}
+      for (const r of localRows) {
+        totais[r.local_id] = (totais[r.local_id] ?? 0) + (r.quantidade_inicial ?? 0)
+      }
+      setSobraLocal({ ...totais, ...(stored?.localTotais ?? {}) })
+
       setSkus(skuRows)
       setLocais(localRows)
       if (stored?.obs) setObs(stored.obs)
@@ -131,13 +197,6 @@ export function FechamentoSessaoPage() {
     })
   }
 
-  function setSobra(localId: string, val: number) {
-    setLocais((prev) => {
-      const next = prev.map((l) => l.id === localId ? { ...l, sobra: val } : l)
-      persist(skus, next, obs)
-      return next
-    })
-  }
 
   function toggleZerado(localId: string) {
     setLocais((prev) => {
@@ -209,10 +268,10 @@ export function FechamentoSessaoPage() {
         quantidade_descartada_gramatura: s.descartada_gramatura,
         peso_descartado_gramatura_g: s.peso_descartado_g || null,
       })),
-      p_locais: locais.map((l) => ({
-        local_id: l.local_id,
-        lote_id: l.lote_id,
-        quantidade_final: l.sobra,
+      // Um registro por recipiente; o rateio entre os lotes é feito no banco
+      p_locais: potes.map((p) => ({
+        local_id: p.local_id,
+        quantidade_final: p.lotes.every(l => l.zerado) ? 0 : p.sobra,
       })),
       p_observacoes: obs || null,
     })
@@ -316,48 +375,79 @@ export function FechamentoSessaoPage() {
         {locais.length === 0 && (
           <p className="text-sm text-gray-400 italic">Nenhum recipiente vinculado.</p>
         )}
-        {locais.map((l) => {
-          const consumoReal = l.quantidade_inicial - l.sobra
-          const desvio = getDesvioStatus(consumoReal, l.consumo_teorico)
+        {/* Um peso por RECIPIENTE, não por lote: a balança pesa o pote inteiro.
+            Quando há mistura, o sistema rateia o consumo entre os lotes de dentro
+            na proporção do que cada um tinha (fechar_sessao_producao). */}
+        {potes.map((p, idx) => {
+          const zerado = p.lotes.every(l => l.zerado)
+          const consumoReal = p.inicial - p.sobra
+          const desvio = getDesvioStatus(consumoReal, p.teorico)
+          const misturado = p.lotes.length > 1
           return (
-            <Card key={l.id} className={`p-4 space-y-2 ${l.zerado ? 'opacity-60' : ''}`}>
+            <Card key={p.local_id} className={`p-4 space-y-2 ${zerado ? 'opacity-60' : ''}`}>
               <div className="flex items-center justify-between">
                 <div>
-                  <p className="font-medium text-gray-900">{l.local?.nome}</p>
-                  <p className="text-xs text-gray-400">{l.insumo?.nome} · Lote {l.lote?.codigo}</p>
+                  <p className="font-medium text-gray-900 dark:text-unno-text">
+                    {p.nome}
+                    {/* Sugestão sem efeito no cálculo: quem produz usa o que
+                        estiver à mão. Serve só para gastar antes o que vence antes. */}
+                    {idx === 0 && potes.length > 1 && (
+                      <span className="ml-2 text-[0.65rem] font-semibold uppercase tracking-wide text-brand-600 dark:text-brand-400">
+                        sugerido usar primeiro
+                      </span>
+                    )}
+                  </p>
+                  <p className="text-xs text-gray-400">
+                    {p.insumo}
+                    {misturado ? (
+                      <span className="text-unno-amber"> · {p.lotes.length} lotes misturados</span>
+                    ) : (
+                      <> · Lote {p.lotes[0]?.lote?.codigo}</>
+                    )}
+                  </p>
                 </div>
                 <button
                   type="button"
-                  onClick={() => toggleZerado(l.id)}
+                  onClick={() => p.lotes.forEach(l => toggleZerado(l.id))}
                   className={`text-xs px-2 py-1 rounded border transition-colors ${
-                    l.zerado
+                    zerado
                       ? 'bg-red-50 border-red-300 text-red-700 font-medium'
                       : 'border-gray-300 text-gray-500 hover:border-red-300 hover:text-red-600'
                   }`}
                 >
-                  {l.zerado ? 'Zerado' : 'Zerar'}
+                  {zerado ? 'Zerado' : 'Zerar'}
                 </button>
               </div>
 
+              {misturado && (
+                <div className="text-[0.7rem] text-gray-500 dark:text-unno-muted space-y-0.5 pl-2 border-l-2 border-unno-amber/40">
+                  {p.lotes.map(l => (
+                    <p key={l.id} className="font-mono">
+                      {l.lote?.codigo} — {l.quantidade_inicial} {l.lote?.unidade}
+                    </p>
+                  ))}
+                </div>
+              )}
+
               <p className="text-xs text-gray-400">
-                Inicial: {l.quantidade_inicial} {l.lote?.unidade}
-                {l.consumo_teorico > 0 && ` · Teórico: ${l.consumo_teorico} ${l.lote?.unidade}`}
+                Inicial: {p.inicial.toFixed(3)} {p.unidade}
+                {p.teorico > 0 && ` · Teórico: ${p.teorico.toFixed(3)} ${p.unidade}`}
               </p>
 
-              {!l.zerado && (
+              {!zerado && (
                 <Input
-                  label={`Sobra restante (${l.lote?.unidade})`}
+                  label={`Sobra no recipiente (${p.unidade})`}
                   type="number"
                   step="0.001"
                   min="0"
-                  value={l.sobra}
-                  onChange={(e) => setSobra(l.id, parseFloat(e.target.value) || 0)}
+                  value={p.sobra}
+                  onChange={(e) => setSobraLocalValue(p.local_id, parseFloat(e.target.value) || 0)}
                 />
               )}
 
-              {l.consumo_teorico > 0 && (
+              {p.teorico > 0 && (
                 <p className={`text-xs font-medium ${desvio === 'ok' ? 'text-emerald-600' : desvio === 'warning' ? 'text-yellow-600' : 'text-red-600'}`}>
-                  Consumo real: {consumoReal.toFixed(3)} · Desvio: {(consumoReal - l.consumo_teorico).toFixed(3)}
+                  Consumo real: {consumoReal.toFixed(3)} · Desvio: {(consumoReal - p.teorico).toFixed(3)}
                 </p>
               )}
             </Card>

@@ -13,8 +13,7 @@
 -- 5. Execute este seed
 -- ============================================================
 
--- ── VARIÁVEIS (editar antes de rodar) ──────────────────────
--- Substitua os valores abaixo pelos UUIDs reais do auth.users
+-- ── VARIÁVEIS ───────────────────────────────────────────────
 DO $$
 DECLARE
   v_empresa_id   UUID;
@@ -23,10 +22,13 @@ DECLARE
   v_cat_coberturas UUID;
   v_cat_conservantes UUID;
 
-  -- ⚠️ SUBSTITUIR pelos UUIDs reais do Supabase Auth
-  v_uid_lucca   UUID := '00000000-0000-0000-0000-000000000001';
-  v_uid_enzo    UUID := '00000000-0000-0000-0000-000000000002';
-  v_uid_beatriz UUID := '00000000-0000-0000-0000-000000000003';
+  -- v_ins é reutilizada por todos os blocos de insumo abaixo.
+  -- Precisa ser declarada aqui (escopo do bloco externo): declarada
+  -- dentro do primeiro bloco, ficava invisível para os seguintes.
+  v_ins UUID;
+
+  -- Admin: UUID real do auth.users (criado em Authentication → Add user)
+  v_uid_admin UUID := 'e145c637-58dd-43b9-bc48-43068f7e6a9d';
 
 BEGIN
 
@@ -40,11 +42,11 @@ RETURNING id INTO v_empresa_id;
 -- ============================================================
 -- 2. USUÁRIOS (id deve bater com auth.users)
 -- ============================================================
+-- Apenas o admin. Os demais funcionários devem ser criados pela tela
+-- Configurações → Funcionários, que cria o login no Auth junto com a linha aqui.
 INSERT INTO usuarios (id, empresa_id, nome, email, papel, ativo)
 VALUES
-  (v_uid_lucca,   v_empresa_id, 'Lucca',   'lucca@mischasbakery.com.br',   'admin',    true),
-  (v_uid_enzo,    v_empresa_id, 'Enzo',    'enzo@mischasbakery.com.br',    'producao', true),
-  (v_uid_beatriz, v_empresa_id, 'Beatriz', 'beatriz@mischasbakery.com.br', 'producao', true);
+  (v_uid_admin, v_empresa_id, 'Lucca', 'mischas.bakery@gmail.com', 'admin', true);
 
 -- ============================================================
 -- 3. CATEGORIAS
@@ -77,7 +79,6 @@ VALUES
 -- ─── BALDES ─────────────────────────────────────────────────
 
 -- INS001 — AÇÚCAR
-DECLARE v_ins UUID;
 BEGIN
   INSERT INTO insumos (empresa_id, codigo, nome, categoria_id, unidade_medida, shelf_life_dias_pos_abertura, estoque_minimo)
   VALUES (v_empresa_id, 'INS001', 'Açúcar', v_cat_baldes, 'kg', 30, 25)
@@ -289,7 +290,9 @@ BEGIN
     destino_multiplo, observacoes
   ) VALUES (
     v_ins, 'balde', true,
-    'porcionamento', NULL, 'g',
+    -- 12.3g = uma barra do display (32 barras). O check chk_reembalagem exige
+    -- tamanho_porcao preenchido sempre que passa_reembalagem = true.
+    'porcionamento', 12.3, 'g',
     false, 'As 32 barras são abertas e cortadas antes de ir ao balde. Display inteiro → balde após corte.'
   );
 END;

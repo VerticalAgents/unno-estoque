@@ -10,6 +10,14 @@ interface ConfirmModalProps {
   cancelLabel?: string
   variant?: 'default' | 'danger'
   loading?: boolean
+  /** Quando true, exige uma observação escrita antes de liberar o botão de
+   *  confirmar. Usado pelas travas em modo "avisa": a ação passa, mas fica
+   *  registrado por que a regra foi contrariada. */
+  justificativa?: {
+    valor: string
+    onChange: (v: string) => void
+    label?: string
+  }
   onConfirm: () => void
   onCancel: () => void
 }
@@ -23,10 +31,13 @@ export function ConfirmModal({
   cancelLabel = 'Cancelar',
   variant = 'default',
   loading = false,
+  justificativa,
   onConfirm,
   onCancel,
 }: ConfirmModalProps) {
   if (!open) return null
+
+  const faltaJustificar = !!justificativa && justificativa.valor.trim().length < 5
 
   return (
     <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-4">
@@ -66,6 +77,28 @@ export function ConfirmModal({
           </div>
         )}
 
+        {/* Justificativa obrigatória (travas em modo avisa) */}
+        {justificativa && (
+          <div className="px-6 py-4 border-b border-gray-100 dark:border-white/[.08]">
+            <label className="text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-unno-muted">
+              {justificativa.label ?? 'Por que está fazendo isso?'}
+            </label>
+            <textarea
+              autoFocus
+              rows={2}
+              value={justificativa.valor}
+              onChange={e => justificativa.onChange(e.target.value)}
+              placeholder="Ex: o lote antigo estava no fundo, sem acesso durante a produção"
+              className="mt-1 block w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm
+                         focus:outline-none focus:border-brand-500 focus:ring-[3px] focus:ring-brand-500/10
+                         dark:border-white/[.08] dark:bg-unno-raised dark:text-unno-text"
+            />
+            <p className="text-[0.7rem] text-gray-400 dark:text-unno-dim mt-1">
+              Fica registrado no histórico de exceções, com seu nome e a data.
+            </p>
+          </div>
+        )}
+
         {/* Actions */}
         <div className="flex gap-3 px-6 py-4">
           <Button
@@ -82,6 +115,7 @@ export function ConfirmModal({
             size="lg"
             fullWidth
             loading={loading}
+            disabled={faltaJustificar}
             onClick={onConfirm}
           >
             {confirmLabel}

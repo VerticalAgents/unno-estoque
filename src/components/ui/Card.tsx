@@ -13,9 +13,15 @@ export function Card({ children, className = '', onClick, accent }: CardProps) {
       onClick={onClick}
       style={accent ? { borderLeftColor: accent, borderLeftWidth: 4 } : undefined}
       className={[
-        'bg-white dark:bg-[#12121a] rounded-xl shadow-sm border border-gray-200 dark:border-[#1a1a24]',
+        // .glass-card do design system: no escuro é vidro fosco sobre o fundo;
+        // no claro segue cartão branco, para não prejudicar a leitura na cozinha.
+        'rounded-2xl border transition-all duration-500 ease-out-expo',
+        'bg-white border-gray-200 shadow-sm',
+        'dark:bg-white/[.04] dark:border-white/10 dark:backdrop-blur-xl dark:shadow-none',
         accent ? 'border-l-4' : '',
-        onClick ? 'cursor-pointer hover:shadow-md transition-shadow' : '',
+        onClick
+          ? 'cursor-pointer hover:-translate-y-1.5 hover:shadow-lg dark:hover:border-white/[.15] dark:hover:bg-white/[.06]'
+          : '',
         className,
       ].join(' ')}
     >

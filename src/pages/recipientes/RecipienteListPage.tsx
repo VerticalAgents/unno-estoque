@@ -51,6 +51,44 @@ function gerarQrRecipiente(): string {
 
 type LocalComMarca = Local & { marca?: Marca | null }
 
+/** Conteúdo atual do recipiente — view v_recipientes_composicao (migration 034) */
+interface Composicao {
+  local_id: string
+  qtd_lotes: number
+  quantidade_total: number
+  unidade_medida: string
+  validade_ep: string | null
+}
+
+/**
+ * O que está dentro do pote. "Misturado" não é erro — é o estado normal desde
+ * que RO-003 foi revogada. Mas precisa ficar visível, porque enquanto o
+ * recipiente não for esgotado, toda produção que usá-lo fica ligada a todos os
+ * lotes de dentro.
+ */
+function ConteudoCell({ comp }: { comp?: Composicao }) {
+  const total = comp?.quantidade_total ?? 0
+  if (total <= 0) {
+    return <span className="text-xs text-gray-400">vazio</span>
+  }
+
+  const qtd = Number(total).toLocaleString('pt-BR', { maximumFractionDigits: 3 })
+  const misturado = (comp?.qtd_lotes ?? 0) > 1
+
+  return (
+    <div className="leading-tight">
+      <span className="text-xs font-medium text-gray-900 dark:text-unno-text">
+        {qtd} {comp?.unidade_medida}
+      </span>
+      {misturado && (
+        <span className="block text-[0.65rem] font-semibold uppercase tracking-wide text-unno-amber">
+          {comp!.qtd_lotes} lotes misturados
+        </span>
+      )}
+    </div>
+  )
+}
+
 export function RecipienteListPage() {
   const { profile } = useAuth()
   const navigate = useNavigate()
@@ -76,10 +114,12 @@ export function RecipienteListPage() {
 
   // Grupos expandidos
   const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set(['__genericos__']))
+  const [composicao, setComposicao] = useState<Record<string, Composicao>>({})
+  const [esgotando, setEsgotando] = useState<string | null>(null)
 
   async function load() {
     if (!profile) return
-    const [{ data: locais }, { data: ins }] = await Promise.all([
+    const [{ data: locais }, { data: ins }, { data: comp }] = await Promise.all([
       supabase
         .from('locais')
         .select('*, marca:marcas(id, nome, empresa_id, created_at)')
@@ -92,10 +132,40 @@ export function RecipienteListPage() {
         .eq('empresa_id', profile.empresa_id)
         .eq('ativo', true)
         .order('nome'),
+      // Quantos lotes há dentro de cada recipiente (view da migration 034)
+      supabase
+        .from('v_recipientes_composicao')
+        .select('local_id, qtd_lotes, quantidade_total, unidade_medida, validade_ep')
+        .eq('empresa_id', profile.empresa_id),
     ])
     setRecipientes((locais ?? []) as LocalComMarca[])
     setInsumos((ins ?? []) as Insumo[])
+    setComposicao(
+      Object.fromEntries(
+        ((comp ?? []) as Composicao[]).map(c => [c.local_id, c]),
+      ),
+    )
     setLoading(false)
+  }
+
+  // ── Esgotar recipiente ────────────────────────────────────
+  // Com rateio proporcional o saldo raramente chega a zero exato; sobra poeira
+  // de cada lote. Quem raspa o pote marca aqui e a sobra vira ajuste registrado.
+  async function esgotar(local: LocalComMarca) {
+    if (!profile) return
+    setEsgotando(local.id)
+    const { data, error: err } = await supabase.rpc('esgotar_recipiente', {
+      p_local_id:       local.id,
+      p_responsavel_id: profile.id,
+      p_empresa_id:     profile.empresa_id,
+      p_observacoes:    null,
+    })
+    setEsgotando(null)
+    if (err || !(data as { ok: boolean })?.ok) {
+      setError((data as { erro?: string })?.erro ?? err?.message ?? 'Erro ao esgotar recipiente.')
+      return
+    }
+    await load()
   }
 
   useEffect(() => { load() }, [profile])
@@ -483,7 +553,7 @@ export function RecipienteListPage() {
                         <th className="text-left px-4 py-2 text-xs font-medium text-gray-500">Nome</th>
                         <th className="text-left px-4 py-2 text-xs font-medium text-gray-500">Tipo</th>
                         <th className="text-left px-4 py-2 text-xs font-medium text-gray-500">Capacidade</th>
-                        <th className="text-center px-4 py-2 text-xs font-medium text-gray-500">Status</th>
+                        <th className="text-center px-4 py-2 text-xs font-medium text-gray-500">Conteúdo</th>
                         <th className="px-4 py-2" />
                       </tr>
                     </thead>
@@ -498,19 +568,29 @@ export function RecipienteListPage() {
                               : <span className="text-gray-400">—</span>}
                           </td>
                           <td className="px-4 py-2.5 text-center">
-                            <span className={`inline-block px-2 py-0.5 rounded-full text-xs font-medium ${
-                              r.ativo ? 'bg-emerald-100 text-emerald-700' : 'bg-gray-100 text-gray-500'
-                            }`}>
-                              {r.ativo ? 'Ativo' : 'Inativo'}
-                            </span>
+                            <ConteudoCell comp={composicao[r.id]} />
                           </td>
                           <td className="px-4 py-2.5 text-right">
-                            <RowActions
-                              onEtiqueta={() => navigate(`/recipientes/${r.id}/etiqueta`)}
-                              onEditar={() => openEdit(r)}
-                              onDuplicar={() => openDuplicate(r)}
-                              onExcluir={() => openDelete(r)}
-                            />
+                            <div className="flex items-center justify-end gap-2">
+                              {(composicao[r.id]?.quantidade_total ?? 0) > 0 && (
+                                <button
+                                  onClick={() => esgotar(r)}
+                                  disabled={esgotando === r.id}
+                                  title="Marcar como esgotado: zera a sobra e encerra a mistura"
+                                  className="text-[0.65rem] font-semibold uppercase tracking-wide px-2 py-1 rounded
+                                             border border-gray-300 text-gray-600 hover:border-unno-amber hover:text-unno-amber
+                                             disabled:opacity-50 dark:border-white/[.08] dark:text-unno-muted"
+                                >
+                                  {esgotando === r.id ? '...' : 'Esgotar'}
+                                </button>
+                              )}
+                              <RowActions
+                                onEtiqueta={() => navigate(`/recipientes/${r.id}/etiqueta`)}
+                                onEditar={() => openEdit(r)}
+                                onDuplicar={() => openDuplicate(r)}
+                                onExcluir={() => openDelete(r)}
+                              />
+                            </div>
                           </td>
                         </tr>
                       ))}

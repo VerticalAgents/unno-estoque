@@ -6,8 +6,73 @@ Arquivo atualizado ao fim de cada sessão. Sempre leia antes de continuar.
 
 ## Stack
 - React 18 + TypeScript + Vite + TailwindCSS
-- Supabase (projeto `outunfdtwgsmdqtphzgf`, região sa-east-1)
+- Supabase (projeto `axwepvqpzsrfhrigryqt` — "Rastreabilidade Mischas", org "Mischas Org", região sa-east-1)
 - Caminho local: `C:\Users\lucca\OneDrive\Área de Trabalho\IA\Projetos\MischaFlex`
+
+---
+
+## ⚠️ Migração de conta Supabase (01/08/2026)
+
+O projeto antigo (`outunfdtwgsmdqtphzgf`) foi pausado — o plano grátis permite
+apenas 2 projetos ativos por conta. O banco foi **recriado do zero** numa conta
+Supabase nova, a partir das migrations. Nenhum dado antigo foi trazido (era teste).
+
+Como aplicar migrations hoje (a `apply_migrations.ps1` está obsoleta):
+```
+npx supabase@2.111.0 db push --db-url "postgresql://postgres.axwepvqpzsrfhrigryqt:<SENHA>@aws-0-sa-east-1.pooler.supabase.com:5432/postgres"
+```
+A senha do banco fica em *Settings → Database*. Use `--include-seed` para rodar
+também o `supabase/seed.sql`.
+
+Bugs corrigidos durante a recriação (existiam desde sempre e nunca tinham
+sido exercitados num banco limpo):
+
+| Arquivo | Problema | Correção |
+|---|---|---|
+| `001_schema.sql` | `mi.rowid` não existe no Postgres (view `v_estoque_consolidado`) | trocado por `mi.id`; a view é reescrita pela 004 de qualquer forma |
+| `006_ec_ep_limites.sql` | `CREATE POLICY IF NOT EXISTS` não é sintaxe válida | `DROP POLICY IF EXISTS` + `CREATE POLICY` |
+| `014_rls_yield_perdas.sql` | recriava policy de `movimentacoes_itens` já criada na 005/006 | idem |
+| `seed.sql` | `v_ins` declarada dentro do 1º bloco → invisível nos 22 seguintes | declarada no bloco externo |
+| `seed.sql` | INS023 Stikadinho violava `chk_reembalagem` (`tamanho_porcao` NULL) | `12.3 g` (uma barra do display) |
+| `025` (nova) | `empresas` e `configuracoes_sistema` com RLS ligado e sem policy | policies criadas |
+
+O `seed.sql` agora insere **apenas o admin**. Demais funcionários devem ser
+criados em Configurações → Funcionários (usa a edge function `manage-user`).
+
+Permissões: a 020 popula `permissoes_papel` só para empresas já existentes.
+Como a empresa nasce depois, rode `select inicializar_permissoes_padrao(id) from empresas;`
+ao criar uma empresa nova. (O front tem fallback em `src/lib/permissions.ts`.)
+
+---
+
+## Convenção das fichas técnicas (importante)
+
+`fichas_tecnicas_itens.quantidade` = consumo **por fornada**, na **unidade de
+medida do próprio insumo** (kg, ml…). Padronizado na migration 029.
+
+O banco tinha duas convenções conflitantes: a migration 023 gravou por
+*unidade* enquanto `abrir_sessao_producao` (016) sempre leu por *fornada* —
+o que faria o consumo teórico sair 60× menor. Ao criar ficha nova, seguir a 029.
+
+Nas fichas Odara, **1 fornada = 1 forma = 60 unidades** de ~67,5 g.
+
+---
+
+## Planejamento (migrations 028-030)
+
+- `planejar_recipientes(empresa, [{ficha_id, formas}])` — substitui a planilha
+  "Planejador de Recipientes". **A demanda é somada entre as fichas antes de
+  dividir pela capacidade**: os recipientes são um pool único, o açúcar das
+  duas receitas vai nos mesmos potes.
+- `abrir_sessao_producao_v2(..., p_plano)` — sessão com várias fichas. A v1
+  continua existindo. O consumo teórico é somado por insumo entre as fichas
+  antes de vincular os recipientes (senão violaria
+  `UNIQUE(sessao_id, local_id, lote_id)`).
+- Tela: `src/pages/producao/PlanejadorRecipientesPage.tsx` (`/producao/planejador`).
+
+Falta a **Fase 3** (reabastecimento): tabela `projecao_producao`, parâmetros de
+periodicidade/margem em `configuracoes_sistema` e a view `v_reabastecimento`.
+A auditoria de estoque da planilha é o módulo de Contagem que já existe.
 
 ---
 
@@ -19,6 +84,16 @@ Arquivo atualizado ao fim de cada sessão. Sempre leia antes de continuar.
 | 010 | formato_sublotes | Formato `INS014-0001.1/3`; `gerar_proximo_codigo` usa regex |
 | 011 | lote_prefixo_insumo | Prefixo do lote = código do insumo (ex: `INS014-0001`) |
 | 012 | marcas | Tabelas `marcas`, `insumos_marcas`, `fornecedores_insumos_marcas`; `marca_id` em `lotes` e `locais`; RPCs atualizados |
+| 013 | insumo_recipiente_modelo | modelo de recipiente por insumo |
+| 014 | rls_yield_perdas | policies faltantes (fichas/sessões) + colunas de rendimento e perdas |
+| 015-016 | rpcs_producao_v2 / fix_consumo_teorico | RPCs de produção reescritos |
+| 017-018 | produtos_expedicao / rpcs_expedicao | módulo de produtos e expedição |
+| 019 | contagem | módulo de contagem (EC e EP) |
+| 020 | permissoes_papel | permissões por papel configuráveis |
+| 021-022 | fichas_insumo / nutrientes_insumo | fichas de insumo e tabela nutricional |
+| 023 | brownies_morena_cacau | INS028-034 + fichas FT-001 e FT-002 |
+| 024 | fix_versao_ativa_constraint | corrige constraint de versão ativa |
+| 025 | rls_empresas_configuracoes | policies em `empresas` e `configuracoes_sistema` |
 
 ---
 
@@ -62,10 +137,60 @@ Arquivo atualizado ao fim de cada sessão. Sempre leia antes de continuar.
 
 ---
 
+## Travas configuráveis (migrations 041-043)
+
+Cada regra tem modo `bloqueia` (recusa sempre) ou `avisa` (passa com
+justificativa escrita, gravada em `excecoes_registradas`). Configurável em
+Configurações → Travas. Padrão: só `marca_diferente` bloqueia.
+
+Chaves: `marca_diferente`, `segundo_lote_aberto`, `excede_capacidade`,
+`sessao_sem_insumo`, `fefo`.
+
+As RPCs afetadas aceitam `p_justificativa` e devolvem
+`{ok:false, trava, modo, mensagem, requer_justificativa}` quando a regra pega.
+**Justificativa nunca fura `bloqueia`.**
+
+Ao adicionar parâmetro com DEFAULT a uma RPC existente, DROPar a assinatura
+antiga — senão o Postgres recusa por ambiguidade (aconteceu na 042).
+
+## Abastecimento (migration 040)
+
+- `planejar_abastecimento` só devolve insumo cujos recipientes **não cobrem** a
+  produção planejada. Quando devolve, o alvo é **encher até a capacidade**,
+  discriminando produção × excedente.
+- `sugerir_lotes_transferencia` esgota o **lote já aberto** antes de tudo,
+  depois lotes inteiros em FEFO, e abre no máximo **um** novo.
+  Lote aberto = `quantidade_disponivel < quantidade_recebida`.
+
+## Sessão de produção (migration 044)
+
+- `abrir_sessao_producao_v2` valida insumo nos recipientes (trava
+  `sessao_sem_insumo`) e devolve a lista `faltantes` para a tela.
+- `atualizar_plano_sessao` permite mudar as formas com a sessão aberta.
+  **Não mexe em `quantidade_inicial`** — é a foto do pote na abertura e é dela
+  que sai o consumo real.
+
 ## Regras de negócio importantes
 
-- **RO-002**: transferência é sempre total (lote inteiro)
-- **RO-003**: recipiente deve estar vazio antes de receber novo lote
+- ~~**RO-002**: transferência é sempre total~~ — **REVOGADA** (migration 035).
+  Transferência parcial liberada; o lote só vira `esgotado` se realmente zerar.
+- ~~**RO-003**: recipiente deve estar vazio~~ — **REVOGADA** (migration 035).
+  Um recipiente pode ter vários lotes do mesmo insumo misturados.
+- **Marca é a trava que ficou**: não se mistura marcas no mesmo recipiente.
+  Validado contra a marca configurada no recipiente E contra a marca do
+  conteúdo atual.
+- **Mistura**: `locais_lotes` guarda o conteúdo lote a lote;
+  `locais_estado_atual` virou o resumo, mantido por trigger
+  (`recalcular_estado_local`). Nunca escrever no resumo direto.
+- **Rateio**: a balança pesa o pote, não cada lote. O consumo é dividido entre
+  os lotes na proporção do que cada um tinha — em `fechar_sessao_producao`,
+  `aplicar_contagem` e no consumo teórico de `abrir_sessao_producao_v2`.
+- **Esgotar** (`esgotar_recipiente`): com rateio o saldo nunca zera exato;
+  o botão baixa a sobra como `ajuste_inventario` e encerra a mistura.
+- **Bug corrigido na 036**: `fechar_sessao_producao` baixava o consumo em
+  `lotes.quantidade_disponivel` (estoque central) em vez do recipiente —
+  contagem dupla. Ficava escondido porque o fluxo de sublotes zerava o lote no
+  EC ao transferir. Com transferência parcial isso comeria estoque real.
 - **FIFO**: aviso se há lote mais antigo do mesmo insumo disponível
 - **Marcas**: lote e recipiente devem ser da mesma marca (se ambos definidos)
 - **Sublotes**: só sublotes do mesmo `lote_grupo_id` podem ser transferidos juntos

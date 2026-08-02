@@ -2,15 +2,53 @@
 @tailwind components;
 @tailwind utilities;
 
+/* ── Tokens do UNNO Design System ─────────────────────
+   Espelham as variáveis do unno-design-system.html.
+   Use as classes do Tailwind (brand-*, unno-*) sempre que
+   possível; estas variáveis existem para CSS solto. */
+:root {
+  --unno-bg: #0a0a0f;
+  --unno-bg-raised: #111118;
+  --unno-bg-elevated: #1a1a24;
+  --unno-text: #eef0f4;
+  --unno-text-muted: #8a8fa0;
+  --unno-text-dim: #4a4e5c;
+  --unno-accent: #17a860;
+  --unno-accent-glow: rgba(0, 212, 170, 0.35);
+  --unno-accent2: #f5a623;
+  --unno-danger: #ff4d6a;
+  --unno-surface: rgba(255, 255, 255, 0.03);
+  --unno-surface-hover: rgba(255, 255, 255, 0.06);
+  --unno-border: rgba(255, 255, 255, 0.08);
+  --unno-border-hover: rgba(255, 255, 255, 0.15);
+  --unno-glass: rgba(255, 255, 255, 0.04);
+  --unno-glass-border: rgba(255, 255, 255, 0.1);
+  --ease-out-expo: cubic-bezier(0.16, 1, 0.3, 1);
+}
+
 @layer base {
   html {
     -webkit-tap-highlight-color: transparent;
   }
   body {
-    @apply text-gray-900 bg-gray-50;
+    @apply text-gray-900 bg-gray-50 font-sans;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+  /* Títulos em Outfit, como no design system */
+  h1, h2, h3, h4 {
+    @apply font-display;
+  }
+  ::selection {
+    background: rgba(23, 168, 96, 0.9);
+    color: #fff;
   }
   html.dark {
     color-scheme: dark;
+  }
+  html.dark ::selection {
+    background: rgba(0, 212, 170, 0.9);
+    color: #0a0a0f;
   }
   html.dark body {
     @apply text-gray-100;
@@ -75,8 +113,10 @@
   html.dark .disabled\:text-gray-500:disabled { color: #4b5563; }
 
   /* Brand overrides for dark - ensure brand-100 bg is dark */
-  html.dark .bg-brand-100 { background-color: rgba(0, 179, 141, 0.15); }
-  html.dark .bg-brand-50 { background-color: rgba(0, 212, 170, 0.08); }
+  html.dark .bg-brand-100 { background-color: rgba(23, 168, 96, 0.18); }
+  html.dark .bg-brand-50 { background-color: rgba(23, 168, 96, 0.08); }
+  html.dark .text-brand-600 { color: #34b877; }
+  html.dark .text-brand-700 { color: #34b877; }
 
   /* Alert backgrounds */
   html.dark .bg-red-50 { background-color: rgba(239, 68, 68, 0.1); }

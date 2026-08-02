@@ -10,11 +10,14 @@ ALTER TABLE insumos
   ADD COLUMN IF NOT EXISTS estoque_maximo_ep  DECIMAL(10,3);
 
 -- Políticas RLS que faltavam
-CREATE POLICY IF NOT EXISTS "acesso_por_empresa" ON categorias_insumo
+-- (Postgres não aceita CREATE POLICY IF NOT EXISTS; DROP + CREATE é o idioma equivalente)
+DROP POLICY IF EXISTS "acesso_por_empresa" ON categorias_insumo;
+CREATE POLICY "acesso_por_empresa" ON categorias_insumo
   USING (empresa_id = get_empresa_id_do_usuario())
   WITH CHECK (empresa_id = get_empresa_id_do_usuario());
 
-CREATE POLICY IF NOT EXISTS "acesso_por_empresa" ON movimentacoes_itens
+DROP POLICY IF EXISTS "acesso_por_empresa" ON movimentacoes_itens;
+CREATE POLICY "acesso_por_empresa" ON movimentacoes_itens
   USING (movimentacao_id IN (
     SELECT id FROM movimentacoes WHERE empresa_id = get_empresa_id_do_usuario()
   ));

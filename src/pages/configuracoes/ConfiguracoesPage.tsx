@@ -8,7 +8,47 @@ import { Input, Select } from '../../components/ui/Input'
 import { Badge } from '../../components/ui/Badge'
 import { ALL_ROUTES } from '../../lib/permissions'
 
-type Tab = 'perfil' | 'senha' | 'empresa' | 'funcionarios' | 'categorias'
+type Tab = 'perfil' | 'senha' | 'empresa' | 'funcionarios' | 'categorias' | 'travas'
+
+/**
+ * As regras que o sistema pode impor. Cada uma pode BLOQUEAR (recusa sempre)
+ * ou AVISAR (deixa passar com justificativa escrita, que fica registrada).
+ *
+ * A descrição explica a consequência, não o mecanismo — quem configura precisa
+ * saber o que perde ao afrouxar.
+ */
+const TRAVAS: { chave: string; titulo: string; descricao: string }[] = [
+  {
+    chave: 'marca_diferente',
+    titulo: 'Misturar marcas no recipiente',
+    descricao:
+      'Duas marcas no mesmo pote tornam impossível dizer qual foi usada numa produção. Num recall, não dá para separar.',
+  },
+  {
+    chave: 'segundo_lote_aberto',
+    titulo: 'Abrir um segundo lote do mesmo insumo',
+    descricao:
+      'Mais de uma embalagem aberta ao mesmo tempo multiplica as pontas soltas no estoque e atrapalha o FEFO.',
+  },
+  {
+    chave: 'excede_capacidade',
+    titulo: 'Passar da capacidade do recipiente',
+    descricao:
+      'O peso informado ultrapassa o que o pote comporta. Costuma ser erro de digitação — ou pote errado.',
+  },
+  {
+    chave: 'sessao_sem_insumo',
+    titulo: 'Abrir produção sem insumo suficiente',
+    descricao:
+      'A produção começa e para no meio para abastecer. É o problema que o planejador existe para evitar.',
+  },
+  {
+    chave: 'fefo',
+    titulo: 'Transferir fora da ordem de validade',
+    descricao:
+      'Pegar um lote mais novo deixando outro para trás faz o antigo vencer na prateleira.',
+  },
+]
 
 const UFS = [
   'AC','AL','AP','AM','BA','CE','DF','ES','GO','MA','MT','MS','MG',
@@ -32,6 +72,7 @@ export function ConfiguracoesPage() {
     { key: 'empresa', label: 'Empresa' },
     { key: 'funcionarios', label: 'Funcionários', adminOnly: true },
     { key: 'categorias', label: 'Categorias' },
+    { key: 'travas', label: 'Travas', adminOnly: true },
   ]
 
   const [activeTab, setActiveTab] = useState<Tab>('perfil')
@@ -68,11 +109,128 @@ export function ConfiguracoesPage() {
       {activeTab === 'empresa' && <EmpresaTab />}
       {activeTab === 'funcionarios' && isAdmin && <FuncionariosTab />}
       {activeTab === 'categorias' && <CategoriasTab />}
+      {activeTab === 'travas' && isAdmin && <TravasTab />}
     </div>
   )
 }
 
 // ── Perfil ──────────────────────────────────────────────────
+
+// ── Travas ────────────────────────────────────────────────────
+
+function TravasTab() {
+  const { profile } = useAuth()
+  const [modos, setModos] = useState<Record<string, string>>({})
+  const [salvando, setSalvando] = useState<string | null>(null)
+  const [excecoes, setExcecoes] = useState<
+    { id: string; chave: string; justificativa: string; created_at: string }[]
+  >([])
+
+  useEffect(() => {
+    if (!profile) return
+    supabase
+      .from('travas_config')
+      .select('chave, modo')
+      .eq('empresa_id', profile.empresa_id)
+      .then(({ data }) => {
+        setModos(Object.fromEntries((data ?? []).map(t => [t.chave, t.modo])))
+      })
+    supabase
+      .from('excecoes_registradas')
+      .select('id, chave, justificativa, created_at')
+      .eq('empresa_id', profile.empresa_id)
+      .order('created_at', { ascending: false })
+      .limit(10)
+      .then(({ data }) => setExcecoes(data ?? []))
+  }, [profile])
+
+  async function alterar(chave: string, modo: string) {
+    if (!profile) return
+    setSalvando(chave)
+    await supabase
+      .from('travas_config')
+      .upsert(
+        { empresa_id: profile.empresa_id, chave, modo, updated_at: new Date().toISOString() },
+        { onConflict: 'empresa_id,chave' },
+      )
+    setModos(m => ({ ...m, [chave]: modo }))
+    setSalvando(null)
+  }
+
+  return (
+    <div className="space-y-4">
+      <Card className="p-5">
+        <h2 className="text-base font-semibold text-gray-900 dark:text-unno-text mb-1">
+          Travas de operação
+        </h2>
+        <p className="text-sm text-gray-500 dark:text-unno-muted mb-4">
+          <strong>Bloqueia</strong> recusa a ação sempre. <strong>Avisa</strong> deixa passar,
+          mas exige uma explicação escrita, que fica registrada com o nome de quem fez.
+        </p>
+
+        <div className="space-y-3">
+          {TRAVAS.map(t => {
+            const modo = modos[t.chave] ?? 'avisa'
+            return (
+              <div
+                key={t.chave}
+                className="flex items-start justify-between gap-4 py-3 border-t border-gray-100 dark:border-white/[.08]"
+              >
+                <div className="min-w-0">
+                  <p className="text-sm font-medium text-gray-900 dark:text-unno-text">{t.titulo}</p>
+                  <p className="text-xs text-gray-500 dark:text-unno-muted mt-0.5">{t.descricao}</p>
+                </div>
+                <div className="flex shrink-0 rounded-lg border border-gray-300 dark:border-white/[.08] overflow-hidden">
+                  {(['avisa', 'bloqueia'] as const).map(op => (
+                    <button
+                      key={op}
+                      disabled={salvando === t.chave}
+                      onClick={() => alterar(t.chave, op)}
+                      className={[
+                        'px-3 py-1.5 text-[0.65rem] font-semibold uppercase tracking-wide transition-colors',
+                        modo === op
+                          ? op === 'bloqueia'
+                            ? 'bg-unno-danger/15 text-red-700 dark:text-unno-danger'
+                            : 'bg-unno-amber/15 text-amber-700 dark:text-unno-amber'
+                          : 'text-gray-400 hover:text-gray-600 dark:text-unno-dim',
+                      ].join(' ')}
+                    >
+                      {op === 'bloqueia' ? 'Bloqueia' : 'Avisa'}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )
+          })}
+        </div>
+      </Card>
+
+      <Card className="p-5">
+        <h2 className="text-base font-semibold text-gray-900 dark:text-unno-text mb-1">
+          Exceções registradas
+        </h2>
+        <p className="text-sm text-gray-500 dark:text-unno-muted mb-3">
+          Últimas vezes em que uma regra foi contrariada, e por quê.
+        </p>
+        {excecoes.length === 0 ? (
+          <p className="text-sm text-gray-400 italic">Nenhuma exceção até agora.</p>
+        ) : (
+          <div className="space-y-2">
+            {excecoes.map(e => (
+              <div key={e.id} className="text-sm border-t border-gray-100 dark:border-white/[.08] pt-2">
+                <p className="text-xs text-gray-400 dark:text-unno-dim">
+                  {new Date(e.created_at).toLocaleString('pt-BR')} ·{' '}
+                  {TRAVAS.find(t => t.chave === e.chave)?.titulo ?? e.chave}
+                </p>
+                <p className="text-gray-700 dark:text-unno-text">{e.justificativa}</p>
+              </div>
+            ))}
+          </div>
+        )}
+      </Card>
+    </div>
+  )
+}
 
 function PerfilTab() {
   const { profile, reloadProfile } = useAuth()
@@ -284,7 +442,7 @@ function EmpresaTab() {
 
 // ── Funcionários ──────────────────────────────────────────────
 
-const SUPABASE_URL = 'https://outunfdtwgsmdqtphzgf.supabase.co'
+const SUPABASE_URL = 'https://axwepvqpzsrfhrigryqt.supabase.co'
 
 async function callManageUser(body: Record<string, unknown>) {
   const { data: { session } } = await supabase.auth.getSession()

@@ -2,13 +2,15 @@ import type { ReactNode } from 'react'
 
 type BadgeVariant = 'default' | 'success' | 'warning' | 'danger' | 'info' | 'purple'
 
+// Espelha .tag-* do unno-design-system.html: fundo tingido + borda da
+// mesma cor, texto em maiúsculas.
 const variantClasses: Record<BadgeVariant, string> = {
-  default: 'bg-gray-100 text-gray-700',
-  success: 'bg-emerald-100 text-emerald-700',
-  warning: 'bg-yellow-100 text-yellow-700',
-  danger:  'bg-red-100 text-red-700',
-  info:    'bg-blue-100 text-blue-700',
-  purple:  'bg-purple-100 text-purple-700',
+  default: 'bg-gray-100 text-gray-600 border border-gray-200 dark:bg-white/[.03] dark:text-unno-muted dark:border-white/[.08]',
+  success: 'bg-brand-500/[.12] text-brand-700 border border-brand-500/20 dark:text-brand-400',
+  warning: 'bg-unno-amber/[.12] text-amber-700 border border-unno-amber/20 dark:text-unno-amber',
+  danger:  'bg-unno-danger/[.12] text-red-700 border border-unno-danger/20 dark:text-unno-danger',
+  info:    'bg-blue-500/[.12] text-blue-700 border border-blue-500/20 dark:text-blue-400',
+  purple:  'bg-purple-500/[.12] text-purple-700 border border-purple-500/20 dark:text-purple-400',
 }
 
 interface BadgeProps {
@@ -19,7 +21,7 @@ interface BadgeProps {
 
 export function Badge({ variant = 'default', children, className = '' }: BadgeProps) {
   return (
-    <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${variantClasses[variant]} ${className}`}>
+    <span className={`inline-flex items-center gap-1.5 px-3 py-0.5 rounded-full text-[0.7rem] font-semibold uppercase tracking-wide ${variantClasses[variant]} ${className}`}>
       {children}
     </span>
   )

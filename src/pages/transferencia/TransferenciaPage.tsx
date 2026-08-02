@@ -32,6 +32,10 @@ export function TransferenciaPage() {
   const [local, setLocal] = useState<LocalWithInsumo | null>(null)
   const [fifoWarning, setFifoWarning] = useState(false)
   const [ro003Error, setRo003Error] = useState('')
+  // Trava em modo "avisa": a ação é permitida, mas só depois de o operador
+  // escrever por que está contrariando a regra.
+  const [travaAviso, setTravaAviso] = useState<{ chave: string; mensagem: string } | null>(null)
+  const [justificativa, setJustificativa] = useState('')
   const [showConfirm, setShowConfirm] = useState(false)
   const [loading, setLoading] = useState(false)
   const [scanError, setScanError] = useState('')
@@ -180,16 +184,12 @@ export function TransferenciaPage() {
 
     const loc = localData as LocalWithInsumo
 
-    // RO-003: recipiente deve estar vazio ou ter o mesmo lote
+    // RO-003 foi revogada (migration 035): o recipiente pode receber lote novo
+    // mesmo com sobra dentro. O conteúdo atual vira informação, não bloqueio —
+    // a tela de confirmação mostra que vai misturar.
     const estadoRaw = loc.estado_atual as unknown
     const estadoArray = Array.isArray(estadoRaw) ? estadoRaw as Array<{ quantidade: number; lote_id?: string; unidade?: string }> : null
     const estado = estadoArray ? estadoArray[0] : (estadoRaw as { quantidade: number; lote_id?: string; unidade?: string } | undefined)
-    if (estado && estado.quantidade > 0 && estado.lote_id && estado.lote_id !== lote?.id) {
-      setRo003Error(
-        `REGRA DE OURO VIOLADA (RO-003): este recipiente já tem um lote ativo (${estado.quantidade} ${estado.unidade ?? ''} restantes). Zere o recipiente antes de abastecer com novo lote.`
-      )
-      return
-    }
 
     // Validação de marca
     const marcaLote = lote?.marca_id
@@ -221,16 +221,42 @@ export function TransferenciaPage() {
       p_local_id:       local.id,
       p_responsavel_id: profile.id,
       p_empresa_id:     profile.empresa_id,
+      // vai preenchida na segunda tentativa, quando uma trava pediu explicação
+      p_justificativa:  justificativa.trim() || null,
     })
 
     setLoading(false)
+
+    // Trava disparou. Em "bloqueia" não há o que fazer; em "avisa" a tela pede
+    // a justificativa e o operador confirma de novo.
+    const resp = data as {
+      ok: boolean; trava?: string; modo?: string
+      mensagem?: string; requer_justificativa?: boolean; erro?: string
+    } | null
+
+    if (resp?.trava) {
+      if (resp.modo === 'avisa') {
+        // Mantém o modal aberto: ele se transforma, mostrando o motivo e o
+        // campo de justificativa. Confirmar de novo reenvia com a explicação.
+        setTravaAviso({ chave: resp.trava, mensagem: resp.mensagem ?? '' })
+      } else {
+        setShowConfirm(false)
+        setScanError(resp.mensagem ?? 'Ação bloqueada pelas regras da empresa.')
+        setStep('confirmar')
+      }
+      return
+    }
+
     setShowConfirm(false)
 
-    if (error || !(data as { ok: boolean })?.ok) {
-      setScanError((data as { erro?: string })?.erro ?? error?.message ?? 'Erro na transferência.')
+    if (error || !resp?.ok) {
+      setScanError(resp?.erro ?? error?.message ?? 'Erro na transferência.')
       setStep('confirmar')
       return
     }
+
+    setTravaAviso(null)
+    setJustificativa('')
 
     const codigos = (data as { codigos?: string[]; codigo?: string })?.codigos
       ?? [(data as { codigo?: string })?.codigo ?? '']
@@ -469,6 +495,24 @@ export function TransferenciaPage() {
                 <span className="text-gray-500">Destino (EP)</span>
                 <span className="font-medium">{local.nome}</span>
               </div>
+
+              {/* O recipiente pode ter sobra de outro lote: não é mais bloqueio,
+                  mas o operador precisa saber que vai misturar. */}
+              {(local.estado_atual?.quantidade ?? 0) > 0 && (
+                <div className="rounded-lg bg-unno-amber/10 border border-unno-amber/30 px-3 py-2.5 mt-2">
+                  <p className="text-sm font-medium text-gray-900 dark:text-unno-text">
+                    Vai misturar com o que já está no recipiente
+                  </p>
+                  <p className="text-xs text-gray-600 dark:text-unno-muted mt-1">
+                    Já tem{' '}
+                    <strong>
+                      {formatQty(local.estado_atual!.quantidade, local.estado_atual!.unidade ?? unidade)}
+                    </strong>{' '}
+                    de outro lote. A partir daqui, as produções que usarem este recipiente
+                    ficam ligadas aos dois lotes — até ele ser marcado como esgotado.
+                  </p>
+                </div>
+              )}
             </div>
 
             <div className="mt-4 p-3 bg-amber-50 border border-amber-200 rounded-lg text-xs text-amber-800">
@@ -545,10 +589,16 @@ export function TransferenciaPage() {
       {/* Confirm Modal */}
       <ConfirmModal
         open={showConfirm}
-        title="Confirmar transferência?"
+        title={travaAviso ? 'Contrariar a regra?' : 'Confirmar transferência?'}
+        description={travaAviso?.mensagem}
         variant="danger"
-        confirmLabel="CONFIRMAR"
+        confirmLabel={travaAviso ? 'CONFIRMAR MESMO ASSIM' : 'CONFIRMAR'}
         loading={loading}
+        justificativa={
+          travaAviso
+            ? { valor: justificativa, onChange: setJustificativa }
+            : undefined
+        }
         summary={
           lote && local ? (
             <div className="space-y-1">

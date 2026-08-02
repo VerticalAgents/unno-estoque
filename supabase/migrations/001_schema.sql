@@ -767,7 +767,7 @@ FROM insumos i
 LEFT JOIN lotes l ON l.insumo_id = i.id AND l.status = 'ativo'
 LEFT JOIN locais loc ON loc.id = (
   SELECT mi.local_destino_id FROM movimentacoes_itens mi
-  WHERE mi.lote_id = l.id ORDER BY mi.rowid DESC LIMIT 1
+  WHERE mi.lote_id = l.id ORDER BY mi.id DESC LIMIT 1
 )
 LEFT JOIN locais_estado_atual lea ON lea.lote_id = l.id
 GROUP BY i.empresa_id, i.id, i.codigo, i.nome, i.unidade_medida, i.estoque_minimo;

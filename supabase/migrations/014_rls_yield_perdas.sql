@@ -73,6 +73,8 @@ CREATE POLICY "acesso_por_empresa" ON lotes_unidades
     )
   );
 
+-- já criada em 005/006 — recriada aqui para deixar a definição final explícita
+DROP POLICY IF EXISTS "acesso_por_empresa" ON movimentacoes_itens;
 CREATE POLICY "acesso_por_empresa" ON movimentacoes_itens
   USING (
     movimentacao_id IN (
