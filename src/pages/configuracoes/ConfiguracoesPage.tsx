@@ -7,6 +7,7 @@ import { Button } from '../../components/ui/Button'
 import { Input, Select } from '../../components/ui/Input'
 import { Badge } from '../../components/ui/Badge'
 import { ALL_ROUTES } from '../../lib/permissions'
+import { MotivosDescarteTab } from './MotivosDescarteTab'
 
 type Tab = 'perfil' | 'senha' | 'empresa' | 'funcionarios' | 'categorias' | 'producao' | 'travas'
 
@@ -114,7 +115,12 @@ export function ConfiguracoesPage() {
       {activeTab === 'empresa' && <EmpresaTab />}
       {activeTab === 'funcionarios' && isAdmin && <FuncionariosTab />}
       {activeTab === 'categorias' && <CategoriasTab />}
-      {activeTab === 'producao' && <ProducaoTab />}
+      {activeTab === 'producao' && (
+        <div className="space-y-4">
+          <ProducaoTab />
+          <MotivosDescarteTab />
+        </div>
+      )}
       {activeTab === 'travas' && isAdmin && <TravasTab />}
     </div>
   )
@@ -138,7 +144,7 @@ export function ConfiguracoesPage() {
 function ProducaoTab() {
   const { profile } = useAuth()
   const [fichas, setFichas] = useState<
-    { id: string; codigo: string; nome: string; versao_id: string; rendimento: string; peso: string }[]
+    { id: string; codigo: string; nome: string; versao_id: string; rendimento: string; peso: string; margem: string }[]
   >([])
   const [salvandoId, setSalvandoId] = useState<string | null>(null)
   const [okId, setOkId] = useState<string | null>(null)
@@ -148,7 +154,7 @@ function ProducaoTab() {
     if (!profile) return
     supabase
       .from('fichas_tecnicas')
-      .select('id, codigo, nome, versoes:fichas_tecnicas_versoes!inner(id, rendimento_fornada, peso_medio_g, ativa)')
+      .select('id, codigo, nome, versoes:fichas_tecnicas_versoes!inner(id, rendimento_fornada, peso_medio_g, perda_esperada_g_forma, ativa)')
       .eq('empresa_id', profile.empresa_id)
       .eq('ativo', true)
       .eq('tipo', 'produto')
@@ -156,7 +162,7 @@ function ProducaoTab() {
       .then(({ data }) => {
         const rows = (data ?? []) as unknown as {
           id: string; codigo: string; nome: string
-          versoes: { id: string; rendimento_fornada: number | null; peso_medio_g: number | null; ativa: boolean }[]
+          versoes: { id: string; rendimento_fornada: number | null; peso_medio_g: number | null; perda_esperada_g_forma: number | null; ativa: boolean }[]
         }[]
         setFichas(
           rows.flatMap(f => {
@@ -166,6 +172,7 @@ function ProducaoTab() {
               id: f.id, codigo: f.codigo, nome: f.nome, versao_id: v.id,
               rendimento: v.rendimento_fornada != null ? String(v.rendimento_fornada) : '',
               peso: v.peso_medio_g != null ? String(v.peso_medio_g) : '',
+              margem: v.perda_esperada_g_forma != null ? String(Number(v.perda_esperada_g_forma)) : '50',
             }]
           }),
         )
@@ -186,11 +193,13 @@ function ProducaoTab() {
     }
 
     const peso = parseFloat(f.peso.replace(',', '.'))
+    const margem = parseFloat(f.margem.replace(',', '.'))
     const { error } = await supabase
       .from('fichas_tecnicas_versoes')
       .update({
         rendimento_fornada: rendimento,
         peso_medio_g: Number.isFinite(peso) && peso > 0 ? peso : null,
+        perda_esperada_g_forma: Number.isFinite(margem) && margem >= 0 ? margem : 50,
       })
       .eq('id', f.versao_id)
 
@@ -200,7 +209,7 @@ function ProducaoTab() {
     setTimeout(() => setOkId(null), 2000)
   }
 
-  function setCampo(id: string, campo: 'rendimento' | 'peso', valor: string) {
+  function setCampo(id: string, campo: 'rendimento' | 'peso' | 'margem', valor: string) {
     setFichas(s => s.map(f => (f.id === id ? { ...f, [campo]: valor } : f)))
   }
 
@@ -228,6 +237,16 @@ function ProducaoTab() {
                     type="number" min={1} step={1} inputMode="numeric"
                     value={f.rendimento}
                     onChange={e => setCampo(f.id, 'rendimento', e.target.value)}
+                    className="mt-1 w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-right
+                               focus:outline-none focus:border-brand-500 focus:ring-[3px] focus:ring-brand-500/10"
+                  />
+                </div>
+                <div className="w-32">
+                  <label className="text-xs text-gray-500">Margem de perda (g/forma)</label>
+                  <input
+                    type="number" min={0} step="1" inputMode="decimal"
+                    value={f.margem}
+                    onChange={e => setCampo(f.id, 'margem', e.target.value)}
                     className="mt-1 w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-right
                                focus:outline-none focus:border-brand-500 focus:ring-[3px] focus:ring-brand-500/10"
                   />

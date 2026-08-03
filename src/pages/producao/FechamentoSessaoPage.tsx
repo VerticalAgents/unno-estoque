@@ -12,8 +12,9 @@ interface SkuRow {
   id: string
   ficha_tecnica_id: string
   quantidade_planejada: number
+  multiplicador: number | null
   ficha_tecnica: { nome: string }
-  ficha_versao: { peso_medio_g: number | null } | null
+  ficha_versao: { peso_medio_g: number | null; perda_esperada_g_forma: number | null } | null
   perdida: number
   descartada_gramatura: number
   peso_descartado_g: number
@@ -135,7 +136,7 @@ export function FechamentoSessaoPage() {
     Promise.all([
       supabase.from('sessoes_producao').select('codigo,data_producao').eq('id', id).single(),
       supabase.from('sessoes_producao_skus')
-        .select('*, ficha_tecnica:fichas_tecnicas(nome), ficha_versao:fichas_tecnicas_versoes(peso_medio_g)')
+        .select('*, ficha_tecnica:fichas_tecnicas(nome), ficha_versao:fichas_tecnicas_versoes(peso_medio_g, perda_esperada_g_forma)')
         .eq('sessao_id', id),
       supabase.from('sessoes_producao_locais')
         .select('*, local:locais(nome), insumo:insumos(nome,unidade_medida), lote:lotes(codigo,unidade)')
@@ -189,13 +190,11 @@ export function FechamentoSessaoPage() {
     saveState(id, { skuInputs, localInputs, obs: newObs })
   }, [id, dataLoaded])
 
-  function setSku(skuId: string, field: 'perdida' | 'descartada_gramatura' | 'peso_descartado_g', val: number) {
-    setSkus((prev) => {
-      const next = prev.map((s) => s.id === skuId ? { ...s, [field]: val } : s)
-      persist(next, locais, obs)
-      return next
-    })
-  }
+  /** O que o fechamento realmente mede, por ficha. */
+  const [medicoes, setMedicoes] = useState<Record<string, { formas: string; sobra: string }>>({})
+  const medicao = (id: string) => medicoes[id] ?? { formas: '', sobra: '' }
+  const numMed = (v: string) => parseFloat((v ?? '').replace(',', '.')) || 0
+
 
 
   function toggleZerado(localId: string) {
@@ -257,6 +256,17 @@ export function FechamentoSessaoPage() {
     if (!profile || !id) return
     if (hasValidationError) { setError('Corrija os erros antes de fechar.'); setShowConfirm(false); return }
     setLoading(true)
+
+    // As medições são gravadas direto na tabela: são números observados, não
+    // movimento de estoque, e assim `fechar_sessao_producao` — que rateia
+    // consumo entre lotes — não precisa ser mexida.
+    for (const s of skus) {
+      const formas = numMed(medicao(s.id).formas)
+      await supabase.from('sessoes_producao_skus').update({
+        formas_assadas: formas > 0 ? Math.round(formas) : (s.multiplicador ?? null),
+        massa_sobra_g: numMed(medicao(s.id).sobra) || null,
+      }).eq('id', s.id)
+    }
 
     const { data, error: err } = await supabase.rpc('fechar_sessao_producao', {
       p_sessao_id:      id,
@@ -320,37 +330,47 @@ export function FechamentoSessaoPage() {
                 </div>
               </div>
 
+              {/* O que dá para medir hoje: quantas formas foram ao forno e
+                  quanta massa ficou no tacho. As unidades só existem amanhã,
+                  quando o brownie é desenformado — elas entram na Pós-produção. */}
               <div className="grid grid-cols-2 gap-3">
                 <Input
-                  label="Perdidos (processo)"
+                  label="Formas assadas"
                   type="number"
                   min="0"
-                  max={s.quantidade_planejada}
-                  value={s.perdida || ''}
-                  onChange={(e) => setSku(s.id, 'perdida', parseInt(e.target.value) || 0)}
+                  value={medicao(s.id).formas}
+                  onChange={e => setMedicoes(m => ({ ...m, [s.id]: { ...medicao(s.id), formas: e.target.value } }))}
+                  hint={`Planejado: ${s.multiplicador ?? 0} forma(s)`}
                 />
                 <Input
-                  label="Descartados por gramatura"
+                  label="Massa que sobrou (g)"
                   type="number"
                   min="0"
-                  max={s.quantidade_planejada}
-                  value={s.descartada_gramatura || ''}
-                  onChange={(e) => setSku(s.id, 'descartada_gramatura', parseInt(e.target.value) || 0)}
-                  hint={pesoMedio ? `Peso esperado: ${pesoMedio}g/un` : undefined}
+                  step="1"
+                  value={medicao(s.id).sobra}
+                  onChange={e => setMedicoes(m => ({ ...m, [s.id]: { ...medicao(s.id), sobra: e.target.value } }))}
+                  hint="Pesagem do tacho e utensílios"
                 />
               </div>
 
-              {s.descartada_gramatura > 0 && (
-                <Input
-                  label="Peso total descartado por gramatura (g)"
-                  type="number"
-                  min="0"
-                  step="0.1"
-                  value={s.peso_descartado_g || ''}
-                  onChange={(e) => setSku(s.id, 'peso_descartado_g', parseFloat(e.target.value) || 0)}
-                  hint="Soma do peso de todas as unidades descartadas"
-                />
-              )}
+              {(() => {
+                const formas = numMed(medicao(s.id).formas) || (s.multiplicador ?? 0)
+                const margem = (s.ficha_versao as unknown as { perda_esperada_g_forma?: number } | null)
+                  ?.perda_esperada_g_forma ?? 50
+                const esperado = formas * Number(margem)
+                const sobra = numMed(medicao(s.id).sobra)
+                if (esperado <= 0) return null
+                const acima = sobra > esperado
+                return (
+                  <p className={`text-xs ${sobra === 0 ? 'text-gray-500' : acima ? 'text-amber-700' : 'text-emerald-700'}`}>
+                    Esperado para {formas} forma(s): <strong>{esperado} g</strong>
+                    {sobra > 0 && (acima
+                      ? ` — ${Math.round(sobra - esperado)} g acima da margem`
+                      : ` — dentro da margem`)}
+                  </p>
+                )
+              })()}
+
 
               {validErr ? (
                 <p className="text-xs font-medium text-red-600">{validErr}</p>

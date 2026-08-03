@@ -6,12 +6,13 @@ const defaultRoutes: Record<PapelUsuario, string[]> = {
   admin: ['*'],
   gestao: [
     '/dashboard', '/recebimento', '/transferencia', '/reabastecimento', '/producao',
+    '/pos-producao',
     '/expedicao', '/perdas', '/contagem', '/relatorios',
     '/estoque', '/insumos', '/fornecedores', '/fichas', '/produtos', '/recipientes',
     '/configuracoes',
   ],
   producao: [
-    '/dashboard', '/transferencia', '/producao', '/contagem', '/estoque',
+    '/dashboard', '/transferencia', '/producao', '/pos-producao', '/contagem', '/estoque',
   ],
   compras: [
     '/dashboard', '/recebimento', '/reabastecimento', '/estoque', '/contagem', '/perdas',
@@ -32,6 +33,7 @@ export const ALL_ROUTES = [
   { path: '/transferencia', label: 'Transferência' },
   { path: '/reabastecimento', label: 'Reabastecimento' },
   { path: '/producao', label: 'Produção' },
+  { path: '/pos-producao', label: 'Pós-produção' },
   { path: '/expedicao', label: 'Expedição' },
   { path: '/perdas', label: 'Perdas' },
   { path: '/contagem', label: 'Contagem' },
