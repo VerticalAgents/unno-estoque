@@ -180,6 +180,25 @@ export function DevPage() {
   const [qtdSeed, setQtdSeed] = useState('10')
   const [etiquetasSeed, setEtiquetasSeed] = useState('1')
 
+  /**
+   * Enche os recipientes do EP até a capacidade.
+   *
+   * Testar produção exige recipiente cheio, e enchê-los pela tela de
+   * transferência são dezenas de leituras de QR. Usa os lotes que já existem;
+   * insumo sem lote é pulado e aparece na contagem, em vez de inventar estoque
+   * — que é justamente o que mascararia o problema num teste.
+   */
+  const encherRecipientes = useAction(async () => {
+    if (!eid) throw new Error('perfil ausente')
+    const { data, error } = await supabase.rpc('dev_encher_recipientes', {
+      p_empresa_id: eid,
+    })
+    if (error) throw error
+    const r = data as { recipientes_cheios: number; sem_lote: number; quantidade_total: number }
+    return `${r.recipientes_cheios} recipiente(s) cheios com ${r.quantidade_total} no total`
+      + (r.sem_lote > 0 ? ` — ${r.sem_lote} ficaram sem lote no estoque central` : '')
+  })
+
   const criarLotesTeste = useAction(async () => {
     if (!eid || !profile) throw new Error('perfil ausente')
     const qtd = parseFloat(qtdSeed)
@@ -324,6 +343,38 @@ export function DevPage() {
             description="Remove os valores de estoque_minimo_ec e estoque_minimo_ep de todos os insumos."
             action={zerarMinimo}
           />
+        </Section>
+
+        {/* ── Encher recipientes ── */}
+        <Section title="Estoque Produtivo">
+          <Card className="p-4 space-y-3">
+            <div>
+              <p className="text-sm font-medium text-gray-900">Encher os recipientes</p>
+              <p className="text-xs text-gray-500 mt-0.5">
+                Despeja os lotes do estoque central nos recipientes até a capacidade,
+                do primeiro ao último. Crie os lotes de teste antes, senão não há
+                o que despejar.
+              </p>
+            </div>
+            {encherRecipientes.result && (
+              <p className={`text-xs font-mono ${encherRecipientes.result.startsWith('✓') ? 'text-emerald-600' : 'text-red-600'}`}>
+                {encherRecipientes.result}
+              </p>
+            )}
+            <div className="flex gap-2 justify-end">
+              {encherRecipientes.confirm && (
+                <Button variant="ghost" size="sm" onClick={encherRecipientes.reset}>Cancelar</Button>
+              )}
+              <Button
+                variant={encherRecipientes.confirm ? 'danger' : 'primary'}
+                size="sm"
+                loading={encherRecipientes.loading}
+                onClick={encherRecipientes.run}
+              >
+                {encherRecipientes.confirm ? 'Confirmar?' : 'Encher recipientes'}
+              </Button>
+            </div>
+          </Card>
         </Section>
 
         {/* ── Seed lotes ── */}
