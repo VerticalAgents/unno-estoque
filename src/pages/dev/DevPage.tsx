@@ -188,6 +188,34 @@ export function DevPage() {
    * um número fixo — assim o açúcar ganha o que cabe nos potes de açúcar e a
    * essência ganha o que cabe nas garrafinhas.
    */
+  /**
+   * A Pós-produção só lista sessões FECHADAS. Sem nenhuma, a tela aparece
+   * vazia e não dá para conferir. Fechar a sessão real só para olhar seria
+   * caro: o fechamento dá baixa no consumo e não se desfaz.
+   */
+  const seedPosProducao = useAction(async () => {
+    if (!eid || !profile) throw new Error('perfil ausente')
+    const { data, error } = await supabase.rpc('dev_criar_sessao_pos_producao', {
+      p_empresa_id: eid,
+      p_responsavel_id: profile.id,
+    })
+    if (error) throw error
+    const r = data as { ok: boolean; erro?: string; codigo?: string; fichas?: number; unidades_teoricas?: number }
+    if (!r.ok) throw new Error(r.erro ?? 'não foi possível criar a sessão')
+    return `${r.codigo} criada — ${r.fichas} ficha(s), ${r.unidades_teoricas} unidades teóricas.`
+      + ' Abra Pós-produção para ver.'
+  })
+
+  const limparSessoesTeste = useAction(async () => {
+    if (!eid) throw new Error('empresa ausente')
+    const { data, error } = await supabase.rpc('dev_limpar_sessoes_teste', { p_empresa_id: eid })
+    if (error) throw error
+    const r = data as { sessoes_apagadas: number }
+    return r.sessoes_apagadas === 0
+      ? 'Não havia sessão de teste para apagar.'
+      : `${r.sessoes_apagadas} sessão(ões) de teste apagada(s).`
+  })
+
   const encherTudo = useAction(async () => {
     if (!eid || !profile) throw new Error('perfil ausente')
     const { data, error } = await supabase.rpc('dev_encher_tudo', {
@@ -405,6 +433,46 @@ export function DevPage() {
                 onClick={encherTudo.run}
               >
                 {encherTudo.confirm ? 'Confirmar?' : 'Encher tudo'}
+              </Button>
+            </div>
+          </Card>
+
+          {/* ── Sessão fechada para ver a Pós-produção ── */}
+          <Card className="p-4 space-y-3">
+            <div>
+              <p className="text-sm font-medium text-gray-900">Criar sessão para a Pós-produção</p>
+              <p className="text-xs text-gray-500 mt-0.5">
+                Cria uma sessão já fechada, com data de ontem e 4 formas de cada ficha,
+                só para a tela de Pós-produção ter o que listar. Não dá baixa em estoque
+                nem entra no relatório de perdas.
+              </p>
+            </div>
+            {seedPosProducao.result && (
+              <p className={`text-xs font-mono ${seedPosProducao.result.startsWith('✓') ? 'text-emerald-600' : 'text-red-600'}`}>
+                {seedPosProducao.result}
+              </p>
+            )}
+            {limparSessoesTeste.result && (
+              <p className={`text-xs font-mono ${limparSessoesTeste.result.startsWith('✓') ? 'text-emerald-600' : 'text-red-600'}`}>
+                {limparSessoesTeste.result}
+              </p>
+            )}
+            <div className="flex gap-2 justify-end">
+              <Button
+                variant="ghost"
+                size="sm"
+                loading={limparSessoesTeste.loading}
+                onClick={limparSessoesTeste.run}
+              >
+                {limparSessoesTeste.confirm ? 'Confirmar?' : 'Apagar as de teste'}
+              </Button>
+              <Button
+                variant={seedPosProducao.confirm ? 'danger' : 'primary'}
+                size="sm"
+                loading={seedPosProducao.loading}
+                onClick={seedPosProducao.run}
+              >
+                {seedPosProducao.confirm ? 'Confirmar?' : 'Criar sessão fechada'}
               </Button>
             </div>
           </Card>
