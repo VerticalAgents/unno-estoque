@@ -155,9 +155,47 @@ export function FechamentoSessaoPage() {
     return lista.map(p => {
       const primeiro = p.teorico > 0 && !jaMarcado.has(p.insumo_id)
       if (primeiro) jaMarcado.add(p.insumo_id)
-      return { ...p, primeiroDoInsumo: primeiro }
+
+      /**
+       * O papel do pote na produção do dia. Com o teórico enfileirado (059) os
+       * três casos são bem diferentes de trabalho, e tratá-los igual é o que
+       * fazia a lista ter 51 cartões idênticos:
+       *
+       *   nao_usa — nem se abre. Nada a fazer.
+       *   esvazia — vai até o fim. A resposta é sempre "sobrou zero".
+       *   pesa    — sobra um pedaço. Este sim vai à balança.
+       *
+       * Só existe um `pesa` por insumo: é o último da fila.
+       */
+      const papel: 'nao_usa' | 'esvazia' | 'pesa' =
+        p.teorico <= 0 ? 'nao_usa'
+          : p.teorico >= p.inicial - 0.0005 ? 'esvazia'
+          : 'pesa'
+
+      return { ...p, primeiroDoInsumo: primeiro, papel }
     })
   }, [locais, sobraLocal])
+
+  /** Um bloco por insumo. `potes` já vem na ordem da fila, então basta juntar. */
+  const grupos = useMemo(() => {
+    const mapa = new Map<string, {
+      insumo_id: string; insumo: string; unidade: string
+      teorico: number; potes: typeof potes
+    }>()
+    for (const p of potes) {
+      const g = mapa.get(p.insumo_id) ?? {
+        insumo_id: p.insumo_id, insumo: p.insumo, unidade: p.unidade,
+        teorico: 0, potes: [] as typeof potes,
+      }
+      g.teorico += p.teorico
+      g.potes.push(p)
+      mapa.set(p.insumo_id, g)
+    }
+    return [...mapa.values()]
+  }, [potes])
+
+  /** Quais insumos estão com a lista de potes não usados aberta. */
+  const [naoUsadosAbertos, setNaoUsadosAbertos] = useState<Record<string, boolean>>({})
 
   function setSobraLocalValue(localId: string, valor: number) {
     setSobraLocal(s => {
@@ -487,103 +525,160 @@ export function FechamentoSessaoPage() {
 
       {/* Recipientes */}
       <div className="space-y-3 lg:col-start-1 lg:row-start-1">
-        <h2 className="text-sm font-semibold text-gray-700 uppercase tracking-wide">Recipientes</h2>
+        <div className="flex items-baseline justify-between gap-2">
+          <h2 className="text-sm font-semibold text-gray-700 uppercase tracking-wide">Recipientes</h2>
+          {/* Dizer de saída quantos números a pessoa vai ter que digitar: sem
+              isso a página parece ter 51 tarefas quando tem 18. */}
+          {grupos.length > 0 && (
+            <p className="text-xs text-gray-400">
+              {grupos.length} insumos · {potes.filter(p => p.papel === 'pesa').length} para pesar
+            </p>
+          )}
+        </div>
         {locais.length === 0 && (
           <p className="text-sm text-gray-400 italic">Nenhum recipiente vinculado.</p>
         )}
-        {/* Um peso por RECIPIENTE, não por lote: a balança pesa o pote inteiro.
-            Quando há mistura, o sistema rateia o consumo entre os lotes de dentro
-            na proporção do que cada um tinha (fechar_sessao_producao). */}
-        {potes.map((p) => {
-          const zerado = p.lotes.every(l => l.zerado)
-          const consumoReal = p.inicial - p.sobra
-          const desvio = getDesvioStatus(consumoReal, p.teorico)
-          const misturado = p.lotes.length > 1
-          // O card inteiro fala a língua da balança. Misturar kg e g dentro do
-          // mesmo cartão faria "500" ao lado de "17.000" parecer meia tonelada.
-          const b = bancada(p.unidade)
+        {/* Um bloco por INSUMO, não por recipiente. São 51 potes na sessão de
+            teste, mas só 18 pedem balança — um por insumo, o último da fila.
+            Os outros ou esvaziam por completo (a resposta é sempre zero) ou
+            nem são abertos. Tratar os três casos como o mesmo trabalho é o que
+            fazia a lista ficar quilométrica.
+
+            Um peso por RECIPIENTE, não por lote: a balança pesa o pote inteiro.
+            Quando há mistura, o sistema rateia o consumo entre os lotes de
+            dentro na proporção do que cada um tinha (fechar_sessao_producao). */}
+        {grupos.map((g) => {
+          const b = bancada(g.unidade)
+          const usados     = g.potes.filter(p => p.papel !== 'nao_usa')
+          const naoUsados  = g.potes.filter(p => p.papel === 'nao_usa')
+          const abertos    = naoUsadosAbertos[g.insumo_id] ?? false
+          const visiveis   = abertos ? [...usados, ...naoUsados] : usados
+          const pendentes  = usados.filter(
+            p => p.papel === 'esvazia' && !p.lotes.every(l => l.zerado)).length
+
           return (
-            <Card key={p.local_id} className={`p-4 space-y-2 ${zerado ? 'opacity-60' : ''}`}>
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="font-medium text-gray-900 dark:text-unno-text">
-                    {p.nome}
-                    {/* Sugestão sem efeito no cálculo: quem produz usa o que
-                        estiver à mão. Serve só para gastar antes o que vence antes. */}
-                    {p.primeiroDoInsumo && (
-                      <span className="ml-2 text-[0.65rem] font-semibold uppercase tracking-wide text-brand-600 dark:text-brand-400">
-                        sugerido usar primeiro
-                      </span>
-                    )}
+            <Card key={g.insumo_id} className="p-4">
+              <div className="flex items-baseline justify-between gap-2 mb-1">
+                <p className="font-medium text-gray-900 dark:text-unno-text">{g.insumo}</p>
+                {g.teorico > 0 && (
+                  <p className="text-xs text-gray-500 whitespace-nowrap">
+                    precisa de <strong>{emBancada(g.teorico, b.fator)} {b.rotulo}</strong>
                   </p>
-                  <p className="text-xs text-gray-400">
-                    {p.insumo}
-                    {misturado ? (
-                      <span className="text-unno-amber"> · {p.lotes.length} lotes misturados</span>
-                    ) : (
-                      <> · Lote {p.lotes[0]?.lote?.codigo}</>
-                    )}
-                  </p>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => p.lotes.forEach(l => toggleZerado(l.id))}
-                  className={`text-xs px-2 py-1 rounded border transition-colors ${
-                    zerado
-                      ? 'bg-red-50 border-red-300 text-red-700 font-medium'
-                      : 'border-gray-300 text-gray-500 hover:border-red-300 hover:text-red-600'
-                  }`}
-                >
-                  {zerado ? 'Zerado' : 'Zerar'}
-                </button>
+                )}
               </div>
 
-              {misturado && (
-                <div className="text-[0.7rem] text-gray-500 dark:text-unno-muted space-y-0.5 pl-2 border-l-2 border-unno-amber/40">
-                  {p.lotes.map(l => (
-                    <p key={l.id} className="font-mono">
-                      {l.lote?.codigo} — {emBancada(l.quantidade_inicial, b.fator)} {b.rotulo}
-                    </p>
-                  ))}
-                </div>
-              )}
-
-              <p className="text-xs text-gray-400">
-                Inicial: {emBancada(p.inicial, b.fator)} {b.rotulo}
-                {p.teorico > 0 && ` · Teórico: ${emBancada(p.teorico, b.fator)} ${b.rotulo}`}
-              </p>
-
-              {/* Com o teórico enfileirado (059), sobra pote que a produção do
-                  dia nem precisa abrir. Sem dizer isso, o pote sem número
-                  parece um campo que alguém esqueceu de preencher. */}
-              {p.teorico === 0 && (
-                <p className="text-xs text-gray-400 italic">
-                  A produção do dia não precisa deste recipiente.
+              {/* O pote que "esvazia" só entra na conta depois de confirmado:
+                  sem clique a sobra continua sendo o conteúdo inteiro, e o
+                  consumo sairia zero. Avisar aqui evita fechar sem perceber. */}
+              {pendentes > 0 && (
+                <p className="text-xs text-unno-amber mb-1">
+                  {pendentes === 1
+                    ? 'Falta confirmar 1 recipiente esvaziado.'
+                    : `Faltam confirmar ${pendentes} recipientes esvaziados.`}
                 </p>
               )}
 
-              {!zerado && (
-                <Input
-                  label={`Sobra no recipiente (${b.rotulo})`}
-                  type="number"
-                  step={b.fator === 1 ? '0.001' : '1'}
-                  min="0"
-                  value={emBancada(p.sobra, b.fator)}
-                  onChange={(e) => {
-                    // Volta para a unidade do cadastro. O arredondamento evita
-                    // que 350 g vire 0.35000000000000003 kg.
-                    const digitado = parseFloat(e.target.value) || 0
-                    const naUnidade = Number((digitado / b.fator).toFixed(6))
-                    setSobraLocalValue(p.local_id, naUnidade)
-                  }}
-                />
-              )}
+              <div className="divide-y divide-gray-100 dark:divide-white/5">
+                {visiveis.map((p) => {
+                  const zerado = p.lotes.every(l => l.zerado)
+                  const consumoReal = p.inicial - p.sobra
+                  const desvio = getDesvioStatus(consumoReal, p.teorico)
+                  const misturado = p.lotes.length > 1
 
-              {p.teorico > 0 && (
-                <p className={`text-xs font-medium ${desvio === 'ok' ? 'text-emerald-600' : desvio === 'warning' ? 'text-yellow-600' : 'text-red-600'}`}>
-                  Consumo real: {emBancada(consumoReal, b.fator)} {b.rotulo}
-                  {' · '}Desvio: {emBancada(consumoReal - p.teorico, b.fator)} {b.rotulo}
-                </p>
+                  return (
+                    <div key={p.local_id} className={`py-2 ${p.papel === 'nao_usa' ? 'opacity-60' : ''}`}>
+                      <div className="flex items-center justify-between gap-3">
+                        <div className="min-w-0">
+                          <p className="text-sm text-gray-900 dark:text-unno-text truncate">
+                            {p.nome}
+                            {p.primeiroDoInsumo && (
+                              <span className="ml-2 text-[0.65rem] font-semibold uppercase tracking-wide text-brand-600 dark:text-brand-400">
+                                usar primeiro
+                              </span>
+                            )}
+                          </p>
+                          <p className="text-xs text-gray-400">
+                            {p.papel === 'esvazia' && `esvaziar por completo · ${emBancada(p.inicial, b.fator)} ${b.rotulo}`}
+                            {p.papel === 'pesa' && `tem ${emBancada(p.inicial, b.fator)} · usar ${emBancada(p.teorico, b.fator)} ${b.rotulo}`}
+                            {p.papel === 'nao_usa' && `não entra hoje · ${emBancada(p.inicial, b.fator)} ${b.rotulo}`}
+                            {misturado && (
+                              <span className="text-unno-amber"> · {p.lotes.length} lotes misturados</span>
+                            )}
+                          </p>
+                        </div>
+
+                        <div className="flex items-center gap-2 shrink-0">
+                          {!zerado && (
+                            <input
+                              type="number"
+                              aria-label={`Sobra em ${p.nome} (${b.rotulo})`}
+                              step={b.fator === 1 ? '0.001' : '1'}
+                              min="0"
+                              value={emBancada(p.sobra, b.fator)}
+                              onChange={(e) => {
+                                // Volta para a unidade do cadastro. O arredondamento
+                                // evita que 350 g vire 0.35000000000000003 kg.
+                                const digitado = parseFloat(e.target.value) || 0
+                                setSobraLocalValue(p.local_id, Number((digitado / b.fator).toFixed(6)))
+                              }}
+                              className={`w-24 text-right text-sm rounded-lg border px-2 py-1.5 bg-white
+                                dark:bg-unno-surface dark:text-unno-text focus:outline-none focus:ring-2
+                                focus:ring-brand-500/40 ${
+                                  p.papel === 'esvazia'
+                                    ? 'border-unno-amber/60'
+                                    : 'border-gray-300 dark:border-white/10'
+                                }`}
+                            />
+                          )}
+                          <span className="text-xs text-gray-400 w-5">{zerado ? '' : b.rotulo}</span>
+                          <button
+                            type="button"
+                            onClick={() => p.lotes.forEach(l => toggleZerado(l.id))}
+                            className={`text-xs px-2 py-1 rounded border transition-colors whitespace-nowrap ${
+                              zerado
+                                ? 'bg-red-50 border-red-300 text-red-700 font-medium'
+                                : 'border-gray-300 text-gray-500 hover:border-red-300 hover:text-red-600'
+                            }`}
+                          >
+                            {zerado ? 'Zerado' : 'Zerar'}
+                          </button>
+                        </div>
+                      </div>
+
+                      {misturado && (
+                        <div className="mt-1 text-[0.7rem] text-gray-500 dark:text-unno-muted space-y-0.5 pl-2 border-l-2 border-unno-amber/40">
+                          {p.lotes.map(l => (
+                            <p key={l.id} className="font-mono">
+                              {l.lote?.codigo} — {emBancada(l.quantidade_inicial, b.fator)} {b.rotulo}
+                            </p>
+                          ))}
+                        </div>
+                      )}
+
+                      {/* O desvio só interessa quando há teórico e quando o
+                          número já foi mexido: senão toda linha nasce vermelha. */}
+                      {p.teorico > 0 && (zerado || p.sobra !== p.inicial) && (
+                        <p className={`mt-1 text-xs font-medium ${desvio === 'ok' ? 'text-emerald-600' : desvio === 'warning' ? 'text-yellow-600' : 'text-red-600'}`}>
+                          Consumo real: {emBancada(consumoReal, b.fator)} {b.rotulo}
+                          {' · '}Desvio: {emBancada(consumoReal - p.teorico, b.fator)} {b.rotulo}
+                        </p>
+                      )}
+                    </div>
+                  )
+                })}
+              </div>
+
+              {/* Os não usados continuam alcançáveis: a fila é sugestão, e quem
+                  produz pode ter aberto outro pote. Só não ocupam a tela. */}
+              {naoUsados.length > 0 && (
+                <button
+                  type="button"
+                  onClick={() => setNaoUsadosAbertos(s => ({ ...s, [g.insumo_id]: !abertos }))}
+                  className="mt-2 text-xs text-gray-500 hover:text-gray-700 dark:hover:text-unno-text"
+                >
+                  {abertos ? '▾ ocultar' : '▸ mostrar'} {naoUsados.length}{' '}
+                  {naoUsados.length === 1 ? 'recipiente não usado hoje' : 'recipientes não usados hoje'}
+                </button>
               )}
             </Card>
           )
