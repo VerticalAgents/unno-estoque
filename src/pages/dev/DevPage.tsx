@@ -219,6 +219,15 @@ export function DevPage() {
     })
     if (error) throw error
     const r = data as { recipientes_cheios: number; sem_lote: number; quantidade_total: number }
+    // Zero em tudo não é falha: é recipiente já cheio. Sem dizer isso, a
+    // mensagem "0 recipientes" parece erro.
+    if (r.quantidade_total === 0 && r.sem_lote === 0) {
+      return 'Os recipientes já estavam cheios — nada a fazer.'
+    }
+    if (r.quantidade_total === 0 && r.sem_lote > 0) {
+      return `Nada foi despejado: ${r.sem_lote} recipiente(s) sem lote no estoque central.`
+        + ' Use "Encher tudo" para criar o estoque primeiro.'
+    }
     return `${r.recipientes_cheios} recipiente(s) cheios com ${r.quantidade_total} no total`
       + (r.sem_lote > 0 ? ` — ${r.sem_lote} ficaram sem lote no estoque central` : '')
   })
