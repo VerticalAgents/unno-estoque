@@ -350,7 +350,7 @@ export function FechamentoSessaoPage() {
   }
 
   return (
-    <div className="p-4 max-w-lg mx-auto min-h-screen">
+    <div className="p-4 max-w-6xl mx-auto min-h-screen">
       <button onClick={() => navigate('/producao')} className="text-sm text-gray-500 flex items-center gap-1 mb-4">
         <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
           <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 19.5L8.25 12l7.5-7.5" />
@@ -360,8 +360,20 @@ export function FechamentoSessaoPage() {
       <h1 className="text-xl font-bold text-gray-900 mb-1">Fechar Sessão</h1>
       {sessao && <p className="text-sm text-gray-500 mb-6">{sessao.codigo} · {sessao.data_producao}</p>}
 
-      {/* Produção */}
-      <div className="space-y-3 mb-4">
+      {/* Duas colunas: a lista de recipientes é longa e a produção precisa
+          ficar à vista enquanto se percorre os potes. */}
+      <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_24rem] items-start">
+
+      {/* Produção — vem primeiro no HTML para que no celular, onde as colunas
+          viram uma só, continue sendo a primeira coisa da página.
+
+          `self-start` é o que deixa a coluna grudar: sem ele o item de grid
+          estica até o fim da linha e não sobra folga para rolar. O
+          `max-h`/`overflow` salva o caso de a lateral ficar mais alta que a
+          tela — aí ela rola por dentro em vez de perder o sticky. */}
+      <aside className="space-y-4 self-start lg:col-start-2 lg:row-start-1
+                        lg:sticky lg:top-4 lg:max-h-[calc(100vh-2rem)] lg:overflow-y-auto">
+      <div className="space-y-3">
         <h2 className="text-sm font-semibold text-gray-700 uppercase tracking-wide">Produção</h2>
         {skus.map((s) => {
           const pesoMedio = (s.ficha_versao as unknown as { peso_medio_g?: number } | null)?.peso_medio_g
@@ -440,8 +452,41 @@ export function FechamentoSessaoPage() {
         })}
       </div>
 
+      {/* Resumo — acompanha a produção na lateral: os dois números que ele
+          mostra mudam a cada pote pesado, e voltar ao fim da página para
+          conferir cada mudança é o que a coluna fixa evita. */}
+      {(fatorInsumos !== null || fatorProdutoGlobal !== null) && (
+        <Card className="p-4 bg-gray-50 border border-gray-200">
+          <h2 className="text-sm font-semibold text-gray-700 uppercase tracking-wide mb-3">Resumo</h2>
+          <div className="grid grid-cols-2 gap-3">
+            {fatorInsumos !== null && (
+              <div>
+                <p className="text-xs text-gray-500">Perda de insumos</p>
+                <p className={`text-lg font-bold ${fatorInsumos <= 3 ? 'text-emerald-600' : fatorInsumos <= 8 ? 'text-yellow-600' : 'text-red-600'}`}>
+                  {fatorInsumos.toFixed(1)}%
+                </p>
+                <p className="text-xs text-gray-400">consumo real vs teórico</p>
+              </div>
+            )}
+            {fatorProdutoGlobal !== null && (
+              <div>
+                <p className="text-xs text-gray-500">Perda de produto</p>
+                <p className={`text-lg font-bold ${fatorProdutoGlobal <= 3 ? 'text-emerald-600' : fatorProdutoGlobal <= 8 ? 'text-yellow-600' : 'text-red-600'}`}>
+                  {fatorProdutoGlobal.toFixed(1)}%
+                </p>
+                <p className="text-xs text-gray-400">% do planejado</p>
+              </div>
+            )}
+          </div>
+          <p className="text-xs text-gray-500 mt-2 pt-2 border-t border-gray-200">
+            Unidades aproveitadas: <strong>{totalProduzida}</strong> de <strong>{totalPlanejado}</strong> planejadas
+          </p>
+        </Card>
+      )}
+      </aside>
+
       {/* Recipientes */}
-      <div className="space-y-3 mb-4">
+      <div className="space-y-3 lg:col-start-1 lg:row-start-1">
         <h2 className="text-sm font-semibold text-gray-700 uppercase tracking-wide">Recipientes</h2>
         {locais.length === 0 && (
           <p className="text-sm text-gray-400 italic">Nenhum recipiente vinculado.</p>
@@ -545,37 +590,12 @@ export function FechamentoSessaoPage() {
         })}
       </div>
 
-      {/* Resumo */}
-      {(fatorInsumos !== null || fatorProdutoGlobal !== null) && (
-        <Card className="p-4 mb-4 bg-gray-50 border border-gray-200">
-          <h2 className="text-sm font-semibold text-gray-700 uppercase tracking-wide mb-3">Resumo</h2>
-          <div className="grid grid-cols-2 gap-3">
-            {fatorInsumos !== null && (
-              <div>
-                <p className="text-xs text-gray-500">Perda de insumos</p>
-                <p className={`text-lg font-bold ${fatorInsumos <= 3 ? 'text-emerald-600' : fatorInsumos <= 8 ? 'text-yellow-600' : 'text-red-600'}`}>
-                  {fatorInsumos.toFixed(1)}%
-                </p>
-                <p className="text-xs text-gray-400">consumo real vs teórico</p>
-              </div>
-            )}
-            {fatorProdutoGlobal !== null && (
-              <div>
-                <p className="text-xs text-gray-500">Perda de produto</p>
-                <p className={`text-lg font-bold ${fatorProdutoGlobal <= 3 ? 'text-emerald-600' : fatorProdutoGlobal <= 8 ? 'text-yellow-600' : 'text-red-600'}`}>
-                  {fatorProdutoGlobal.toFixed(1)}%
-                </p>
-                <p className="text-xs text-gray-400">% do planejado</p>
-              </div>
-            )}
-          </div>
-          <p className="text-xs text-gray-500 mt-2 pt-2 border-t border-gray-200">
-            Unidades aproveitadas: <strong>{totalProduzida}</strong> de <strong>{totalPlanejado}</strong> planejadas
-          </p>
-        </Card>
-      )}
+      </div>{/* fim da grade */}
 
-      <div className="mb-4">
+      {/* Observações e o botão ficam fora da lateral fixa, na largura toda: o
+          fechamento é irreversível e não deve ficar a um clique de distância
+          enquanto ainda há pote por pesar. */}
+      <div className="mb-4 mt-4">
         <Input label="Observações (opcional)" value={obs} onChange={(e) => updateObs(e.target.value)} />
       </div>
 
