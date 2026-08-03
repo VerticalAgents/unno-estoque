@@ -252,7 +252,7 @@ export function FechamentoSessaoPage() {
               <div className="grid grid-cols-2 gap-3">
                 <Input
                   label="Formas assadas"
-                  type="number"
+                  type="number" inputMode="decimal"
                   min="0"
                   value={medicao(s.id).formas}
                   onChange={e => setMedicao(s.id, 'formas', e.target.value)}
@@ -260,7 +260,7 @@ export function FechamentoSessaoPage() {
                 />
                 <Input
                   label="Massa que sobrou (g)"
-                  type="number"
+                  type="number" inputMode="decimal"
                   min="0"
                   step="1"
                   value={medicao(s.id).sobra}

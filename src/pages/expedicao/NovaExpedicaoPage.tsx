@@ -376,7 +376,7 @@ export function NovaExpedicaoPage() {
             <>
               <Input
                 label="Quantidade (unidades)"
-                type="number"
+                type="number" inputMode="decimal"
                 min="1"
                 step="1"
                 value={quantidade}

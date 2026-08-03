@@ -499,7 +499,7 @@ export function InsumoListPage() {
               <div className="grid grid-cols-2 gap-4">
                 <Input
                   label="Tamanho da embalagem"
-                  type="number"
+                  type="number" inputMode="decimal"
                   step="0.001"
                   min="0"
                   value={form.tamanho_embalagem}
@@ -515,7 +515,7 @@ export function InsumoListPage() {
                 <div className="grid grid-cols-2 gap-3">
                   <Input
                     label={`Mínimo EC (${form.unidade_medida})`}
-                    type="number" step="0.001" min="0"
+                    type="number" inputMode="decimal" step="0.001" min="0"
                     value={form.estoque_minimo_ec}
                     onChange={e => set('estoque_minimo_ec', e.target.value)}
                     placeholder="0"
@@ -523,7 +523,7 @@ export function InsumoListPage() {
                   />
                   <Input
                     label={`Máximo EC (${form.unidade_medida})`}
-                    type="number" step="0.001" min="0"
+                    type="number" inputMode="decimal" step="0.001" min="0"
                     value={form.estoque_maximo_ec}
                     onChange={e => set('estoque_maximo_ec', e.target.value)}
                     placeholder="0"
@@ -537,7 +537,7 @@ export function InsumoListPage() {
                 <div className="grid grid-cols-2 gap-3">
                   <Input
                     label={`Mínimo EP (${form.unidade_medida})`}
-                    type="number" step="0.001" min="0"
+                    type="number" inputMode="decimal" step="0.001" min="0"
                     value={form.estoque_minimo_ep}
                     onChange={e => set('estoque_minimo_ep', e.target.value)}
                     placeholder="0"
@@ -545,7 +545,7 @@ export function InsumoListPage() {
                   />
                   <Input
                     label={`Máximo EP (${form.unidade_medida})`}
-                    type="number" step="0.001" min="0"
+                    type="number" inputMode="decimal" step="0.001" min="0"
                     value={form.estoque_maximo_ep}
                     onChange={e => set('estoque_maximo_ep', e.target.value)}
                     placeholder="0"
@@ -555,7 +555,7 @@ export function InsumoListPage() {
 
               <Input
                 label="Shelf life após abertura (dias)"
-                type="number"
+                type="number" inputMode="decimal"
                 min="1"
                 step="1"
                 value={form.shelf_life_dias_pos_abertura}
@@ -604,7 +604,7 @@ export function InsumoListPage() {
                   <div className="flex gap-2">
                     <Input
                       label="Capacidade"
-                      type="number"
+                      type="number" inputMode="decimal"
                       step="0.001"
                       min="0"
                       value={form.recipiente_capacidade_max}
@@ -711,7 +711,7 @@ export function InsumoListPage() {
                       <Input
                         key={f.key}
                         label={f.label}
-                        type="number"
+                        type="number" inputMode="decimal"
                         step="0.01"
                         min="0"
                         value={nutri[f.key]}

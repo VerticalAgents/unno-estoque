@@ -367,7 +367,7 @@ export function DevPage() {
               <label className="flex-1">
                 <span className="block text-xs text-gray-500 mb-1">Mínimo EC</span>
                 <input
-                  type="number"
+                  type="number" inputMode="decimal"
                   min="0"
                   step="0.5"
                   value={minEC}
@@ -378,7 +378,7 @@ export function DevPage() {
               <label className="flex-1">
                 <span className="block text-xs text-gray-500 mb-1">Mínimo EP</span>
                 <input
-                  type="number"
+                  type="number" inputMode="decimal"
                   min="0"
                   step="0.5"
                   value={minEP}
@@ -532,7 +532,7 @@ export function DevPage() {
               <label className="flex-1">
                 <span className="block text-xs text-gray-500 mb-1">Quantidade por lote</span>
                 <input
-                  type="number"
+                  type="number" inputMode="decimal"
                   min="0.1"
                   step="0.1"
                   value={qtdSeed}
@@ -543,7 +543,7 @@ export function DevPage() {
               <label className="flex-1">
                 <span className="block text-xs text-gray-500 mb-1">Nº de sublotes</span>
                 <input
-                  type="number"
+                  type="number" inputMode="decimal"
                   min="1"
                   step="1"
                   value={etiquetasSeed}

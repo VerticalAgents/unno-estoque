@@ -182,7 +182,7 @@ export function NovaPerdaPage() {
           <div className="grid grid-cols-2 gap-4">
             <Input
               label={`Quantidade${selectedInsumo ? ` (${selectedInsumo.unidade_medida})` : ''}`}
-              type="number"
+              type="number" inputMode="decimal"
               step="0.001"
               min="0.001"
               required

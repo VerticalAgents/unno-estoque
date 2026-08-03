@@ -770,7 +770,7 @@ export function RecipienteListPage() {
               <div className="grid grid-cols-2 gap-4">
                 <Input
                   label="Capacidade máxima"
-                  type="number"
+                  type="number" inputMode="decimal"
                   step="0.001"
                   min="0"
                   value={form.capacidade_max}
@@ -788,7 +788,7 @@ export function RecipienteListPage() {
 
               <Input
                 label="Peso tara (g)"
-                type="number"
+                type="number" inputMode="decimal"
                 step="1"
                 min="0"
                 value={form.peso_tara}

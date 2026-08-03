@@ -24,9 +24,13 @@ const variantClasses: Record<Variant, string> = {
 
 // O design system usa maiúsculas com espaçamento entre letras, então os
 // tamanhos ganham um pouco mais de respiro horizontal.
+//
+// No celular nenhum botão desce de 44px, que é o alvo mínimo recomendado por
+// Apple e Google — mão molhada de produção não acerta 32px. Do `sm:` para
+// cima (tela de 640px, onde há mouse) valem as alturas compactas.
 const sizeClasses: Record<Size, string> = {
-  sm:  'px-3.5 py-1.5 text-[0.7rem] min-h-[32px]',
-  md:  'px-5 py-2 text-xs min-h-[40px]',
+  sm:  'px-3.5 py-1.5 text-[0.7rem] min-h-[44px] sm:min-h-[32px]',
+  md:  'px-5 py-2 text-xs min-h-[44px] sm:min-h-[40px]',
   lg:  'px-6 py-3 text-sm min-h-[48px]',
   xl:  'px-8 py-4 text-base min-h-[56px]',
 }
@@ -50,7 +54,10 @@ export function Button({
         'inline-flex items-center justify-center gap-2 rounded font-display font-semibold',
         'uppercase tracking-[1.5px]',
         'focus:outline-none focus:ring-2 focus:ring-offset-2 dark:focus:ring-offset-[#0a0a0f]',
-        'transition-all duration-300 ease-out-expo hover:-translate-y-0.5',
+        // O "levantar" no hover é para mouse. Em tela de toque não existe
+        // hover de verdade: o iOS aplica o estado ao tocar e o deixa grudado
+        // até o próximo toque em outro lugar.
+        'transition-all duration-300 ease-out-expo [@media(hover:hover)]:hover:-translate-y-0.5',
         'disabled:cursor-not-allowed disabled:opacity-60 disabled:hover:translate-y-0 disabled:hover:shadow-none',
         variantClasses[variant],
         sizeClasses[size],

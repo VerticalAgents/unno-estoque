@@ -358,7 +358,7 @@ export function ProdutoListPage() {
               <div className="grid grid-cols-2 gap-4">
                 <Input
                   label="Peso unitario (g)"
-                  type="number"
+                  type="number" inputMode="decimal"
                   step="0.01"
                   min="0"
                   value={form.peso_unitario_g}
@@ -368,7 +368,7 @@ export function ProdutoListPage() {
                 />
                 <Input
                   label="Validade (dias)"
-                  type="number"
+                  type="number" inputMode="decimal"
                   step="1"
                   min="1"
                   value={form.validade_dias}
@@ -399,7 +399,7 @@ export function ProdutoListPage() {
                     <div className="w-24">
                       <Input
                         label="Qtd"
-                        type="number"
+                        type="number" inputMode="decimal"
                         step="1"
                         min="1"
                         value={nivel.quantidade}

@@ -95,14 +95,14 @@ export function ReembalagemDDL({ lote, local, onSuccess, onCancel }: Props) {
         <div className="space-y-3">
           <Input
             label="Para balde de massa (kg)"
-            type="number" step="0.001" min="0"
+            type="number" inputMode="decimal" step="0.001" min="0"
             value={kgMassa}
             onChange={(e) => setKgMassa(e.target.value)}
             placeholder="0.000"
           />
           <Input
             label="Para sacos de confeitar — topping (kg)"
-            type="number" step="0.001" min="0"
+            type="number" inputMode="decimal" step="0.001" min="0"
             value={kgTopping}
             onChange={(e) => setKgTopping(e.target.value)}
             placeholder="0.000"

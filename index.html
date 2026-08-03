@@ -2,10 +2,30 @@
 <html lang="pt-BR">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <!-- viewport-fit=cover deixa a tela ir até as bordas no iPhone; quem
+         precisa desviar do entalhe e do risquinho de gesto é o CSS, com
+         env(safe-area-inset-*). Sem maximum-scale de propósito: travar o
+         zoom atrapalha quem enxerga pouco. -->
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
     <title>Unno · Estoque</title>
     <meta name="description" content="Sistema de controle de estoque e rastreabilidade — Unno" />
     <meta name="theme-color" content="#17a860" />
+
+    <!-- Instalável na tela inicial (PWA). Continua sendo o mesmo site: abre
+         em tela cheia, com ícone próprio e sem a barra do navegador. -->
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <link rel="icon" type="image/png" sizes="192x192" href="/icon-192.png" />
+    <!-- O iOS ignora os ícones do manifest e usa este. -->
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <!-- "default" mantém a barra de status opaca e o conteúdo começando
+         abaixo dela. O modo translúcido, que ganha aqueles ~47px de tela,
+         joga o cabeçalho por baixo do relógio enquanto não houver
+         env(safe-area-inset-top) no layout — fica para a fase da barra
+         de navegação. -->
+    <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+    <meta name="apple-mobile-web-app-title" content="Unno" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link

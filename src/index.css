@@ -30,6 +30,45 @@
   html {
     -webkit-tap-highlight-color: transparent;
   }
+
+  /* ── Celular ────────────────────────────────────────────
+     O Safari do iPhone dá zoom automático em qualquer campo com fonte
+     menor que 16px, e não volta sozinho: quem digita fica pinçando a tela
+     a cada campo. Como há ~39 campos escritos direto nas páginas, a
+     correção é aqui, uma vez, em vez de campo a campo.
+
+     Só abaixo de 640px — no computador o 14px continua valendo.
+
+     O `!important` é necessário: quase todo campo carrega `text-sm` do
+     Tailwind, e classe ganha de seletor de elemento na disputa do CSS.
+     Sem ele a regra existe e não vale nada — foi o que aconteceu na
+     primeira tentativa. */
+  @media (max-width: 639px) {
+    input,
+    select,
+    textarea {
+      font-size: 16px !important;
+    }
+  }
+
+  /* Alvo de toque mínimo de 44px (recomendação de Apple e Google), para
+     mão molhada e apressada de produção. Vale para os botões de ícone
+     espalhados pelas listas, que hoje têm menos de 30px.
+
+     `min-height` não afeta elemento inline, então botão dentro de frase
+     continua acompanhando o texto — só os de bloco/flex crescem.
+
+     Vale para os `<button>` escritos direto nas páginas. O componente
+     `Button` traz a própria altura por classe (que ganha desta regra) e
+     resolve o tamanho por conta, lá nos `sizeClasses`. */
+  @media (max-width: 639px) {
+    input:not([type='checkbox']):not([type='radio']),
+    select,
+    button {
+      min-height: 44px;
+      min-width: 44px;
+    }
+  }
   body {
     @apply text-gray-900 bg-gray-50 font-sans;
     -webkit-font-smoothing: antialiased;

@@ -254,7 +254,7 @@ export function NovoLotePage() {
           {/* Quantidade */}
           <Input
             label={`Quantidade total ${selectedInsumo ? `(${selectedInsumo.unidade_medida})` : ''}`}
-            type="number"
+            type="number" inputMode="decimal"
             step="0.001"
             min="0.001"
             required
@@ -272,7 +272,7 @@ export function NovoLotePage() {
               <div className="flex items-center gap-3">
                 <label className="text-sm text-gray-700 whitespace-nowrap">Etiquetas a gerar:</label>
                 <input
-                  type="number"
+                  type="number" inputMode="decimal"
                   min="1"
                   step="1"
                   value={numEtiquetas}

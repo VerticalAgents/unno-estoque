@@ -146,7 +146,7 @@ function DescarteModal({
 
           <Input
             label={`Quantidade a descartar (${insumo.unidade_medida})`}
-            type="number"
+            type="number" inputMode="decimal"
             step="0.001"
             min="0.001"
             max={maxQty}

@@ -354,7 +354,7 @@ export function NovaContagemEpPage() {
               <p className="text-xs text-amber-800 font-medium mb-2">Tara não cadastrada para este recipiente</p>
               <div className="flex gap-2">
                 <Input
-                  type="number"
+                  type="number" inputMode="decimal"
                   step="1"
                   min="0"
                   value={taraInput}
@@ -414,7 +414,7 @@ export function NovaContagemEpPage() {
                     label={usaTara(unidade)
                       ? `Peso na balança, com recipiente (${b.rotulo})`
                       : `Conteúdo do recipiente (${b.rotulo})`}
-                    type="number"
+                    type="number" inputMode="decimal"
                     step={b.fator === 1 ? '0.001' : '1'}
                     min="0"
                     value={pesoBruto}

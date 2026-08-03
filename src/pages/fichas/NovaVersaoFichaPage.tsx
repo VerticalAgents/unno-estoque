@@ -189,7 +189,7 @@ export function NovaVersaoFichaPage() {
             <Input
               label="Unidades por fornada"
               required
-              type="number"
+              type="number" inputMode="decimal"
               min="1"
               step="1"
               value={rendimentoFornada}
@@ -199,7 +199,7 @@ export function NovaVersaoFichaPage() {
             />
             <Input
               label="Peso médio por unidade (g)"
-              type="number"
+              type="number" inputMode="decimal"
               min="0.1"
               step="0.1"
               value={pesoMedioG}
@@ -244,7 +244,7 @@ export function NovaVersaoFichaPage() {
               <div className="grid grid-cols-2 gap-3">
                 <Input
                   label="Quantidade"
-                  type="number"
+                  type="number" inputMode="decimal"
                   step="0.0001"
                   min="0.0001"
                   required

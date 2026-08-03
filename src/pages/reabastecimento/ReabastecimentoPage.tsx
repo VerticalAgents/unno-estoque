@@ -507,7 +507,7 @@ export function ReabastecimentoPage() {
               Margem de segurança (%)
             </label>
             <input
-              type="number" min={0} step={1} value={margem}
+              type="number" inputMode="decimal" min={0} step={1} value={margem}
               onChange={e => setMargem(e.target.value)}
               className="mt-1 w-full sm:w-40 rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm
                          focus:outline-none focus:border-brand-500 focus:ring-[3px] focus:ring-brand-500/10

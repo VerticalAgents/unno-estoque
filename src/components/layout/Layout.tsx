@@ -33,7 +33,11 @@ export function Layout() {
   }
 
   return (
-    <div className="flex h-screen overflow-hidden bg-gray-50 dark:bg-[#0a0a0f]">
+    // h-screen (100vh) no celular conta a faixa que fica atrás da barra de
+    // endereço: o rodapé da tela nasce cortado e pula quando a barra some.
+    // 100dvh acompanha a altura que de fato sobra. O h-screen fica de
+    // reserva para navegador antigo que não conheça dvh.
+    <div className="flex h-screen h-[100dvh] overflow-hidden bg-gray-50 dark:bg-[#0a0a0f]">
       <Sidebar open={sidebarOpen} onClose={() => setSidebarOpen(false)} />
 
       <div className="flex flex-col flex-1 min-w-0 overflow-hidden">

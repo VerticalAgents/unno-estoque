@@ -220,7 +220,7 @@ export function NovaFichaPage() {
             <Input
               label={tipo === 'produto' ? 'Unidades por fornada' : `Quantidade produzida por lote (${insumos.find(i => i.id === insumoResultadoId)?.unidade_medida ?? 'un'})`}
               required
-              type="number"
+              type="number" inputMode="decimal"
               min="1"
               step={tipo === 'insumo' ? '0.001' : '1'}
               value={form.rendimento_fornada}
@@ -231,7 +231,7 @@ export function NovaFichaPage() {
             {tipo === 'produto' && (
               <Input
                 label="Peso medio por unidade (g)"
-                type="number"
+                type="number" inputMode="decimal"
                 min="0.1"
                 step="0.1"
                 value={form.peso_medio_g}
@@ -280,7 +280,7 @@ export function NovaFichaPage() {
               <div className="grid grid-cols-2 gap-3">
                 <Input
                   label="Quantidade"
-                  type="number"
+                  type="number" inputMode="decimal"
                   step="0.0001"
                   min="0.0001"
                   required
