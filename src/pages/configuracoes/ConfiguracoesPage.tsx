@@ -86,49 +86,94 @@ export function ConfiguracoesPage() {
   ]
 
   const [activeTab, setActiveTab] = useState<Tab>('perfil')
+  const visiveis = tabs.filter(t => !t.adminOnly || isAdmin)
 
   return (
-    <div className="p-4 sm:p-6 max-w-3xl mx-auto">
-      <div className="mb-6">
+    <div className="p-4 sm:p-6 max-w-5xl mx-auto">
+      <div className="mb-5">
         <h1 className="text-xl font-bold text-gray-900">Configurações</h1>
         <p className="text-sm text-gray-500 mt-0.5">Gerencie seu perfil, empresa e sistema</p>
       </div>
 
-      {/* Tabs */}
-      <div className="flex gap-1 border-b border-gray-200 mb-6 overflow-x-auto">
-        {tabs
-          .filter(t => !t.adminOnly || isAdmin)
-          .map(t => (
-            <button
-              key={t.key}
-              onClick={() => setActiveTab(t.key)}
-              className={[
-                'px-4 py-2.5 text-sm font-medium whitespace-nowrap border-b-2 transition-colors -mb-px',
-                activeTab === t.key
-                  ? 'border-brand-600 text-brand-700'
-                  : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300',
-              ].join(' ')}
-            >
-              {t.label}
-            </button>
-          ))}
-      </div>
+      {/* No computador a navegação vira coluna; no celular, faixa que rola. */}
+      <div className="lg:flex lg:items-start lg:gap-8">
+        <NavConfiguracoes tabs={visiveis} ativa={activeTab} onEscolher={setActiveTab} />
 
-      {activeTab === 'perfil' && <PerfilTab />}
-      {activeTab === 'senha' && <SenhaTab />}
-      {activeTab === 'empresa' && <EmpresaTab />}
-      {activeTab === 'funcionarios' && isAdmin && <FuncionariosTab />}
-      {activeTab === 'categorias' && <CategoriasTab />}
-      {activeTab === 'producao' && (
-        <div className="space-y-4">
-          <ProducaoTab />
-          <MotivosDescarteTab />
+        <div className="flex-1 min-w-0">
+          {activeTab === 'perfil' && <PerfilTab />}
+          {activeTab === 'senha' && <SenhaTab />}
+          {activeTab === 'empresa' && <EmpresaTab />}
+          {activeTab === 'funcionarios' && isAdmin && <FuncionariosTab />}
+          {activeTab === 'categorias' && <CategoriasTab />}
+          {activeTab === 'producao' && (
+            <div className="space-y-4">
+              <ProducaoTab />
+              <MotivosDescarteTab />
+            </div>
+          )}
+          {activeTab === 'etiquetas' && <EtiquetasTab />}
+          {activeTab === 'travas' && isAdmin && <TravasTab />}
+          {activeTab === 'abertura' && isAdmin && <AberturaTab />}
         </div>
-      )}
-      {activeTab === 'etiquetas' && <EtiquetasTab />}
-      {activeTab === 'travas' && isAdmin && <TravasTab />}
-      {activeTab === 'abertura' && isAdmin && <AberturaTab />}
+      </div>
     </div>
+  )
+}
+
+/**
+ * Navegação das configurações — duas formas, um componente.
+ *
+ * No celular é uma faixa que rola na horizontal. Cada botão leva `shrink-0`:
+ * sem isso o flex encolhe o botão abaixo da largura do próprio texto, e como
+ * o texto é `whitespace-nowrap` ele vaza por cima do vizinho. Era esse o
+ * "título sobreposto" — não faltava espaço, faltava proibir o encolhimento.
+ *
+ * A faixa sangra até a borda da tela (`-mx-4` compensando o padding da
+ * página) para ficar claro que há mais coisa para o lado.
+ *
+ * A partir de lg vira coluna à esquerda: com nove itens, uma fila horizontal
+ * esconde metade das opções atrás de um arrasto que ninguém adivinha.
+ */
+export function NavConfiguracoes({
+  tabs,
+  ativa,
+  onEscolher,
+}: {
+  tabs: { key: Tab; label: string }[]
+  ativa: Tab
+  onEscolher: (t: Tab) => void
+}) {
+  return (
+    <nav
+      className={[
+        'mb-6 lg:mb-0 lg:w-56 lg:shrink-0',
+        'flex gap-1 overflow-x-auto border-b border-gray-200 -mx-4 px-4 sm:mx-0 sm:px-0',
+        'lg:flex-col lg:gap-0.5 lg:overflow-visible lg:border-b-0 lg:border-r lg:border-gray-200 lg:pr-3',
+      ].join(' ')}
+    >
+      {tabs.map(t => {
+        const atual = t.key === ativa
+        return (
+          <button
+            key={t.key}
+            onClick={() => onEscolher(t.key)}
+            aria-current={atual ? 'page' : undefined}
+            className={[
+              'shrink-0 whitespace-nowrap text-sm font-medium transition-colors',
+              // Celular: sublinhado, como aba.
+              'px-4 py-2.5 border-b-2 -mb-px',
+              // Computador: item de lista, alinhado à esquerda.
+              'lg:w-full lg:text-left lg:rounded-lg lg:border-b-0 lg:mb-0 lg:px-3 lg:py-2',
+              atual
+                ? 'border-brand-600 text-brand-700 lg:bg-brand-50 dark:lg:bg-brand-100'
+                : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300 lg:hover:border-transparent lg:hover:bg-gray-50',
+            ].join(' ')}
+          >
+            {t.label}
+          </button>
+        )
+      })}
+    </nav>
   )
 }
 
