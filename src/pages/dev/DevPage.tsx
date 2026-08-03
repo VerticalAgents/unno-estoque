@@ -181,6 +181,30 @@ export function DevPage() {
   const [etiquetasSeed, setEtiquetasSeed] = useState('1')
 
   /**
+   * Deixa a fábrica pronta para testar: cria o estoque central e já despeja
+   * nos recipientes.
+   *
+   * A quantidade de cada insumo sai da capacidade dos recipientes dele, não de
+   * um número fixo — assim o açúcar ganha o que cabe nos potes de açúcar e a
+   * essência ganha o que cabe nas garrafinhas.
+   */
+  const encherTudo = useAction(async () => {
+    if (!eid || !profile) throw new Error('perfil ausente')
+    const { data, error } = await supabase.rpc('dev_encher_tudo', {
+      p_empresa_id: eid,
+      p_responsavel_id: profile.id,
+    })
+    if (error) throw error
+    const r = data as {
+      estoque_central: { insumos: number; quantidade_total: number }
+      recipientes: { recipientes_cheios: number; sem_lote: number }
+    }
+    return `${r.estoque_central.insumos} insumo(s) no estoque central `
+      + `e ${r.recipientes.recipientes_cheios} recipiente(s) cheios`
+      + (r.recipientes.sem_lote > 0 ? ` — ${r.recipientes.sem_lote} sem lote` : '')
+  })
+
+  /**
    * Enche os recipientes do EP até a capacidade.
    *
    * Testar produção exige recipiente cheio, e enchê-los pela tela de
@@ -343,6 +367,38 @@ export function DevPage() {
             description="Remove os valores de estoque_minimo_ec e estoque_minimo_ep de todos os insumos."
             action={zerarMinimo}
           />
+        </Section>
+
+        {/* ── Encher tudo ── */}
+        <Section title="Preparar para testar">
+          <Card className="p-4 space-y-3">
+            <div>
+              <p className="text-sm font-medium text-gray-900">Encher estoque central e recipientes</p>
+              <p className="text-xs text-gray-500 mt-0.5">
+                Cria um lote por insumo ativo, com quantidade proporcional à capacidade
+                dos recipientes daquele insumo, e já despeja tudo neles. Um clique para
+                deixar a fábrica pronta.
+              </p>
+            </div>
+            {encherTudo.result && (
+              <p className={`text-xs font-mono ${encherTudo.result.startsWith('✓') ? 'text-emerald-600' : 'text-red-600'}`}>
+                {encherTudo.result}
+              </p>
+            )}
+            <div className="flex gap-2 justify-end">
+              {encherTudo.confirm && (
+                <Button variant="ghost" size="sm" onClick={encherTudo.reset}>Cancelar</Button>
+              )}
+              <Button
+                variant={encherTudo.confirm ? 'danger' : 'primary'}
+                size="sm"
+                loading={encherTudo.loading}
+                onClick={encherTudo.run}
+              >
+                {encherTudo.confirm ? 'Confirmar?' : 'Encher tudo'}
+              </Button>
+            </div>
+          </Card>
         </Section>
 
         {/* ── Encher recipientes ── */}
