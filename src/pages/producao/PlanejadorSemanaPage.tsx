@@ -48,6 +48,42 @@ interface Realizado {
 
 const chave = (data: string, fichaId: string) => `${data}|${fichaId}`
 
+/**
+ * Cor de uma barra de progresso, contínua de 0 a 100%.
+ *
+ * A barra da última batelada usa quatro cores fixas, e ali está certo: só
+ * existem quatro valores possíveis (1 a 4 formas). Aqui o valor é contínuo, e
+ * quatro degraus dariam saltos onde a informação é gradual — 49% e 51%
+ * pareceriam mundos diferentes.
+ *
+ * As cores de ancoragem são as MESMAS da barra de bateladas, para as duas
+ * parecerem da mesma família. A interpolação é em RGB: para este trajeto
+ * (vermelho → âmbar → verde-limão → verde) ela passa longe do cinza, que é o
+ * risco de misturar cor nesse espaço.
+ */
+const ESCALA_PROGRESSO: { p: number; rgb: [number, number, number] }[] = [
+  { p: 0,    rgb: [239,  68,  68] }, // red-500
+  { p: 0.34, rgb: [245, 166,  35] }, // unno.amber
+  { p: 0.67, rgb: [140, 191,  63] }, // unno.lime
+  { p: 1,    rgb: [ 23, 168,  96] }, // brand-500
+]
+
+function corProgresso(fracao: number): string {
+  const f = Math.max(0, Math.min(1, Number.isFinite(fracao) ? fracao : 0))
+  let a = ESCALA_PROGRESSO[0]
+  let b = ESCALA_PROGRESSO[ESCALA_PROGRESSO.length - 1]
+  for (let i = 0; i < ESCALA_PROGRESSO.length - 1; i++) {
+    if (f >= ESCALA_PROGRESSO[i].p && f <= ESCALA_PROGRESSO[i + 1].p) {
+      a = ESCALA_PROGRESSO[i]
+      b = ESCALA_PROGRESSO[i + 1]
+      break
+    }
+  }
+  const t = b.p === a.p ? 0 : (f - a.p) / (b.p - a.p)
+  const [r, g, bl] = a.rgb.map((v, i) => Math.round(v + (b.rgb[i] - v) * t))
+  return `rgb(${r}, ${g}, ${bl})`
+}
+
 // ── Datas ─────────────────────────────────────────────────────
 // Tudo em string YYYY-MM-DD para não esbarrar em fuso: `new Date('2026-08-03')`
 // é meia-noite UTC, que no Brasil cai no dia 2.
@@ -1240,7 +1276,13 @@ export function PlanejadorSemanaPage({
                 <p className="text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-unno-muted">
                   Falta distribuir
                 </p>
-                {balanco.map(b => (
+                {balanco.map(b => {
+                  const fracao = b.distribuido / (b.meta || 1)
+                  // Passar do alvo não é "mais progresso": é erro. Fica listrado
+                  // para não se confundir com a barra cheia de quem acertou.
+                  const excedeu = b.falta < 0
+                  const cor = corProgresso(fracao)
+                  return (
                   <div key={b.ficha.id} className="space-y-1">
                     <p className="text-sm text-gray-700 dark:text-unno-text truncate">
                       <span className="text-gray-400 mr-1.5">{b.ficha.codigo}</span>{b.ficha.nome}
@@ -1248,15 +1290,20 @@ export function PlanejadorSemanaPage({
                     <div className="flex items-center gap-2">
                       <div className="flex-1 h-1.5 rounded-full bg-gray-100 dark:bg-white/[.06] overflow-hidden">
                         <div
-                          className={`h-full rounded-full ${b.falta < 0 ? 'bg-red-500' : 'bg-brand-500'}`}
-                          style={{ width: `${Math.min(100, (b.distribuido / (b.meta || 1)) * 100)}%` }}
+                          className="h-full rounded-full transition-[width,background-color] duration-200"
+                          style={{
+                            width: `${Math.min(100, fracao * 100)}%`,
+                            backgroundColor: excedeu ? '#ef4444' : cor,
+                            backgroundImage: excedeu
+                              ? 'repeating-linear-gradient(45deg, rgba(255,255,255,.45) 0 3px, transparent 3px 6px)'
+                              : undefined,
+                          }}
                         />
                       </div>
-                      <span className={`text-xs tabular-nums whitespace-nowrap ${
-                        b.falta === 0 ? 'text-emerald-700'
-                          : b.falta < 0 ? 'text-red-600'
-                          : 'text-gray-500 dark:text-unno-muted'
-                      }`}>
+                      <span
+                        className="text-xs tabular-nums whitespace-nowrap"
+                        style={{ color: excedeu ? '#dc2626' : cor }}
+                      >
                         {b.falta === 0
                           ? 'completo'
                           : b.falta > 0 ? `faltam ${b.falta}`
@@ -1267,7 +1314,8 @@ export function PlanejadorSemanaPage({
                       {b.distribuido} de {b.meta} formas
                     </p>
                   </div>
-                ))}
+                  )
+                })}
                 {!faltaDistribuir && (
                   <p className="text-xs text-emerald-700">
                     A semana toda está distribuída.
