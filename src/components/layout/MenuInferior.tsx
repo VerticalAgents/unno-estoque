@@ -11,12 +11,11 @@ import { mainNavItems, estoqueItems, cadastrosItems, type NavItem } from './Side
  * de onde o toque aconteceu, e as opções chegam perto do polegar em vez de
  * no topo do aparelho.
  *
- * Traz o que NÃO está na barra: as quatro do dia a dia já estão a um toque,
- * repetí-las aqui só faria a lista crescer.
+ * Traz TUDO, inclusive as quatro que já estão na barra. A primeira versão
+ * escondia essas quatro — "Mais" seria o resto — e o efeito foi procurar
+ * Transferência no menu e não achar. Menu que às vezes tem o item e às
+ * vezes não custa mais do que a linha a mais que ele economiza.
  */
-
-/** As que já têm lugar próprio na barra de baixo. */
-const NA_BARRA = ['/transferencia', '/recebimento', '/contagem', '/estoque/insumos']
 
 const CONFIGURACOES: NavItem = {
   to: '/configuracoes',
@@ -54,10 +53,7 @@ export function MenuInferior({ aberto, onFechar }: { aberto: boolean; onFechar: 
     { titulo: 'Cadastros', itens: cadastrosItems },
     { titulo: 'Sistema', itens: profile?.papel === 'admin' ? [CONFIGURACOES, DEV] : [CONFIGURACOES] },
   ]
-    .map(g => ({
-      ...g,
-      itens: g.itens.filter(i => podeVer(i) && !NA_BARRA.includes(i.to)),
-    }))
+    .map(g => ({ ...g, itens: g.itens.filter(podeVer) }))
     .filter(g => g.itens.length > 0)
 
   return (

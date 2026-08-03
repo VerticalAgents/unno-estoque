@@ -121,7 +121,7 @@ export const mainNavItems: NavItem[] = [
 export const cadastrosItems: NavItem[] = [
   {
     to: '/insumos',
-    label: 'Insumos',
+    label: 'Cadastro de insumos',
     icon: (
       <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
         <path strokeLinecap="round" strokeLinejoin="round" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01" />
@@ -148,7 +148,9 @@ export const cadastrosItems: NavItem[] = [
   },
   {
     to: '/produtos',
-    label: 'Produtos',
+    // "Produtos" aparecia em Cadastros e em Estoque; lado a lado no menu de
+    // baixo, ninguém sabia qual era qual.
+    label: 'Cadastro de produtos',
     icon: (
       <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
         <path strokeLinecap="round" strokeLinejoin="round" d="M21 7.5l-9-5.25L3 7.5m18 0l-9 5.25m9-5.25v9l-9 5.25M3 7.5l9 5.25M3 7.5v9l9 5.25m0-9v9" />
@@ -169,7 +171,7 @@ export const cadastrosItems: NavItem[] = [
 export const estoqueItems: NavItem[] = [
   {
     to: '/estoque/insumos',
-    label: 'Insumos',
+    label: 'Estoque de insumos',
     icon: (
       <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
         <path strokeLinecap="round" strokeLinejoin="round" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01" />
@@ -178,7 +180,7 @@ export const estoqueItems: NavItem[] = [
   },
   {
     to: '/estoque/produtos',
-    label: 'Produtos',
+    label: 'Estoque de produtos',
     icon: (
       <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
         <path strokeLinecap="round" strokeLinejoin="round" d="M21 7.5l-9-5.25L3 7.5m18 0l-9 5.25m9-5.25v9l-9 5.25M3 7.5l9 5.25M3 7.5v9l9 5.25m0-9v9" />
