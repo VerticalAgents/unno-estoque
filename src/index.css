@@ -51,6 +51,30 @@
     }
   }
 
+  /* O painel do "Mais" sobe de onde o dedo tocou, em vez de aparecer
+     pronto: o movimento é o que diz de onde a coisa veio. */
+  @keyframes subir {
+    from { transform: translateY(100%); }
+    to   { transform: translateY(0); }
+  }
+  @keyframes surgir {
+    from { opacity: 0; }
+    to   { opacity: 1; }
+  }
+  .animate-subir {
+    animation: subir 0.26s cubic-bezier(0.16, 1, 0.3, 1);
+  }
+  .animate-surgir {
+    animation: surgir 0.2s ease-out;
+  }
+  /* Quem pediu para o sistema não animar não recebe animação. */
+  @media (prefers-reduced-motion: reduce) {
+    .animate-subir,
+    .animate-surgir {
+      animation: none;
+    }
+  }
+
   /* ── Barra inferior flutuante ──────────────────────────
      Estas duas regras andam juntas: a barra flutua por cima do conteúdo,
      então a área que rola precisa terminar acima dela. Mudou a altura de
@@ -64,6 +88,11 @@
      o iPhone quando o `env` volta zero). */
   .barra-flutuante {
     bottom: max(env(safe-area-inset-bottom, 0px), 10px);
+  }
+  /* Para painéis colados na borda de baixo (o menu do "Mais"), que precisam
+     terminar acima da faixa do gesto de home. */
+  .folga-segura-baixo {
+    padding-bottom: max(env(safe-area-inset-bottom, 0px), 12px);
   }
   .espaco-barra-flutuante {
     padding-bottom: calc(78px + max(env(safe-area-inset-bottom, 0px), 10px));

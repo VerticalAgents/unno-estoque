@@ -4,7 +4,7 @@ import type { ReactNode } from 'react'
 import { useAuth } from '../../contexts/AuthContext'
 import { canAccess } from '../../lib/permissions'
 
-interface NavItem {
+export interface NavItem {
   to: string
   label: string
   icon: ReactNode
@@ -14,7 +14,7 @@ interface NavItem {
   exceto?: string[]
 }
 
-const mainNavItems: NavItem[] = [
+export const mainNavItems: NavItem[] = [
   {
     to: '/dashboard',
     label: 'Dashboard',
@@ -118,7 +118,7 @@ const mainNavItems: NavItem[] = [
   },
 ]
 
-const cadastrosItems: NavItem[] = [
+export const cadastrosItems: NavItem[] = [
   {
     to: '/insumos',
     label: 'Insumos',
@@ -166,7 +166,7 @@ const cadastrosItems: NavItem[] = [
   },
 ]
 
-const estoqueItems: NavItem[] = [
+export const estoqueItems: NavItem[] = [
   {
     to: '/estoque/insumos',
     label: 'Insumos',
@@ -200,12 +200,14 @@ const estoqueRoutes = ['/estoque/insumos', '/estoque/produtos', '/estoque/histor
 
 const cadastrosRoutes = ['/insumos', '/fornecedores', '/fichas', '/produtos', '/recipientes']
 
-interface SidebarProps {
-  open: boolean
-  onClose: () => void
-}
-
-export function Sidebar({ open, onClose }: SidebarProps) {
+/**
+ * A barra lateral, agora só do computador.
+ *
+ * No celular ela era aberta como gaveta pela esquerda; quem faz esse papel
+ * hoje é o `MenuInferior`, que sobe de baixo — perto do polegar e de onde o
+ * toque acontece.
+ */
+export function Sidebar() {
   const location = useLocation()
   const { profile, permissoes } = useAuth()
   const papel = profile?.papel ?? 'producao'
@@ -252,7 +254,6 @@ export function Sidebar({ open, onClose }: SidebarProps) {
             <NavLink
               key={item.to}
               to={item.to}
-              onClick={onClose}
               className={[
                 'flex items-center gap-3 px-3 py-2.5 rounded-lg text-[0.7rem] font-semibold uppercase tracking-[1px] transition-all duration-300',
                 isActive
@@ -299,8 +300,7 @@ export function Sidebar({ open, onClose }: SidebarProps) {
                   <NavLink
                     key={item.to}
                     to={item.to}
-                    onClick={onClose}
-                    className={[
+                          className={[
                       'flex items-center gap-2.5 px-3 py-2 rounded-lg text-[0.7rem] font-semibold uppercase tracking-[1px] transition-all duration-300',
                       isActive
                         ? 'bg-brand-500/10 text-brand-700 dark:text-brand-400'
@@ -349,8 +349,7 @@ export function Sidebar({ open, onClose }: SidebarProps) {
                   <NavLink
                     key={item.to}
                     to={item.to}
-                    onClick={onClose}
-                    className={[
+                          className={[
                       'flex items-center gap-2.5 px-3 py-2 rounded-lg text-[0.7rem] font-semibold uppercase tracking-[1px] transition-all duration-300',
                       isActive
                         ? 'bg-brand-500/10 text-brand-700 dark:text-brand-400'
@@ -369,7 +368,6 @@ export function Sidebar({ open, onClose }: SidebarProps) {
         {/* Configurações */}
         {showConfig && <NavLink
           to="/configuracoes"
-          onClick={onClose}
           className={[
             'flex items-center gap-3 px-3 py-2.5 rounded-lg text-[0.7rem] font-semibold uppercase tracking-[1px] transition-all duration-300',
             location.pathname.startsWith('/configuracoes')
@@ -390,8 +388,7 @@ export function Sidebar({ open, onClose }: SidebarProps) {
         {papel === 'admin' && <div className="pt-2 mt-2 border-t border-gray-100 dark:border-[#1a1a24]">
           <NavLink
             to="/dev"
-            onClick={onClose}
-            className={[
+              className={[
               'flex items-center gap-3 px-3 py-2.5 rounded-lg text-[0.7rem] font-semibold uppercase tracking-[1px] transition-all duration-300',
               location.pathname.startsWith('/dev')
                 ? 'bg-amber-50 text-amber-700'
@@ -418,21 +415,12 @@ export function Sidebar({ open, onClose }: SidebarProps) {
 
   return (
     <>
-      {/* Desktop sidebar */}
+      {/* Só no computador: no celular quem abre é o MenuInferior. */}
       {/* w-60 (e não w-56): os rótulos em maiúsculas ocupam mais largura */}
       <aside className="hidden lg:flex flex-col w-60 bg-white dark:bg-unno-raised border-r border-gray-200 dark:border-white/[.08] shrink-0 h-full">
         {content}
       </aside>
 
-      {/* Mobile drawer */}
-      {open && (
-        <div className="lg:hidden fixed inset-0 z-40 flex">
-          <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={onClose} />
-          <aside className="relative w-64 bg-white dark:bg-unno-raised h-full shadow-xl border-r border-transparent dark:border-white/[.08]">
-            {content}
-          </aside>
-        </div>
-      )}
     </>
   )
 }

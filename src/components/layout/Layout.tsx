@@ -4,12 +4,13 @@ import { useAuth } from '../../contexts/AuthContext'
 import { Sidebar } from './Sidebar'
 import { Header } from './Header'
 import { BarraInferior } from './BarraInferior'
+import { MenuInferior } from './MenuInferior'
 import { useDarkMode } from '../../hooks/useDarkMode'
 import { canAccess } from '../../lib/permissions'
 
 export function Layout() {
   const { user, profile, permissoes, loading } = useAuth()
-  const [sidebarOpen, setSidebarOpen] = useState(false)
+  const [menuAberto, setMenuAberto] = useState(false)
   const darkMode = useDarkMode()
   const location = useLocation()
 
@@ -39,10 +40,10 @@ export function Layout() {
     // 100dvh acompanha a altura que de fato sobra. O h-screen fica de
     // reserva para navegador antigo que não conheça dvh.
     <div className="flex h-screen h-[100dvh] overflow-hidden bg-gray-50 dark:bg-[#0a0a0f]">
-      <Sidebar open={sidebarOpen} onClose={() => setSidebarOpen(false)} />
+      <Sidebar />
 
       <div className="flex flex-col flex-1 min-w-0 overflow-hidden">
-        <Header onMenuToggle={() => setSidebarOpen(true)} darkMode={darkMode} />
+        <Header onMenuToggle={() => setMenuAberto(true)} darkMode={darkMode} />
 
         {/* A barra flutua por cima; a folga aqui é o que faz a rolagem
             terminar acima dela em vez de esconder o fim de cada tela. */}
@@ -50,8 +51,10 @@ export function Layout() {
           <Outlet />
         </main>
 
-        <BarraInferior onAbrirMenu={() => setSidebarOpen(true)} />
+        <BarraInferior onAbrirMenu={() => setMenuAberto(true)} />
       </div>
+
+      <MenuInferior aberto={menuAberto} onFechar={() => setMenuAberto(false)} />
     </div>
   )
 }
