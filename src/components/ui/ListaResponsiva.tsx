@@ -39,6 +39,7 @@ export function CartaoLista({
   campos,
   destaque,
   alerta,
+  acoes,
   onClick,
 }: {
   titulo: ReactNode
@@ -51,6 +52,8 @@ export function CartaoLista({
   destaque?: ReactNode
   /** Fundo âmbar: algo nesta linha pede atenção. */
   alerta?: boolean
+  /** Botões da linha. Não combine com `onClick`: botão dentro de botão. */
+  acoes?: ReactNode
   onClick?: () => void
 }) {
   const Elemento = onClick ? 'button' : 'div'
@@ -93,6 +96,10 @@ export function CartaoLista({
             </div>
           ))}
         </div>
+      )}
+
+      {acoes && (
+        <div className="flex items-center justify-end gap-2 pt-1">{acoes}</div>
       )}
     </Elemento>
   )

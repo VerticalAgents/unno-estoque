@@ -4,6 +4,7 @@ import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../contexts/AuthContext'
 import { Button } from '../../components/ui/Button'
 import { Card } from '../../components/ui/Card'
+import { CartaoLista, ListaResponsiva, ListaVazia } from '../../components/ui/ListaResponsiva'
 import { formatDate } from '../../lib/utils'
 import type { StatusExpedicao } from '../../types/database.types'
 
@@ -61,6 +62,33 @@ export function ExpedicaoListPage() {
       ) : (
         <Card>
           <div className="overflow-x-auto">
+            <ListaResponsiva
+              cartoes={
+                expedicoes.length === 0
+                  ? <ListaVazia>Nenhuma expedição registrada.</ListaVazia>
+                  : expedicoes.map(exp => {
+                      const badge = STATUS_BADGE[exp.status]
+                      return (
+                        <CartaoLista
+                          key={exp.id}
+                          titulo={
+                            <span className="font-medium text-gray-900 dark:text-unno-text">
+                              {exp.destinatario ?? '—'}
+                            </span>
+                          }
+                          subtitulo={exp.codigo}
+                          destaque={<>{exp.itens.reduce((s, i) => s + i.quantidade, 0)} un</>}
+                          marcadores={
+                            <span className={`inline-flex items-center px-2 py-0.5 rounded text-[0.65rem] font-medium ${badge.bg} ${badge.text}`}>
+                              {badge.label}
+                            </span>
+                          }
+                          campos={[{ rotulo: 'Data', valor: formatDate(exp.data_expedicao) }]}
+                        />
+                      )
+                    })
+              }
+              tabela={
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-gray-100 text-left">
@@ -98,6 +126,8 @@ export function ExpedicaoListPage() {
                 )}
               </tbody>
             </table>
+              }
+            />
           </div>
         </Card>
       )}

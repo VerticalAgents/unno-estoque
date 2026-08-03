@@ -7,6 +7,7 @@ import { Input, Select } from '../../components/ui/Input'
 import { Button } from '../../components/ui/Button'
 import { Card } from '../../components/ui/Card'
 import { ConfirmModal } from '../../components/ui/ConfirmModal'
+import { CartaoLista, ListaResponsiva } from '../../components/ui/ListaResponsiva'
 
 const SUBTIPOS = [
   { value: 'balde',              label: 'Balde' },
@@ -66,6 +67,64 @@ interface Composicao {
  * recipiente não for esgotado, toda produção que usá-lo fica ligada a todos os
  * lotes de dentro.
  */
+/**
+ * O recipiente como cartão, no celular.
+ *
+ * As duas listas da tela (por insumo e genéricos) mostram os mesmos dados e
+ * mudam só a última coluna — conteúdo numa, status na outra. Por isso o
+ * cartão recebe essa parte pronta em vez de decidir sozinho.
+ */
+function CartaoRecipiente({
+  r, conteudo, rotuloConteudo = 'Conteúdo', acoes,
+}: {
+  r: Local
+  conteudo: React.ReactNode
+  rotuloConteudo?: string
+  acoes: React.ReactNode
+}) {
+  const subtip = SUBTIPOS.find(s => s.value === r.subtipo)?.label ?? r.subtipo ?? '—'
+  const nome = r.insumo_id && (r as Local & { insumo?: { nome: string } }).insumo?.nome
+    ? `${(r as Local & { insumo?: { nome: string } }).insumo!.nome} · ${r.nome}`
+    : r.nome
+
+  return (
+    <CartaoLista
+      titulo={<span className="font-medium text-gray-900 dark:text-unno-text">{nome}</span>}
+      subtitulo={subtip}
+      campos={[
+        {
+          rotulo: 'Capacidade',
+          valor: r.capacidade_max != null
+            ? `${r.capacidade_max} ${r.unidade_capacidade ?? ''}`
+            : '—',
+        },
+        { rotulo: rotuloConteudo, valor: conteudo },
+      ]}
+      acoes={acoes}
+    />
+  )
+}
+
+/** Botão de esgotar, igual nas duas apresentações. */
+function BotaoEsgotar({ r, esgotando, esgotar }: {
+  r: Local
+  esgotando: string | null
+  esgotar: (r: Local) => void
+}) {
+  return (
+    <button
+      onClick={() => esgotar(r)}
+      disabled={esgotando === r.id}
+      title="Marcar como esgotado: zera a sobra e encerra a mistura"
+      className="text-[0.65rem] font-semibold uppercase tracking-wide px-2 py-1 rounded
+                 border border-gray-300 text-gray-600 hover:border-unno-amber hover:text-unno-amber
+                 disabled:opacity-50 dark:border-white/[.08] dark:text-unno-muted"
+    >
+      {esgotando === r.id ? '...' : 'Esgotar'}
+    </button>
+  )
+}
+
 function ConteudoCell({ comp }: { comp?: Composicao }) {
   const total = comp?.quantidade_total ?? 0
   if (total <= 0) {
@@ -547,6 +606,28 @@ export function RecipienteListPage() {
               {/* Group rows */}
               {expandedGroups.has(insumo.id) && (
                 <div className="border-t border-gray-100">
+                  <ListaResponsiva
+                    cartoes={recs.map(r => (
+                      <CartaoRecipiente
+                        key={r.id}
+                        r={r}
+                        conteudo={<ConteudoCell comp={composicao[r.id]} />}
+                        acoes={
+                          <>
+                            {(composicao[r.id]?.quantidade_total ?? 0) > 0 && (
+                              <BotaoEsgotar r={r} esgotando={esgotando} esgotar={esgotar} />
+                            )}
+                            <RowActions
+                              onEtiqueta={() => navigate(`/recipientes/${r.id}/etiqueta`)}
+                              onEditar={() => openEdit(r)}
+                              onDuplicar={() => openDuplicate(r)}
+                              onExcluir={() => openDelete(r)}
+                            />
+                          </>
+                        }
+                      />
+                    ))}
+                    tabela={
                   <table className="w-full text-sm">
                     <thead className="bg-gray-50">
                       <tr>
@@ -596,6 +677,8 @@ export function RecipienteListPage() {
                       ))}
                     </tbody>
                   </table>
+                    }
+                  />
                 </div>
               )}
             </Card>
@@ -622,6 +705,30 @@ export function RecipienteListPage() {
 
               {expandedGroups.has('__genericos__') && (
                 <div className="border-t border-gray-100">
+                  <ListaResponsiva
+                    cartoes={genericos.map(r => (
+                      <CartaoRecipiente
+                        key={r.id}
+                        r={r}
+                        conteudo={
+                          <span className={`inline-block px-2 py-0.5 rounded-full text-xs font-medium ${
+                            r.ativo ? 'bg-emerald-100 text-emerald-700' : 'bg-gray-100 text-gray-500'
+                          }`}>
+                            {r.ativo ? 'Ativo' : 'Inativo'}
+                          </span>
+                        }
+                        rotuloConteudo="Status"
+                        acoes={
+                          <RowActions
+                            onEtiqueta={() => navigate(`/recipientes/${r.id}/etiqueta`)}
+                            onEditar={() => openEdit(r)}
+                            onDuplicar={() => openDuplicate(r)}
+                            onExcluir={() => openDelete(r)}
+                          />
+                        }
+                      />
+                    ))}
+                    tabela={
                   <table className="w-full text-sm">
                     <thead className="bg-gray-50">
                       <tr>
@@ -661,6 +768,8 @@ export function RecipienteListPage() {
                       ))}
                     </tbody>
                   </table>
+                    }
+                  />
                 </div>
               )}
             </Card>
