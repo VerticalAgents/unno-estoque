@@ -27,7 +27,9 @@ interface LocalRow {
   insumo_id: string
   quantidade_inicial: number
   consumo_teorico: number
-  local: { nome: string }
+  /** `peso_tara` é sempre em GRAMAS — é o peso do recipiente vazio, não uma
+   *  quantidade de insumo. Mesma convenção da contagem do EP. */
+  local: { nome: string; peso_tara: number | null }
   insumo: {
     nome: string
     unidade_medida: string
@@ -125,7 +127,7 @@ export function FechamentoSessaoPage() {
   const potes = useMemo(() => {
     const mapa = new Map<string, {
       local_id: string; nome: string; insumo: string; insumo_id: string; unidade: string
-      categoria: string; cor: string | null
+      categoria: string; cor: string | null; tara: number
       inicial: number; teorico: number; sobra: number; validade: string
       lotes: LocalRow[]
     }>()
@@ -134,6 +136,7 @@ export function FechamentoSessaoPage() {
       const atual = mapa.get(l.local_id) ?? {
         local_id: l.local_id,
         nome: l.local?.nome ?? '—',
+        tara: l.local?.peso_tara ?? 0,
         insumo: l.insumo?.nome ?? '—',
         insumo_id: l.insumo_id,
         categoria: l.insumo?.categoria?.nome ?? SEM_CATEGORIA,
@@ -247,6 +250,25 @@ export function FechamentoSessaoPage() {
   /** Categorias recolhidas. Vazio = todas abertas. */
   const [categoriasFechadas, setCategoriasFechadas] = useState<Record<string, boolean>>({})
 
+  /** O que está digitado nos campos de tara ainda não salvos. */
+  const [taraInputs, setTaraInputs] = useState<Record<string, string>>({})
+
+  /**
+   * Grava a tara do recipiente no cadastro, não só nesta sessão: o pote é o
+   * mesmo toda semana, e pesá-lo vazio de novo a cada fechamento é trabalho
+   * repetido. Mesmo comportamento da contagem do EP.
+   */
+  async function salvarTara(localId: string, gramas: number) {
+    if (!(gramas >= 0)) return
+    await supabase.from('locais').update({ peso_tara: gramas }).eq('id', localId)
+    setLocais(prev => prev.map(l =>
+      l.local_id === localId
+        ? { ...l, local: { ...l.local, peso_tara: gramas } }
+        : l
+    ))
+    setTaraInputs(t => ({ ...t, [localId]: '' }))
+  }
+
   /** Quais insumos estão com a lista de potes não usados aberta. */
   const [naoUsadosAbertos, setNaoUsadosAbertos] = useState<Record<string, boolean>>({})
 
@@ -281,7 +303,7 @@ export function FechamentoSessaoPage() {
         .select('*, ficha_tecnica:fichas_tecnicas(nome), ficha_versao:fichas_tecnicas_versoes(peso_medio_g, perda_esperada_g_forma)')
         .eq('sessao_id', id),
       supabase.from('sessoes_producao_locais')
-        .select('*, local:locais(nome), insumo:insumos(nome,unidade_medida,categoria:categorias_insumo(nome,cor_hex)), lote:lotes(codigo,unidade,validade_pos_abertura)')
+        .select('*, local:locais(nome,peso_tara), insumo:insumos(nome,unidade_medida,categoria:categorias_insumo(nome,cor_hex)), lote:lotes(codigo,unidade,validade_pos_abertura)')
         .eq('sessao_id', id),
     ]).then(([s, sk, loc]) => {
       if (s.data) setSessao(s.data as typeof sessao)
@@ -704,6 +726,17 @@ export function FechamentoSessaoPage() {
                   const desvio = getDesvioStatus(consumoReal, p.teorico)
                   const misturado = p.lotes.length > 1
 
+                  /**
+                   * A balança pesa o pote COM o recipiente. A tara só se aplica
+                   * onde a bancada é grama, ou seja, insumo cadastrado em kg:
+                   * descontar um peso em gramas de um volume em mL exigiria a
+                   * densidade, e de "unidades" não faz sentido nenhum.
+                   */
+                  const usaTara = b.rotulo === 'g'
+                  const semTara = usaTara && !p.tara
+                  // Bruto = líquido + tara, tudo na unidade da bancada.
+                  const bruto = Number(emBancada(p.sobra, b.fator)) + (usaTara ? p.tara : 0)
+
                   return (
                     <div key={p.local_id} className={`py-2 ${p.papel === 'nao_usa' ? 'opacity-60' : ''}`}>
                       <div className="flex items-center justify-between gap-3">
@@ -727,19 +760,22 @@ export function FechamentoSessaoPage() {
                         </div>
 
                         <div className="flex items-center gap-2 shrink-0">
-                          {!zerado && (
+                          {!zerado && !semTara && (
                             <input
                               type="number"
-                              aria-label={`Sobra em ${p.nome} (${b.rotulo})`}
+                              aria-label={`Peso na balança de ${p.nome} (${b.rotulo})`}
                               step={b.fator === 1 ? '0.001' : '1'}
-                              min="0"
-                              max={emBancada(p.inicial, b.fator)}
-                              value={emBancada(p.sobra, b.fator)}
+                              min={usaTara ? p.tara : 0}
+                              max={Number(emBancada(p.inicial, b.fator)) + (usaTara ? p.tara : 0)}
+                              value={bruto}
                               onChange={(e) => {
+                                // O visor da balança inclui o recipiente; o que
+                                // interessa ao estoque é o conteúdo.
+                                const naBalanca = parseFloat(e.target.value) || 0
+                                const liquido = Math.max(naBalanca - (usaTara ? p.tara : 0), 0)
                                 // Volta para a unidade do cadastro. O arredondamento
                                 // evita que 350 g vire 0.35000000000000003 kg.
-                                const digitado = parseFloat(e.target.value) || 0
-                                const naUnidade = Number((digitado / b.fator).toFixed(6))
+                                const naUnidade = Number((liquido / b.fator).toFixed(6))
                                 // Não pode sobrar mais do que havia: isso seria
                                 // consumo negativo, e o desvio viraria um número
                                 // sem sentido que ninguém consegue explicar depois.
@@ -754,7 +790,7 @@ export function FechamentoSessaoPage() {
                                 }`}
                             />
                           )}
-                          <span className="text-xs text-gray-400 w-5">{zerado ? '' : b.rotulo}</span>
+                          <span className="text-xs text-gray-400 w-5">{zerado || semTara ? '' : b.rotulo}</span>
                           <button
                             type="button"
                             onClick={() => p.lotes.forEach(l => toggleZerado(l.id))}
@@ -768,6 +804,51 @@ export function FechamentoSessaoPage() {
                           </button>
                         </div>
                       </div>
+
+                      {/* Sem a tara não dá para transformar o que a balança
+                          mostra em conteúdo. Pede uma vez e guarda no cadastro
+                          do recipiente — o pote é o mesmo toda semana. */}
+                      {semTara && !zerado && (
+                        <div className="mt-1.5 p-2 rounded-lg bg-amber-50 border border-amber-200">
+                          <p className="text-xs text-amber-800 font-medium">
+                            Tara não cadastrada para este recipiente
+                          </p>
+                          <p className="text-[0.7rem] text-amber-700 mt-0.5">
+                            Pese o recipiente vazio uma vez. Fica guardado para as próximas.
+                          </p>
+                          <div className="flex items-center gap-2 mt-1.5">
+                            <input
+                              type="number"
+                              min="0"
+                              step="1"
+                              placeholder="tara em g"
+                              aria-label={`Tara de ${p.nome} em gramas`}
+                              value={taraInputs[p.local_id] ?? ''}
+                              onChange={(e) => setTaraInputs(t => ({ ...t, [p.local_id]: e.target.value }))}
+                              className="w-28 text-right text-sm rounded-lg border border-amber-300 px-2 py-1 bg-white"
+                            />
+                            <button
+                              type="button"
+                              disabled={!(parseFloat(taraInputs[p.local_id] ?? '') >= 0)}
+                              onClick={() => salvarTara(p.local_id, parseFloat(taraInputs[p.local_id] ?? '0'))}
+                              className="text-xs px-2 py-1 rounded border border-amber-400 text-amber-800 disabled:opacity-40"
+                            >
+                              Salvar tara
+                            </button>
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Mostra a conta: quem digita o bruto precisa ver o que
+                          o sistema entendeu, senão a subtração é um ato de fé. */}
+                      {!zerado && !semTara && usaTara && p.sobra > 0 && (
+                        <p className="mt-1 text-[0.7rem] text-gray-400">
+                          balança {Math.round(bruto * 1000) / 1000} − tara {p.tara} ={' '}
+                          <strong className="text-gray-500">
+                            {emBancada(p.sobra, b.fator)} {b.rotulo} de conteúdo
+                          </strong>
+                        </p>
+                      )}
 
                       {misturado && (
                         <div className="mt-1 text-[0.7rem] text-gray-500 dark:text-unno-muted space-y-0.5 pl-2 border-l-2 border-unno-amber/40">
