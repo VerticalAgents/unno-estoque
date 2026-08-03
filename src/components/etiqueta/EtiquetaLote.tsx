@@ -183,11 +183,14 @@ function LoteRetrato({ lote, empresa }: { lote: LoteEtiqueta; empresa: Empresa |
       boxSizing: 'border-box',
     }}>
 
-      {/* Nome do insumo — até duas linhas, o resto corta */}
+      {/* Nome do insumo — até duas linhas, o resto corta.
+          A altura é fixa (mesmo com nome de uma linha só) para que as
+          etiquetas da mesma linha do rolo saiam alinhadas entre si. */}
       <div style={{
         fontSize: '7.5pt',
         fontWeight: 'bold',
         lineHeight: 1.15,
+        height: '6.2mm',
         display: '-webkit-box',
         WebkitLineClamp: 2,
         WebkitBoxOrient: 'vertical',

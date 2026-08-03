@@ -1,5 +1,5 @@
 -- ============================================================
--- Migration 063 — A produção não pesa mais os recipientes
+-- Migration 065 — A produção não pesa mais os recipientes
 --
 -- POR QUE
 -- O fechamento pedia o peso de cada pote: ~35 pesagens por sessão. O número

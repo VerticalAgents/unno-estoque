@@ -123,7 +123,7 @@ export function HistoricoProducaoPage() {
 
       {/* Cards resumo */}
       {/* A perda de insumo saiu daqui: o fechamento passou a dar baixa pelo
-          teórico (migration 063) e ela é apurada na auditoria de estoque. Ver
+          teórico (migration 065) e ela é apurada na auditoria de estoque. Ver
           Perdas. Manter o card mostrando 0% seria mentira confortável. */}
       <div className="grid grid-cols-2 gap-3 mb-6">
         <Card className="p-4">

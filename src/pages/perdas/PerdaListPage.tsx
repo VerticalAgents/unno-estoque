@@ -21,7 +21,7 @@ import type { MotivoPerdaEnum, UnidadeMedida } from '../../types/database.types'
 
 // ── Tipos ────────────────────────────────────────────────────
 
-/** `v_perda_auditoria` (migration 064). */
+/** `v_perda_auditoria` (migration 066). */
 interface PerdaAuditoria {
   contagem_id: string
   tipo: 'ec' | 'ep'

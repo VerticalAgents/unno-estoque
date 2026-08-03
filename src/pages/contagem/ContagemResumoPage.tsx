@@ -162,7 +162,7 @@ export function ContagemResumoPage() {
               <th className="text-right px-3 py-2.5 font-medium text-gray-600">Físico</th>
               <th className="text-right px-3 py-2.5 font-medium text-gray-600">Dif.</th>
               {/* É esta coluna que vira a taxa de perda do insumo: com o
-                  fechamento dando baixa pelo teórico (063), a auditoria virou
+                  fechamento dando baixa pelo teórico (065), a auditoria virou
                   a única medição real de perda. */}
               <th className="text-right px-4 py-2.5 font-medium text-gray-600">Perda</th>
             </tr>

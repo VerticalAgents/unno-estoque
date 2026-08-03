@@ -15,7 +15,7 @@ import { ConfirmModal } from '../../components/ui/ConfirmModal'
  * INSUMO, não o valor de cada sessão: medir todo dia era preciosismo, e era
  * trabalho de quem precisa é produzir.
  *
- * Agora `fechar_sessao_producao` (migration 063) dá baixa pelo consumo TEÓRICO
+ * Agora `fechar_sessao_producao` (migration 065) dá baixa pelo consumo TEÓRICO
  * e a perda é apurada na auditoria de estoque, quando se quiser.
  *
  * Fica aqui só o que de fato se mede no fim da produção: quantas formas foram
@@ -190,7 +190,7 @@ export function FechamentoSessaoPage() {
     }
 
     // Sem `p_locais`: a baixa dos recipientes é feita pelo consumo teórico
-    // dentro da própria função (migration 063).
+    // dentro da própria função (migration 065).
     const { data, error: err } = await supabase.rpc('fechar_sessao_producao', {
       p_sessao_id:      id,
       p_empresa_id:     profile.empresa_id,

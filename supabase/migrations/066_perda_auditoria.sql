@@ -1,8 +1,8 @@
 -- ============================================================
--- Migration 064 — A perda de insumo agora sai da auditoria
+-- Migration 066 — A perda de insumo agora sai da auditoria
 --
 -- A 060 criou `v_perda_por_insumo` ancorada em SESSÃO: comparava o consumo
--- pesado com o teórico. Com a 063 o fechamento passou a dar baixa PELO
+-- pesado com o teórico. Com a 065 o fechamento passou a dar baixa PELO
 -- teórico, então real e teórico viraram o mesmo número e aquela view mostraria
 -- 0% para sempre. Sai de cena.
 --
