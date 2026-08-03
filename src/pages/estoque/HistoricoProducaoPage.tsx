@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { Fragment, useEffect, useState } from 'react'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../contexts/AuthContext'
 import { Card } from '../../components/ui/Card'
@@ -20,6 +20,20 @@ interface SessaoRow {
   }[]
 }
 
+/** Uma linha da view `v_perda_por_insumo` (migration 060). */
+interface PerdaInsumoRow {
+  sessao_id: string
+  insumo_codigo: string
+  insumo_nome: string
+  unidade_medida: string
+  categoria: string | null
+  categoria_cor: string | null
+  teorico: number
+  consumido: number
+  desvio: number
+  perda_pct: number | null
+}
+
 interface WeekBucket {
   label: string
   produzido: number
@@ -34,6 +48,23 @@ export function HistoricoProducaoPage() {
   const [loading, setLoading] = useState(true)
   const [periodo, setPeriodo] = useState(90)
   const [filtroProduto, setFiltroProduto] = useState('')
+  // Perda aberta por insumo, carregada só quando a sessão é expandida: são
+  // ~18 linhas por sessão e quase nunca se olha todas as sessões.
+  const [expandida, setExpandida] = useState<string | null>(null)
+  const [perdas, setPerdas] = useState<Record<string, PerdaInsumoRow[]>>({})
+
+  function alternarDetalhe(sessaoId: string) {
+    if (expandida === sessaoId) { setExpandida(null); return }
+    setExpandida(sessaoId)
+    if (perdas[sessaoId]) return
+    supabase
+      .from('v_perda_por_insumo')
+      .select('*')
+      .eq('sessao_id', sessaoId)
+      // Maior perda primeiro: é o que se quer ver, não a ordem do cadastro.
+      .order('perda_pct', { ascending: false })
+      .then(({ data }) => setPerdas(p => ({ ...p, [sessaoId]: (data ?? []) as PerdaInsumoRow[] })))
+  }
 
   useEffect(() => {
     if (!profile) return
@@ -194,9 +225,18 @@ export function HistoricoProducaoPage() {
                   const sku = s.skus[0]
                   const pi = s.fator_perda_insumos
                   const pp = s.fator_perda_produto
+                  const aberta = expandida === s.id
+                  const detalhe = perdas[s.id]
                   return (
-                    <tr key={s.id} className="hover:bg-gray-50">
-                      <td className="px-4 py-3 text-gray-600">{formatDate(s.data_producao)}</td>
+                    <Fragment key={s.id}>
+                    <tr
+                      className="hover:bg-gray-50 cursor-pointer"
+                      onClick={() => alternarDetalhe(s.id)}
+                    >
+                      <td className="px-4 py-3 text-gray-600">
+                        <span className="text-gray-400 mr-1">{aberta ? '▾' : '▸'}</span>
+                        {formatDate(s.data_producao)}
+                      </td>
                       <td className="px-4 py-3 font-mono text-xs text-gray-500">{s.codigo}</td>
                       <td className="px-4 py-3 text-gray-800">{sku?.ficha_tecnica?.nome ?? '—'}</td>
                       <td className="px-4 py-3 text-center text-gray-600">{sku?.multiplicador ?? 1}×</td>
@@ -217,6 +257,68 @@ export function HistoricoProducaoPage() {
                         ) : <span className="text-gray-400">—</span>}
                       </td>
                     </tr>
+
+                    {/* Perda aberta por insumo. A média da sessão esconde o que
+                        pesa no custo: 3% de chocolate em pó e 3% de farinha são
+                        prejuízos de ordens diferentes. */}
+                    {aberta && (
+                      <tr>
+                        <td colSpan={8} className="px-4 pb-4 pt-1 bg-gray-50">
+                          {!detalhe && <p className="text-xs text-gray-400">Carregando…</p>}
+                          {detalhe?.length === 0 && (
+                            <p className="text-xs text-gray-400">
+                              Sem consumo registrado por insumo nesta sessão.
+                            </p>
+                          )}
+                          {detalhe && detalhe.length > 0 && (
+                            <table className="w-full text-xs">
+                              <thead>
+                                <tr className="text-left text-gray-400">
+                                  <th className="py-1 font-medium">Insumo</th>
+                                  <th className="py-1 font-medium text-right">Teórico</th>
+                                  <th className="py-1 font-medium text-right">Consumido</th>
+                                  <th className="py-1 font-medium text-right">Diferença</th>
+                                  <th className="py-1 font-medium text-right">Perda</th>
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {detalhe.map((d) => {
+                                  const pct = d.perda_pct
+                                  return (
+                                    <tr key={d.insumo_codigo} className="border-t border-gray-100">
+                                      <td className="py-1.5 text-gray-700">
+                                        <span
+                                          className="inline-block w-2 h-2 rounded-full mr-1.5 align-middle"
+                                          style={{ backgroundColor: d.categoria_cor ?? '#9ca3af' }}
+                                        />
+                                        {d.insumo_nome}
+                                      </td>
+                                      <td className="py-1.5 text-right text-gray-500">
+                                        {Number(d.teorico).toFixed(3)} {d.unidade_medida}
+                                      </td>
+                                      <td className="py-1.5 text-right text-gray-500">
+                                        {Number(d.consumido).toFixed(3)} {d.unidade_medida}
+                                      </td>
+                                      <td className="py-1.5 text-right text-gray-500">
+                                        {Number(d.desvio) > 0 ? '+' : ''}{Number(d.desvio).toFixed(3)}
+                                      </td>
+                                      <td className="py-1.5 text-right">
+                                        {pct != null ? (
+                                          <span className={`font-semibold ${pct <= 3 ? 'text-emerald-600' : pct <= 8 ? 'text-yellow-600' : 'text-red-600'}`}>
+                                            {Number(pct) > 0 ? '+' : ''}{Number(pct).toFixed(1)}%
+                                          </span>
+                                        ) : <span className="text-gray-400">—</span>}
+                                      </td>
+                                    </tr>
+                                  )
+                                })}
+                              </tbody>
+                            </table>
+                          )}
+                        </td>
+                      </tr>
+                    )}
+                    </Fragment>
                   )
                 })}
                 {filtered.length === 0 && (

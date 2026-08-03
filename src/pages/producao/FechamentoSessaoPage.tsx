@@ -648,11 +648,38 @@ export function FechamentoSessaoPage() {
           const pendentes  = usados.filter(
             p => p.papel === 'esvazia' && !p.lotes.every(l => l.zerado)).length
 
+          /**
+           * Perda do insumo isoladamente, assim que todos os potes dele têm
+           * resposta. A média da sessão inteira esconde o que importa: 3% de
+           * chocolate em pó e 3% de farinha custam coisas muito diferentes.
+           *
+           * Entram todos os potes, inclusive os "não usados" — se a produção
+           * abriu um fora da fila, o consumo dele conta igual.
+           */
+          const resolvido = usados.length > 0 && usados.every(p => p.sobra !== p.inicial)
+          const consumido = g.potes.reduce((acc, p) => acc + (p.inicial - p.sobra), 0)
+          const perdaGrupo = resolvido && g.teorico > 0
+            ? ((consumido - g.teorico) / g.teorico) * 100
+            : null
+
           return (
             <Card key={g.insumo_id} className="p-4">
               <div className="flex items-baseline justify-between gap-2 mb-1">
                 <p className="font-medium text-gray-900 dark:text-unno-text">{g.insumo}</p>
-                {g.teorico > 0 && (
+                {perdaGrupo !== null ? (
+                  <p className="text-xs whitespace-nowrap">
+                    <span className="text-gray-500">perda </span>
+                    <strong className={
+                      perdaGrupo <= 3 ? 'text-emerald-600'
+                        : perdaGrupo <= 8 ? 'text-yellow-600' : 'text-red-600'
+                    }>
+                      {perdaGrupo > 0 ? '+' : ''}{perdaGrupo.toFixed(1)}%
+                    </strong>
+                    <span className="text-gray-400">
+                      {' · '}{emBancada(consumido - g.teorico, b.fator)} {b.rotulo}
+                    </span>
+                  </p>
+                ) : g.teorico > 0 && (
                   <p className="text-xs text-gray-500 whitespace-nowrap">
                     precisa de <strong>{emBancada(g.teorico, b.fator)} {b.rotulo}</strong>
                   </p>
@@ -706,12 +733,17 @@ export function FechamentoSessaoPage() {
                               aria-label={`Sobra em ${p.nome} (${b.rotulo})`}
                               step={b.fator === 1 ? '0.001' : '1'}
                               min="0"
+                              max={emBancada(p.inicial, b.fator)}
                               value={emBancada(p.sobra, b.fator)}
                               onChange={(e) => {
                                 // Volta para a unidade do cadastro. O arredondamento
                                 // evita que 350 g vire 0.35000000000000003 kg.
                                 const digitado = parseFloat(e.target.value) || 0
-                                setSobraLocalValue(p.local_id, Number((digitado / b.fator).toFixed(6)))
+                                const naUnidade = Number((digitado / b.fator).toFixed(6))
+                                // Não pode sobrar mais do que havia: isso seria
+                                // consumo negativo, e o desvio viraria um número
+                                // sem sentido que ninguém consegue explicar depois.
+                                setSobraLocalValue(p.local_id, Math.min(naUnidade, p.inicial))
                               }}
                               className={`w-24 text-right text-sm rounded-lg border px-2 py-1.5 bg-white
                                 dark:bg-unno-surface dark:text-unno-text focus:outline-none focus:ring-2
