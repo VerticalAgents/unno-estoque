@@ -41,14 +41,23 @@ type Recipiente = {
 
 type Marca = { id: string; nome: string }
 
-/** Uma embalagem (ou conjunto de embalagens iguais) na prateleira. */
+/**
+ * Um conjunto de embalagens iguais na prateleira.
+ *
+ * Descreve o que se vê: tantos pacotes fechados de tanto cada, mais o que
+ * sobrou no que já está aberto. Pedir "quantidade total" e "em quantas
+ * embalagens" parecia mais simples e era uma armadilha — 98 kg em 10
+ * embalagens viravam dez etiquetas de 9,8 kg, e nenhum fardo de verdade tem
+ * 9,8 kg. Quem transferisse um fardo fechado erraria 200 g todas as vezes.
+ */
 type Linha = {
   key: string
   marca_id: string
   validade: string
   sem_validade: boolean
-  quantidade: string
-  embalagens: string
+  fechadas: string
+  tamanho: string
+  aberta: string
 }
 
 type Balde = {
@@ -57,14 +66,29 @@ type Balde = {
   linha_key: string // de qual linha veio o conteúdo (só importa se houver mais de uma)
 }
 
-const novaLinha = (): Linha => ({
+const novaLinha = (tamanhoPadrao?: number | null): Linha => ({
   key: Math.random().toString(36).slice(2),
   marca_id: '',
   validade: '',
   sem_validade: false,
-  quantidade: '',
-  embalagens: '',
+  fechadas: '',
+  tamanho: tamanhoPadrao ? String(tamanhoPadrao) : '',
+  aberta: '',
 })
+
+const num = (s: string) => parseFloat(s) || 0
+const inteiro = (s: string) => parseInt(s) || 0
+
+/** Quanto essa linha representa, na unidade do insumo. */
+function totalLinha(l: Linha): number {
+  return Number((inteiro(l.fechadas) * num(l.tamanho) + num(l.aberta)).toFixed(3))
+}
+
+/** Quantas etiquetas essa linha gera: uma por pacote fechado, mais a aberta. */
+function etiquetasLinha(l: Linha): number {
+  const fechadas = num(l.tamanho) > 0 ? inteiro(l.fechadas) : 0
+  return fechadas + (num(l.aberta) > 0 ? 1 : 0)
+}
 
 export function AberturaEstoquePage() {
   const { profile } = useAuth()
@@ -127,7 +151,7 @@ export function AberturaEstoquePage() {
       // Uma linha em branco por insumo, e todo balde começa vazio: o padrão é
       // "não tenho", para que o que for preenchido seja sempre uma afirmação.
       const iniciais: Record<string, Linha[]> = {}
-      for (const i of listaInsumos) iniciais[i.id] = [novaLinha()]
+      for (const i of listaInsumos) iniciais[i.id] = [novaLinha(i.tamanho_embalagem)]
       setLinhas(iniciais)
 
       const b: Record<string, Balde> = {}
@@ -153,7 +177,8 @@ export function AberturaEstoquePage() {
   }
 
   function desdobrar(insumoId: string) {
-    setLinhas(prev => ({ ...prev, [insumoId]: [...(prev[insumoId] ?? []), novaLinha()] }))
+    const tamanho = insumos.find(i => i.id === insumoId)?.tamanho_embalagem
+    setLinhas(prev => ({ ...prev, [insumoId]: [...(prev[insumoId] ?? []), novaLinha(tamanho)] }))
   }
 
   function removerLinha(insumoId: string, key: string) {
@@ -188,11 +213,8 @@ export function AberturaEstoquePage() {
 
     for (const insumo of insumos) {
       const ls = linhas[insumo.id] ?? []
-      const naPrateleira = ls.reduce((s, l) => s + (parseFloat(l.quantidade) || 0), 0)
-      const eti = ls.reduce(
-        (s, l) => s + (parseFloat(l.quantidade) > 0 ? Math.max(1, parseInt(l.embalagens) || 1) : 0),
-        0,
-      )
+      const naPrateleira = ls.reduce((s, l) => s + totalLinha(l), 0)
+      const eti = ls.reduce((s, l) => s + etiquetasLinha(l), 0)
       const nosBaldes = (recipientesPorInsumo[insumo.id] ?? []).reduce(
         (s, r) => s + conteudoDoBalde(r, insumo),
         0,
@@ -216,8 +238,12 @@ export function AberturaEstoquePage() {
     const lista: string[] = []
     for (const insumo of insumos) {
       for (const l of linhas[insumo.id] ?? []) {
-        const qtd = parseFloat(l.quantidade) || 0
-        if (qtd <= 0) continue
+        // Pacote fechado sem tamanho não vira quantidade nenhuma — sem este
+        // aviso o insumo entraria zerado e ninguém perceberia.
+        if (inteiro(l.fechadas) > 0 && num(l.tamanho) <= 0) {
+          lista.push(`${insumo.nome}: informe quanto vem em cada embalagem fechada.`)
+        }
+        if (totalLinha(l) <= 0) continue
         if (!l.validade && !l.sem_validade) {
           lista.push(`${insumo.nome}: informe a validade ou marque "não sei".`)
         }
@@ -235,7 +261,7 @@ export function AberturaEstoquePage() {
             `${r.nome}: ${q} ${insumo.unidade_medida} passa da capacidade de ${r.capacidade_max}.`,
           )
         }
-        const ls = (linhas[insumo.id] ?? []).filter(l => (parseFloat(l.quantidade) || 0) > 0)
+        const ls = (linhas[insumo.id] ?? []).filter(l => totalLinha(l) > 0)
         if (ls.length > 1 && !baldes[r.id]?.linha_key) {
           lista.push(`${r.nome}: escolha de qual embalagem veio o conteúdo.`)
         }
@@ -253,7 +279,7 @@ export function AberturaEstoquePage() {
 
     for (const insumo of insumos) {
       const ls = linhas[insumo.id] ?? []
-      const comSaldo = ls.filter(l => (parseFloat(l.quantidade) || 0) > 0)
+      const comSaldo = ls.filter(l => totalLinha(l) > 0)
       const recs = recipientesPorInsumo[insumo.id] ?? []
 
       // Cada balde entra na linha de onde veio. Com uma linha só (o caso
@@ -289,14 +315,38 @@ export function AberturaEstoquePage() {
       }
 
       for (const l of comSaldo) {
-        itens.push({
+        const comum = {
           insumo_id: insumo.id,
           marca_id: l.marca_id || null,
           validade: l.sem_validade ? null : l.validade || null,
-          quantidade_prateleira: parseFloat(l.quantidade) || 0,
-          embalagens: Math.max(1, parseInt(l.embalagens) || 1),
-          baldes: baldesDaLinha(l.key),
-        })
+        }
+        // Os baldes entram uma vez só, no primeiro lote que essa linha gerar.
+        let baldesPendentes = baldesDaLinha(l.key)
+
+        const fechadas = inteiro(l.fechadas)
+        const tamanho = num(l.tamanho)
+        if (fechadas > 0 && tamanho > 0) {
+          itens.push({
+            ...comum,
+            quantidade_prateleira: Number((fechadas * tamanho).toFixed(3)),
+            embalagens: fechadas,
+            baldes: baldesPendentes,
+          })
+          baldesPendentes = []
+        }
+
+        // A embalagem aberta vira lote próprio, com a quantidade que ela
+        // realmente tem. É o que faz a etiqueta dizer 8 kg em vez de 9,8.
+        const aberta = num(l.aberta)
+        if (aberta > 0) {
+          itens.push({
+            ...comum,
+            quantidade_prateleira: aberta,
+            embalagens: 1,
+            observacoes: 'Saldo de abertura — embalagem aberta',
+            baldes: baldesPendentes,
+          })
+        }
       }
     }
 
@@ -501,15 +551,15 @@ function EtapaPrateleira({
                   <div className="grid grid-cols-2 gap-3">
                     <label className="flex flex-col gap-1">
                       <span className="text-xs font-semibold uppercase tracking-wide text-gray-500">
-                        Quantidade ({insumo.unidade_medida})
+                        Embalagens fechadas
                       </span>
                       <input
                         type="number"
-                        inputMode="decimal"
-                        step="0.001"
+                        inputMode="numeric"
+                        step="1"
                         min="0"
-                        value={l.quantidade}
-                        onChange={e => onAlterar(insumo.id, l.key, 'quantidade', e.target.value)}
+                        value={l.fechadas}
+                        onChange={e => onAlterar(insumo.id, l.key, 'fechadas', e.target.value)}
                         placeholder="0"
                         className="rounded-lg border border-gray-300 bg-white px-3 py-2.5 text-sm focus:border-brand-500 focus:outline-none focus:ring-[3px] focus:ring-brand-500/10"
                       />
@@ -517,24 +567,51 @@ function EtapaPrateleira({
 
                     <label className="flex flex-col gap-1">
                       <span className="text-xs font-semibold uppercase tracking-wide text-gray-500">
-                        Em quantas embalagens
+                        Cada uma tem ({insumo.unidade_medida})
                       </span>
                       <input
                         type="number"
-                        inputMode="numeric"
-                        step="1"
-                        min="1"
-                        value={l.embalagens}
-                        onChange={e => onAlterar(insumo.id, l.key, 'embalagens', e.target.value)}
-                        placeholder={
-                          insumo.tamanho_embalagem && parseFloat(l.quantidade) > 0
-                            ? String(Math.ceil(parseFloat(l.quantidade) / insumo.tamanho_embalagem))
-                            : '1'
-                        }
+                        inputMode="decimal"
+                        step="0.001"
+                        min="0"
+                        value={l.tamanho}
+                        onChange={e => onAlterar(insumo.id, l.key, 'tamanho', e.target.value)}
+                        placeholder="0"
                         className="rounded-lg border border-gray-300 bg-white px-3 py-2.5 text-sm focus:border-brand-500 focus:outline-none focus:ring-[3px] focus:ring-brand-500/10"
                       />
                     </label>
                   </div>
+
+                  <div className="mt-3">
+                    <label className="flex flex-col gap-1">
+                      <span className="text-xs font-semibold uppercase tracking-wide text-gray-500">
+                        Embalagem aberta — quanto sobrou ({insumo.unidade_medida})
+                      </span>
+                      <input
+                        type="number"
+                        inputMode="decimal"
+                        step="0.001"
+                        min="0"
+                        value={l.aberta}
+                        onChange={e => onAlterar(insumo.id, l.key, 'aberta', e.target.value)}
+                        placeholder="deixe em branco se não houver"
+                        className="rounded-lg border border-gray-300 bg-white px-3 py-2.5 text-sm focus:border-brand-500 focus:outline-none focus:ring-[3px] focus:ring-brand-500/10"
+                      />
+                    </label>
+                  </div>
+
+                  {/* A conta aparece pronta: é o que confere com a prateleira. */}
+                  {totalLinha(l) > 0 && (
+                    <p className="mt-2 text-sm text-gray-600">
+                      Total:{' '}
+                      <strong className="text-gray-900">
+                        {totalLinha(l)} {insumo.unidade_medida}
+                      </strong>{' '}
+                      <span className="text-gray-400">
+                        · {etiquetasLinha(l)} etiqueta{etiquetasLinha(l) === 1 ? '' : 's'}
+                      </span>
+                    </p>
+                  )}
 
                   <div className="mt-3 grid grid-cols-1 sm:grid-cols-2 gap-3">
                     {/* Um <label> dentro de outro faz o clique no texto do
@@ -643,7 +720,7 @@ function EtapaBaldes({
       {comRecipientes.map(insumo => {
         const b = bancada(insumo.unidade_medida)
         const temTara = usaTara(insumo.unidade_medida)
-        const opcoes = (linhas[insumo.id] ?? []).filter(l => (parseFloat(l.quantidade) || 0) > 0)
+        const opcoes = (linhas[insumo.id] ?? []).filter(l => totalLinha(l) > 0)
 
         return (
           <Card key={insumo.id} className="p-4">
