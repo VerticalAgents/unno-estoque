@@ -37,6 +37,32 @@ interface LocalRow {
 /** "#2" antes de "#10" — comparação alfabética põe o 10 na frente. */
 const naturalmente = new Intl.Collator('pt-BR', { numeric: true, sensitivity: 'base' })
 
+/**
+ * A unidade da bancada, que é a da balança — não a do cadastro.
+ *
+ * O insumo é cadastrado em kg, mas quem pesa a sobra lê "350" no visor. Pedir
+ * "0,350" obriga a uma conversão de cabeça no meio da produção, e um zero a
+ * mais ou a menos vira 3,5 kg de desvio sem ninguém perceber.
+ *
+ * O banco continua guardando na unidade do cadastro: a conversão é só na tela.
+ */
+function bancada(unidade: string): { rotulo: string; fator: number } {
+  const u = (unidade ?? '').toLowerCase()
+  if (u === 'kg') return { rotulo: 'g',  fator: 1000 }
+  if (u === 'l')  return { rotulo: 'ml', fator: 1000 }
+  return { rotulo: unidade ?? '', fator: 1 }
+}
+
+/**
+ * Em gramas não se usa separador de milhar: "17.000" em português é
+ * exatamente como 17,000 kg aparece, e os dois números conviveriam na mesma
+ * tela. "17000 g" não deixa dúvida.
+ */
+function emBancada(valor: number, fator: number): string {
+  const x = valor * fator
+  return fator === 1 ? x.toFixed(3) : String(Math.round(x * 1000) / 1000)
+}
+
 // ── Persistence helpers ──────────────────────────────────────
 
 function storageKey(sessaoId: string) {
@@ -428,6 +454,9 @@ export function FechamentoSessaoPage() {
           const consumoReal = p.inicial - p.sobra
           const desvio = getDesvioStatus(consumoReal, p.teorico)
           const misturado = p.lotes.length > 1
+          // O card inteiro fala a língua da balança. Misturar kg e g dentro do
+          // mesmo cartão faria "500" ao lado de "17.000" parecer meia tonelada.
+          const b = bancada(p.unidade)
           return (
             <Card key={p.local_id} className={`p-4 space-y-2 ${zerado ? 'opacity-60' : ''}`}>
               <div className="flex items-center justify-between">
@@ -468,15 +497,15 @@ export function FechamentoSessaoPage() {
                 <div className="text-[0.7rem] text-gray-500 dark:text-unno-muted space-y-0.5 pl-2 border-l-2 border-unno-amber/40">
                   {p.lotes.map(l => (
                     <p key={l.id} className="font-mono">
-                      {l.lote?.codigo} — {l.quantidade_inicial} {l.lote?.unidade}
+                      {l.lote?.codigo} — {emBancada(l.quantidade_inicial, b.fator)} {b.rotulo}
                     </p>
                   ))}
                 </div>
               )}
 
               <p className="text-xs text-gray-400">
-                Inicial: {p.inicial.toFixed(3)} {p.unidade}
-                {p.teorico > 0 && ` · Teórico: ${p.teorico.toFixed(3)} ${p.unidade}`}
+                Inicial: {emBancada(p.inicial, b.fator)} {b.rotulo}
+                {p.teorico > 0 && ` · Teórico: ${emBancada(p.teorico, b.fator)} ${b.rotulo}`}
               </p>
 
               {/* Com o teórico enfileirado (059), sobra pote que a produção do
@@ -490,18 +519,25 @@ export function FechamentoSessaoPage() {
 
               {!zerado && (
                 <Input
-                  label={`Sobra no recipiente (${p.unidade})`}
+                  label={`Sobra no recipiente (${b.rotulo})`}
                   type="number"
-                  step="0.001"
+                  step={b.fator === 1 ? '0.001' : '1'}
                   min="0"
-                  value={p.sobra}
-                  onChange={(e) => setSobraLocalValue(p.local_id, parseFloat(e.target.value) || 0)}
+                  value={emBancada(p.sobra, b.fator)}
+                  onChange={(e) => {
+                    // Volta para a unidade do cadastro. O arredondamento evita
+                    // que 350 g vire 0.35000000000000003 kg.
+                    const digitado = parseFloat(e.target.value) || 0
+                    const naUnidade = Number((digitado / b.fator).toFixed(6))
+                    setSobraLocalValue(p.local_id, naUnidade)
+                  }}
                 />
               )}
 
               {p.teorico > 0 && (
                 <p className={`text-xs font-medium ${desvio === 'ok' ? 'text-emerald-600' : desvio === 'warning' ? 'text-yellow-600' : 'text-red-600'}`}>
-                  Consumo real: {consumoReal.toFixed(3)} · Desvio: {(consumoReal - p.teorico).toFixed(3)}
+                  Consumo real: {emBancada(consumoReal, b.fator)} {b.rotulo}
+                  {' · '}Desvio: {emBancada(consumoReal - p.teorico, b.fator)} {b.rotulo}
                 </p>
               )}
             </Card>
