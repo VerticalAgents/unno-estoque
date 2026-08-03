@@ -238,7 +238,7 @@ export function NovaPerdaPage() {
           </div>
         )}
 
-        <div className="flex gap-3 mt-4">
+        <div className="flex gap-3 mt-4 acoes-fixas">
           <Button type="button" variant="secondary" size="lg" onClick={() => navigate('/perdas')}>
             Cancelar
           </Button>

@@ -306,7 +306,7 @@ export function NovoLotePage() {
           </div>
         )}
 
-        <div className="flex gap-3 mt-4">
+        <div className="flex gap-3 mt-4 acoes-fixas">
           <Button
             type="button"
             variant="secondary"

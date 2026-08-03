@@ -450,7 +450,7 @@ export function NovaExpedicaoPage() {
         )}
 
         {/* Actions */}
-        <div className="flex gap-3">
+        <div className="flex gap-3 acoes-fixas">
           <Button type="button" variant="secondary" size="lg" onClick={() => navigate('/expedicao')}>
             Cancelar
           </Button>

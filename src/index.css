@@ -97,6 +97,45 @@
   .espaco-barra-flutuante {
     padding-bottom: calc(78px + max(env(safe-area-inset-bottom, 0px), 10px));
   }
+
+  /* Botão de concluir grudado no fim da tela, e não no fim do formulário.
+     Num cadastro de lote são doze campos: quem preenche no celular tinha de
+     rolar até o fim para achar "Registrar", e voltar se algo estava errado.
+
+     O deslocamento é o mesmo da barra de navegação — a de ação encosta em
+     cima dela, sem cobrir nem ser coberta. */
+  .acoes-fixas {
+    position: sticky;
+    /* Zero, e não a altura da barra de navegação: o navegador mede o encaixe
+       a partir da borda interna da área que rola, e essa área já reserva o
+       espaço da navegação em `espaco-barra-flutuante`. Repetir a conta aqui
+       jogava o botão para o meio da tela. */
+    bottom: 0;
+    z-index: 20;
+    /* Fundo da cor da página: sem ele o formulário rola por trás dos botões
+       e vira um borrão de texto atrás do verde. */
+    background-color: #f9fafb;
+    border-top: 1px solid #e5e7eb;
+    margin-left: -1rem;
+    margin-right: -1rem;
+    padding: 0.75rem 1rem;
+  }
+  html.dark .acoes-fixas {
+    background-color: #0e0e16;
+    border-top-color: #1a1a24;
+  }
+  @media (min-width: 1024px) {
+    /* No computador o botão volta a ser o fim do formulário: a tela é alta,
+       a página inteira aparece, e barra grudada só rouba espaço. */
+    .acoes-fixas {
+      position: static;
+      background-color: transparent;
+      border-top: 0;
+      margin-left: 0;
+      margin-right: 0;
+      padding: 0;
+    }
+  }
   @media (min-width: 1024px) {
     /* A partir de lg a barra some e a lateral assume; a folga sobrando
        deixaria um vão no fim de toda tela. */
