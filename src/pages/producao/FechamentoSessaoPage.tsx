@@ -28,11 +28,18 @@ interface LocalRow {
   quantidade_inicial: number
   consumo_teorico: number
   local: { nome: string }
-  insumo: { nome: string; unidade_medida: string }
+  insumo: {
+    nome: string
+    unidade_medida: string
+    categoria: { nome: string; cor_hex: string | null } | null
+  }
   lote: { codigo: string; unidade: string; validade_pos_abertura: string | null }
   sobra: number
   zerado: boolean
 }
+
+/** Insumo sem categoria cadastrada ainda precisa aparecer em algum lugar. */
+const SEM_CATEGORIA = 'Sem categoria'
 
 /** "#2" antes de "#10" — comparação alfabética põe o 10 na frente. */
 const naturalmente = new Intl.Collator('pt-BR', { numeric: true, sensitivity: 'base' })
@@ -118,6 +125,7 @@ export function FechamentoSessaoPage() {
   const potes = useMemo(() => {
     const mapa = new Map<string, {
       local_id: string; nome: string; insumo: string; insumo_id: string; unidade: string
+      categoria: string; cor: string | null
       inicial: number; teorico: number; sobra: number; validade: string
       lotes: LocalRow[]
     }>()
@@ -128,6 +136,8 @@ export function FechamentoSessaoPage() {
         nome: l.local?.nome ?? '—',
         insumo: l.insumo?.nome ?? '—',
         insumo_id: l.insumo_id,
+        categoria: l.insumo?.categoria?.nome ?? SEM_CATEGORIA,
+        cor: l.insumo?.categoria?.cor_hex ?? null,
         unidade: l.lote?.unidade ?? l.insumo?.unidade_medida ?? '',
         inicial: 0, teorico: 0, sobra: 0,
         // sem validade vai para o fim da fila, não para o começo
@@ -180,11 +190,13 @@ export function FechamentoSessaoPage() {
   const grupos = useMemo(() => {
     const mapa = new Map<string, {
       insumo_id: string; insumo: string; unidade: string
+      categoria: string; cor: string | null
       teorico: number; potes: typeof potes
     }>()
     for (const p of potes) {
       const g = mapa.get(p.insumo_id) ?? {
         insumo_id: p.insumo_id, insumo: p.insumo, unidade: p.unidade,
+        categoria: p.categoria, cor: p.cor,
         teorico: 0, potes: [] as typeof potes,
       }
       g.teorico += p.teorico
@@ -193,6 +205,28 @@ export function FechamentoSessaoPage() {
     }
     return [...mapa.values()]
   }, [potes])
+
+  /**
+   * Seções por categoria (BALDES, LIQUIDOS, COBERTURAS, CONSERVANTES).
+   *
+   * A categoria não é enfeite: ela agrupa o que fica junto na fábrica. Quem
+   * confere os baldes de secos não vai buscar a garrafinha de conservante no
+   * meio do caminho — percorre uma prateleira de cada vez.
+   */
+  const secoes = useMemo(() => {
+    const mapa = new Map<string, { nome: string; cor: string | null; grupos: typeof grupos }>()
+    for (const g of grupos) {
+      const s = mapa.get(g.categoria) ?? { nome: g.categoria, cor: g.cor, grupos: [] as typeof grupos }
+      s.grupos.push(g)
+      mapa.set(g.categoria, s)
+    }
+    return [...mapa.values()].sort((a, b) => {
+      // "Sem categoria" por último: é a sobra do cadastro, não uma prateleira.
+      if (a.nome === SEM_CATEGORIA) return 1
+      if (b.nome === SEM_CATEGORIA) return -1
+      return naturalmente.compare(a.nome, b.nome)
+    })
+  }, [grupos])
 
   /** Quais insumos estão com a lista de potes não usados aberta. */
   const [naoUsadosAbertos, setNaoUsadosAbertos] = useState<Record<string, boolean>>({})
@@ -228,7 +262,7 @@ export function FechamentoSessaoPage() {
         .select('*, ficha_tecnica:fichas_tecnicas(nome), ficha_versao:fichas_tecnicas_versoes(peso_medio_g, perda_esperada_g_forma)')
         .eq('sessao_id', id),
       supabase.from('sessoes_producao_locais')
-        .select('*, local:locais(nome), insumo:insumos(nome,unidade_medida), lote:lotes(codigo,unidade,validade_pos_abertura)')
+        .select('*, local:locais(nome), insumo:insumos(nome,unidade_medida,categoria:categorias_insumo(nome,cor_hex)), lote:lotes(codigo,unidade,validade_pos_abertura)')
         .eq('sessao_id', id),
     ]).then(([s, sk, loc]) => {
       if (s.data) setSessao(s.data as typeof sessao)
@@ -547,7 +581,24 @@ export function FechamentoSessaoPage() {
             Um peso por RECIPIENTE, não por lote: a balança pesa o pote inteiro.
             Quando há mistura, o sistema rateia o consumo entre os lotes de
             dentro na proporção do que cada um tinha (fechar_sessao_producao). */}
-        {grupos.map((g) => {
+        {secoes.map((sec) => (
+        <div key={sec.nome} className="space-y-3">
+          {/* Cabeçalho da prateleira. A bolinha usa a cor cadastrada na
+              categoria — é o mesmo código de cor do resto do sistema. */}
+          <div className="flex items-center gap-2 pt-2">
+            <span
+              className="w-2.5 h-2.5 rounded-full shrink-0"
+              style={{ backgroundColor: sec.cor ?? '#9ca3af' }}
+            />
+            <h3 className="text-xs font-semibold uppercase tracking-wide text-gray-500">
+              {sec.nome}
+            </h3>
+            <span className="text-xs text-gray-400">
+              {sec.grupos.length === 1 ? '1 insumo' : `${sec.grupos.length} insumos`}
+            </span>
+          </div>
+
+        {sec.grupos.map((g) => {
           const b = bancada(g.unidade)
           const usados     = g.potes.filter(p => p.papel !== 'nao_usa')
           const naoUsados  = g.potes.filter(p => p.papel === 'nao_usa')
@@ -683,6 +734,8 @@ export function FechamentoSessaoPage() {
             </Card>
           )
         })}
+        </div>
+        ))}
       </div>
 
       </div>{/* fim da grade */}
