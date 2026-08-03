@@ -153,7 +153,14 @@ export function FechamentoSessaoPage() {
     }
 
     const lista = [...mapa.values()]
-      .map(p => ({ ...p, sobra: sobraLocal[p.local_id] ?? p.inicial }))
+      // "Zerado" É sobra zero. Antes o botão só marcava a bandeira e a sobra
+      // continuava valendo o conteúdo cheio, então o desvio aparecia como
+      // -teórico: a tela dizia que nada tinha sido consumido no pote que
+      // acabara de ser dado como esvaziado.
+      .map(p => ({
+        ...p,
+        sobra: p.lotes.every(l => l.zerado) ? 0 : (sobraLocal[p.local_id] ?? p.inicial),
+      }))
       .sort((a, b) =>
         naturalmente.compare(a.insumo, b.insumo) ||
         a.validade.localeCompare(b.validade) ||
@@ -220,13 +227,25 @@ export function FechamentoSessaoPage() {
       s.grupos.push(g)
       mapa.set(g.categoria, s)
     }
-    return [...mapa.values()].sort((a, b) => {
-      // "Sem categoria" por último: é a sobra do cadastro, não uma prateleira.
-      if (a.nome === SEM_CATEGORIA) return 1
-      if (b.nome === SEM_CATEGORIA) return -1
-      return naturalmente.compare(a.nome, b.nome)
-    })
+    return [...mapa.values()]
+      .map(s => ({
+        ...s,
+        // Quantos potes ainda estão como vieram: nem pesados, nem zerados.
+        // Vai no cabeçalho para que recolher a categoria não esconda trabalho.
+        pendentes: s.grupos
+          .flatMap(g => g.potes)
+          .filter(p => p.papel !== 'nao_usa' && p.sobra === p.inicial).length,
+      }))
+      .sort((a, b) => {
+        // "Sem categoria" por último: é a sobra do cadastro, não uma prateleira.
+        if (a.nome === SEM_CATEGORIA) return 1
+        if (b.nome === SEM_CATEGORIA) return -1
+        return naturalmente.compare(a.nome, b.nome)
+      })
   }, [grupos])
+
+  /** Categorias recolhidas. Vazio = todas abertas. */
+  const [categoriasFechadas, setCategoriasFechadas] = useState<Record<string, boolean>>({})
 
   /** Quais insumos estão com a lista de potes não usados aberta. */
   const [naoUsadosAbertos, setNaoUsadosAbertos] = useState<Record<string, boolean>>({})
@@ -339,7 +358,10 @@ export function FechamentoSessaoPage() {
 
   // ── Derived calculations ─────────────────────────────────────
 
-  const totalConsumido = locais.reduce((acc, l) => acc + (l.quantidade_inicial - l.sobra), 0)
+  // Soma pelos POTES, não pelas linhas de lote. `l.sobra` só é alterada pelo
+  // botão Zerar — o peso digitado no recipiente vai para `sobraLocal`. Somar
+  // por lote fazia a "Perda de insumos" do resumo ignorar tudo que era pesado.
+  const totalConsumido = potes.reduce((acc, p) => acc + (p.inicial - p.sobra), 0)
   const totalTeorico = locais.reduce((acc, l) => acc + (l.consumo_teorico ?? 0), 0)
   const fatorInsumos = totalTeorico > 0 ? ((totalConsumido - totalTeorico) / totalTeorico * 100) : null
 
@@ -404,7 +426,8 @@ export function FechamentoSessaoPage() {
       // Um registro por recipiente; o rateio entre os lotes é feito no banco
       p_locais: potes.map((p) => ({
         local_id: p.local_id,
-        quantidade_final: p.lotes.every(l => l.zerado) ? 0 : p.sobra,
+        // `p.sobra` já vale 0 quando o pote está zerado (ver o memo `potes`)
+        quantidade_final: p.sobra,
       })),
       p_observacoes: obs || null,
     })
@@ -581,24 +604,42 @@ export function FechamentoSessaoPage() {
             Um peso por RECIPIENTE, não por lote: a balança pesa o pote inteiro.
             Quando há mistura, o sistema rateia o consumo entre os lotes de
             dentro na proporção do que cada um tinha (fechar_sessao_producao). */}
-        {secoes.map((sec) => (
+        {secoes.map((sec) => {
+        const fechada = categoriasFechadas[sec.nome] ?? false
+        return (
         <div key={sec.nome} className="space-y-3">
-          {/* Cabeçalho da prateleira. A bolinha usa a cor cadastrada na
-              categoria — é o mesmo código de cor do resto do sistema. */}
-          <div className="flex items-center gap-2 pt-2">
+          {/* Cabeçalho da prateleira, que também recolhe. A bolinha usa a cor
+              cadastrada na categoria — mesmo código de cor do resto do sistema.
+              O contador de pendentes fica visível fechado: recolher serve para
+              tirar da frente o que já foi resolvido, não para perder de vista
+              o que falta. */}
+          <button
+            type="button"
+            onClick={() => setCategoriasFechadas(s => ({ ...s, [sec.nome]: !fechada }))}
+            className="flex items-center gap-2 pt-2 w-full text-left group"
+          >
+            <span className="text-xs text-gray-400 w-3 shrink-0">{fechada ? '▸' : '▾'}</span>
             <span
               className="w-2.5 h-2.5 rounded-full shrink-0"
               style={{ backgroundColor: sec.cor ?? '#9ca3af' }}
             />
-            <h3 className="text-xs font-semibold uppercase tracking-wide text-gray-500">
+            <h3 className="text-xs font-semibold uppercase tracking-wide text-gray-500 group-hover:text-gray-700">
               {sec.nome}
             </h3>
             <span className="text-xs text-gray-400">
               {sec.grupos.length === 1 ? '1 insumo' : `${sec.grupos.length} insumos`}
             </span>
-          </div>
+            {sec.pendentes > 0 && (
+              <span className="text-xs text-unno-amber ml-auto">
+                {sec.pendentes} {sec.pendentes === 1 ? 'pendente' : 'pendentes'}
+              </span>
+            )}
+            {sec.pendentes === 0 && (
+              <span className="text-xs text-emerald-600 ml-auto">tudo conferido</span>
+            )}
+          </button>
 
-        {sec.grupos.map((g) => {
+        {!fechada && sec.grupos.map((g) => {
           const b = bancada(g.unidade)
           const usados     = g.potes.filter(p => p.papel !== 'nao_usa')
           const naoUsados  = g.potes.filter(p => p.papel === 'nao_usa')
@@ -735,7 +776,8 @@ export function FechamentoSessaoPage() {
           )
         })}
         </div>
-        ))}
+        )
+        })}
       </div>
 
       </div>{/* fim da grade */}
