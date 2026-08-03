@@ -1,4 +1,5 @@
 import { useEffect, useState, type ReactNode } from 'react'
+import { createPortal } from 'react-dom'
 import { supabase } from './supabase'
 import { useAuth } from '../contexts/AuthContext'
 
@@ -53,6 +54,11 @@ export type EtiquetaConfig = EtiquetaDims & {
   colunas: number
   espaco: number
   margem: number
+  /** Vão entre uma linha de etiquetas e a próxima. Entra na altura da página. */
+  espacoLinha: number
+  /** Ajuste fino: empurra tudo o que é impresso. Aceita negativo. */
+  deslocarX: number
+  deslocarY: number
 }
 
 export const ETIQUETA_CONFIG_PADRAO: EtiquetaConfig = {
@@ -61,7 +67,12 @@ export const ETIQUETA_CONFIG_PADRAO: EtiquetaConfig = {
   colunas: 1,
   espaco: 0,
   margem: 0,
+  espacoLinha: 0,
+  deslocarX: 0,
+  deslocarY: 0,
 }
+
+export const ETIQUETA_MAX_DESLOCAR_MM = 30
 
 /** Tamanhos de rolo mais comuns em impressora térmica de etiqueta. */
 export const ETIQUETA_PRESETS: { largura: number; altura: number; nome: string }[] = [
@@ -81,6 +92,9 @@ const COLUNAS_DB: Record<EtiquetaTipo, Record<keyof EtiquetaConfig, string>> = {
     colunas: 'etiqueta_lote_colunas',
     espaco: 'etiqueta_lote_espaco_mm',
     margem: 'etiqueta_lote_margem_mm',
+    espacoLinha: 'etiqueta_lote_espaco_linha_mm',
+    deslocarX: 'etiqueta_lote_deslocar_x_mm',
+    deslocarY: 'etiqueta_lote_deslocar_y_mm',
   },
   recipiente: {
     largura: 'etiqueta_recipiente_largura_mm',
@@ -88,6 +102,9 @@ const COLUNAS_DB: Record<EtiquetaTipo, Record<keyof EtiquetaConfig, string>> = {
     colunas: 'etiqueta_recipiente_colunas',
     espaco: 'etiqueta_recipiente_espaco_mm',
     margem: 'etiqueta_recipiente_margem_mm',
+    espacoLinha: 'etiqueta_recipiente_espaco_linha_mm',
+    deslocarX: 'etiqueta_recipiente_deslocar_x_mm',
+    deslocarY: 'etiqueta_recipiente_deslocar_y_mm',
   },
 }
 
@@ -109,6 +126,9 @@ export function saneiaConfig(bruto: Partial<Record<keyof EtiquetaConfig, unknown
     colunas: Math.round(entre(bruto.colunas, 1, ETIQUETA_MAX_COLUNAS, ETIQUETA_CONFIG_PADRAO.colunas)),
     espaco: entre(bruto.espaco, 0, ETIQUETA_MAX_ESPACO_MM, ETIQUETA_CONFIG_PADRAO.espaco),
     margem: entre(bruto.margem, 0, ETIQUETA_MAX_ESPACO_MM, ETIQUETA_CONFIG_PADRAO.margem),
+    espacoLinha: entre(bruto.espacoLinha, 0, ETIQUETA_MAX_ESPACO_MM, ETIQUETA_CONFIG_PADRAO.espacoLinha),
+    deslocarX: entre(bruto.deslocarX, -ETIQUETA_MAX_DESLOCAR_MM, ETIQUETA_MAX_DESLOCAR_MM, 0),
+    deslocarY: entre(bruto.deslocarY, -ETIQUETA_MAX_DESLOCAR_MM, ETIQUETA_MAX_DESLOCAR_MM, 0),
   }
 }
 
@@ -122,6 +142,9 @@ export function configDaLinha(tipo: EtiquetaTipo, row: Record<string, unknown> |
     colunas: row[cols.colunas],
     espaco: row[cols.espaco],
     margem: row[cols.margem],
+    espacoLinha: row[cols.espacoLinha],
+    deslocarX: row[cols.deslocarX],
+    deslocarY: row[cols.deslocarY],
   })
 }
 
@@ -175,14 +198,19 @@ export function sobraEtiqueta(dims: EtiquetaDims): number {
   return 1 - usado / (dims.largura * dims.altura)
 }
 
-/** O tamanho da "página" que a impressora recebe: uma LINHA do rolo. */
+/**
+ * O tamanho da "página" que a impressora recebe: uma LINHA do rolo.
+ *
+ * A altura inclui o vão até a linha seguinte — é o passo do rolo, não a
+ * altura da etiqueta. Sem isso a impressão escorrega um pouco a cada linha.
+ */
 export function dimsLinha(config: EtiquetaConfig): EtiquetaDims {
   return {
     largura:
       2 * config.margem
       + config.colunas * config.largura
       + (config.colunas - 1) * config.espaco,
-    altura: config.altura,
+    altura: config.altura + config.espacoLinha,
   }
 }
 
@@ -199,8 +227,19 @@ export function emLinhas<T>(itens: T[], colunas: number): T[][] {
 /**
  * Folha de estilo de impressão comum às telas de etiqueta.
  *
- * Esconde tudo que é de tela e deixa visível só `.etiqueta-print-target`,
- * posicionado no canto da página. `size` é a linha do rolo.
+ * O resto da página sai do fluxo com `display: none` — e não com
+ * `visibility: hidden`. Escondido por visibilidade, o conteúdo de tela
+ * continua ocupando altura e o navegador emite páginas em branco entre as
+ * etiquetas: numa página de 65mm isso vira rolo desperdiçado.
+ *
+ * Para o seletor funcionar sem depender de onde a tela está na árvore, a
+ * área de impressão é levada para filha direta do `body` por
+ * `EtiquetaFolhaImpressao`.
+ *
+ * O `visibility: visible` continua necessário: `index.css` tem um
+ * `@media print { body * { visibility: hidden } }` global que atinge o
+ * conteúdo da etiqueta mesmo estando fora do fluxo do app. Sem esta regra,
+ * saem as páginas na quantidade certa, do tamanho certo — e em branco.
  */
 export function etiquetaPrintStyles(config: EtiquetaConfig): string {
   const linha = dimsLinha(config)
@@ -210,22 +249,31 @@ export function etiquetaPrintStyles(config: EtiquetaConfig): string {
   @page { size: ${linha.largura}mm ${linha.altura}mm; margin: 0; }
 
   @media print {
-    html, body { margin: 0 !important; padding: 0 !important; }
+    html, body { margin: 0 !important; padding: 0 !important; background: #fff !important; }
 
-    body > * { visibility: hidden; }
+    body > *:not(.etiqueta-print-target) { display: none !important; }
 
-    .etiqueta-print-target {
-      display: block !important;
-      visibility: visible !important;
-      position: absolute;
-      top: 0;
-      left: 0;
-    }
+    .etiqueta-print-target { display: block !important; }
+    .etiqueta-print-target,
     .etiqueta-print-target * { visibility: visible !important; }
     .etiqueta-page-break { page-break-after: always; }
     * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
   }
 `
+}
+
+/**
+ * A área que vai para o papel, montada como filha direta do `body`.
+ *
+ * O portal existe para que nenhuma margem, padding ou altura das telas do
+ * app entre na conta da página impressa — o que sai na impressora é só o que
+ * está aqui dentro.
+ */
+export function EtiquetaFolhaImpressao({ children }: { children: ReactNode }) {
+  return createPortal(
+    <div className="etiqueta-print-target">{children}</div>,
+    document.body,
+  )
 }
 
 /**
@@ -277,20 +325,36 @@ export function EtiquetaCanvas({ dims, children }: { dims: EtiquetaDims; childre
  */
 export function EtiquetaLinhaRolo({ config, children }: { config: EtiquetaConfig; children: ReactNode }) {
   const linha = dimsLinha(config)
+  const deslocado = config.deslocarX !== 0 || config.deslocarY !== 0
+
   return (
     <div
       style={{
         width: `${linha.largura}mm`,
         height: `${linha.altura}mm`,
-        padding: `0 ${config.margem}mm`,
-        display: 'flex',
-        gap: `${config.espaco}mm`,
         boxSizing: 'border-box',
         overflow: 'hidden',
         backgroundColor: '#fff',
+        position: 'relative',
       }}
     >
-      {children}
+      <div
+        style={{
+          display: 'flex',
+          gap: `${config.espaco}mm`,
+          padding: `0 ${config.margem}mm`,
+          boxSizing: 'border-box',
+          width: `${linha.largura}mm`,
+          height: `${config.altura}mm`,
+          // O ajuste fino move o conteúdo dentro da página, sem mudar o
+          // tamanho dela — é o empurrão que alinha com a etiqueta física.
+          transform: deslocado
+            ? `translate(${config.deslocarX}mm, ${config.deslocarY}mm)`
+            : undefined,
+        }}
+      >
+        {children}
+      </div>
     </div>
   )
 }

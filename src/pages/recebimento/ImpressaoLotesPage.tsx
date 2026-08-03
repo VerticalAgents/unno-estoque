@@ -7,6 +7,7 @@ import { Button } from '../../components/ui/Button'
 import { EtiquetaLoteContent, type LoteEtiqueta } from '../../components/etiqueta/EtiquetaLote'
 import {
   EtiquetaCanvas,
+  EtiquetaFolhaImpressao,
   EtiquetaLinhaRolo,
   emLinhas,
   etiquetaPrintStyles,
@@ -131,7 +132,7 @@ export function ImpressaoLotesPage() {
       </div>
 
       {/* Print target — uma página por linha do rolo */}
-      <div className="etiqueta-print-target">
+      <EtiquetaFolhaImpressao>
         {linhas.map((linha, i) => (
           <div key={i} className={i < linhas.length - 1 ? 'etiqueta-page-break' : ''}>
             <EtiquetaLinhaRolo config={config}>
@@ -143,7 +144,7 @@ export function ImpressaoLotesPage() {
             </EtiquetaLinhaRolo>
           </div>
         ))}
-      </div>
+      </EtiquetaFolhaImpressao>
     </>
   )
 }

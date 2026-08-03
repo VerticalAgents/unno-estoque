@@ -8,6 +8,7 @@ import {
 } from '../../components/etiqueta/EtiquetaRecipiente'
 import {
   EtiquetaCanvas,
+  EtiquetaFolhaImpressao,
   EtiquetaLinhaRolo,
   etiquetaPrintStyles,
   useEtiquetaConfig,
@@ -94,13 +95,13 @@ export function EtiquetaRecipientePage() {
       </div>
 
       {/* Print layout — uma linha do rolo, com a etiqueta na primeira coluna */}
-      <div className="etiqueta-print-target">
+      <EtiquetaFolhaImpressao>
         <EtiquetaLinhaRolo config={config}>
           <EtiquetaCanvas dims={config}>
             <EtiquetaRecipienteContent recipiente={recipiente} dims={config} />
           </EtiquetaCanvas>
         </EtiquetaLinhaRolo>
-      </div>
+      </EtiquetaFolhaImpressao>
     </>
   )
 }

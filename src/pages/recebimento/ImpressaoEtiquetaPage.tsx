@@ -7,6 +7,7 @@ import { Button } from '../../components/ui/Button'
 import { EtiquetaLoteContent, type LoteEtiqueta } from '../../components/etiqueta/EtiquetaLote'
 import {
   EtiquetaCanvas,
+  EtiquetaFolhaImpressao,
   EtiquetaLinhaRolo,
   etiquetaPrintStyles,
   useEtiquetaConfig,
@@ -110,13 +111,13 @@ export function ImpressaoEtiquetaPage() {
       </div>
 
       {/* Print-only: uma linha do rolo, com a etiqueta na primeira coluna */}
-      <div className="etiqueta-print-target">
+      <EtiquetaFolhaImpressao>
         <EtiquetaLinhaRolo config={config}>
           <EtiquetaCanvas dims={config}>
             <EtiquetaLoteContent lote={lote} empresa={empresa} dims={config} />
           </EtiquetaCanvas>
         </EtiquetaLinhaRolo>
-      </div>
+      </EtiquetaFolhaImpressao>
     </>
   )
 }

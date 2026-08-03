@@ -178,19 +178,26 @@ function LoteRetrato({ lote, empresa }: { lote: LoteEtiqueta; empresa: Empresa |
       fontFamily: 'sans-serif',
       display: 'flex',
       flexDirection: 'column',
-      padding: '1.5mm',
+      padding: '1.2mm 1.5mm 1.8mm 1.5mm',
       overflow: 'hidden',
       boxSizing: 'border-box',
     }}>
+
+      {/* ── Faixa destacável ──
+          O rolo tem uma picotada a ZONA_DESTACAVEL_MM do topo. Tudo o que
+          precisa sobreviver ao destaque — o que é, de quem é, até quando
+          serve — cabe acima dela; o resto (papelada e QR) fica abaixo.
+          As medidas deste bloco existem para respeitar esse limite: mexer
+          em fonte ou espaçamento aqui exige refazer a conta. */}
 
       {/* Nome do insumo — até duas linhas, o resto corta.
           A altura é fixa (mesmo com nome de uma linha só) para que as
           etiquetas da mesma linha do rolo saiam alinhadas entre si. */}
       <div style={{
-        fontSize: '7.5pt',
+        fontSize: '7pt',
         fontWeight: 'bold',
-        lineHeight: 1.15,
-        height: '6.2mm',
+        lineHeight: 1.12,
+        height: '5.6mm',
         display: '-webkit-box',
         WebkitLineClamp: 2,
         WebkitBoxOrient: 'vertical',
@@ -199,10 +206,14 @@ function LoteRetrato({ lote, empresa }: { lote: LoteEtiqueta; empresa: Empresa |
       }}>
         {lote.insumo.nome}
       </div>
+      {/* Mesmo corpo e peso do "LOTE" lá embaixo, em maiúsculas: é o nome da
+          empresa que responde pelo produto, e precisa se ler de perto. */}
       <div style={{
-        fontSize: '4.5pt',
-        color: '#6b7280',
-        marginTop: '0.4mm',
+        fontSize: '6.5pt',
+        fontWeight: 'bold',
+        lineHeight: 1.1,
+        textTransform: 'uppercase',
+        marginTop: '0.3mm',
         whiteSpace: 'nowrap',
         overflow: 'hidden',
         textOverflow: 'ellipsis',
@@ -213,17 +224,18 @@ function LoteRetrato({ lote, empresa }: { lote: LoteEtiqueta; empresa: Empresa |
 
       {/* Validade — o campo que se lê de longe */}
       <div style={{
-        marginTop: '1.2mm',
+        marginTop: '0.8mm',
         background: '#000',
         color: '#fff',
-        padding: '0.8mm 1mm',
+        padding: '0.7mm 1mm',
         flexShrink: 0,
       }}>
-        <div style={{ fontSize: '4.5pt', letterSpacing: '0.3pt' }}>VALIDADE</div>
-        <div style={{ fontSize: '10pt', fontWeight: 'bold', lineHeight: 1.1 }}>
+        <div style={{ fontSize: '4.5pt', lineHeight: 1.1, letterSpacing: '0.3pt' }}>VALIDADE</div>
+        <div style={{ fontSize: '9.5pt', fontWeight: 'bold', lineHeight: 1.05 }}>
           {formatDate(lote.validade_pos_abertura)}
         </div>
       </div>
+      {/* ── fim da faixa destacável (≈16,8mm de 18,5mm) ── */}
 
       {/* Demais datas e origem */}
       <div style={{ marginTop: '1.2mm', flexShrink: 0 }}>
@@ -241,15 +253,29 @@ function LoteRetrato({ lote, empresa }: { lote: LoteEtiqueta; empresa: Empresa |
         borderTop: '1pt solid #000',
         flexShrink: 0,
       }}>
-        <div style={{ fontSize: '6.5pt', fontWeight: 'bold', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+        {/* O código do lote é a chave da rastreabilidade: em vez de cortar
+            com reticências, quebra em duas linhas. Sublote longo
+            (INS028-0001.12/12) passa de uma linha em etiqueta estreita. */}
+        <div style={{
+          fontSize: '6.5pt',
+          fontWeight: 'bold',
+          lineHeight: 1.15,
+          wordBreak: 'break-all',
+          display: '-webkit-box',
+          WebkitLineClamp: 2,
+          WebkitBoxOrient: 'vertical',
+          overflow: 'hidden',
+        }}>
           LOTE: {lote.codigo}
         </div>
-        <div style={{ fontSize: '5pt', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+        <div style={{ fontSize: '5.8pt', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
           NF: {lote.numero_nf || '—'}
         </div>
       </div>
 
-      {/* QR — ocupa o que sobrar, centralizado */}
+      {/* QR — ocupa o que sobrar, centralizado. O tamanho deixa folga na
+          altura para o código do lote usar duas linhas. Em 203dpi, 15mm dão
+          ~3,5 pontos por módulo do QR: sobra de leitura com folga. */}
       <div style={{
         flex: 1,
         minHeight: 0,
@@ -259,15 +285,15 @@ function LoteRetrato({ lote, empresa }: { lote: LoteEtiqueta; empresa: Empresa |
         justifyContent: 'center',
         marginTop: '1mm',
       }}>
-        <QRCodeSVG value={d.qrContent} size={68} level="M" includeMargin={false} />
+        <QRCodeSVG value={d.qrContent} size={57} level="M" includeMargin={false} />
       </div>
 
       {/* Responsável e CNPJ */}
       <div style={{ flexShrink: 0, marginTop: '0.8mm' }}>
-        <div style={{ fontSize: '4.5pt', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+        <div style={{ fontSize: '5.2pt', lineHeight: 1.25, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
           <span style={{ fontWeight: 'bold' }}>RESP.: </span>{d.responsavel}
         </div>
-        <div style={{ fontSize: '4.5pt', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+        <div style={{ fontSize: '5.2pt', lineHeight: 1.25, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
           <span style={{ fontWeight: 'bold' }}>CNPJ: </span>{d.cnpj}
         </div>
       </div>
@@ -278,8 +304,8 @@ function LoteRetrato({ lote, empresa }: { lote: LoteEtiqueta; empresa: Empresa |
 function CampoRetrato({ label, value }: { label: string; value: string }) {
   return (
     <div style={{
-      fontSize: '5pt',
-      lineHeight: 1.45,
+      fontSize: '6pt',
+      lineHeight: 1.35,
       whiteSpace: 'nowrap',
       overflow: 'hidden',
       textOverflow: 'ellipsis',

@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, type ReactNode } from 'react'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../contexts/AuthContext'
 import { Card } from '../../components/ui/Card'
@@ -6,6 +6,7 @@ import { Button } from '../../components/ui/Button'
 import {
   ETIQUETA_CONFIG_PADRAO,
   ETIQUETA_MAX_COLUNAS,
+  ETIQUETA_MAX_DESLOCAR_MM,
   ETIQUETA_MAX_ESPACO_MM,
   ETIQUETA_MAX_MM,
   ETIQUETA_MIN_MM,
@@ -38,12 +39,15 @@ type Campos = Record<keyof EtiquetaConfig, string>
 const TIPOS: {
   tipo: EtiquetaTipo
   titulo: string
+  /** Nome curto, para caber em listas e no passo a passo da impressora. */
+  curto: string
   descricao: string
   onde: string
 }[] = [
   {
     tipo: 'lote',
     titulo: 'Etiqueta de lote e sublote',
+    curto: 'Lote e sublote',
     descricao:
       'A que vai colada na embalagem do insumo quando a mercadoria chega, com validade, QR Code e dados da empresa.',
     onde: 'Recebimento → Imprimir etiqueta',
@@ -51,6 +55,7 @@ const TIPOS: {
   {
     tipo: 'recipiente',
     titulo: 'Etiqueta de recipiente',
+    curto: 'Recipiente',
     descricao:
       'A que identifica balde, caixa, garrafa e prateleira, com o QR Code fixo que é escaneado na produção.',
     onde: 'Recipientes → Etiqueta',
@@ -64,6 +69,9 @@ function paraCampos(config: EtiquetaConfig): Campos {
     colunas: String(config.colunas),
     espaco: String(config.espaco),
     margem: String(config.margem),
+    espacoLinha: String(config.espacoLinha),
+    deslocarX: String(config.deslocarX),
+    deslocarY: String(config.deslocarY),
   }
 }
 
@@ -77,6 +85,9 @@ const LIMITES: Record<keyof EtiquetaConfig, { min: number; max: number }> = {
   colunas: { min: 1, max: ETIQUETA_MAX_COLUNAS },
   espaco: { min: 0, max: ETIQUETA_MAX_ESPACO_MM },
   margem: { min: 0, max: ETIQUETA_MAX_ESPACO_MM },
+  espacoLinha: { min: 0, max: ETIQUETA_MAX_ESPACO_MM },
+  deslocarX: { min: -ETIQUETA_MAX_DESLOCAR_MM, max: ETIQUETA_MAX_DESLOCAR_MM },
+  deslocarY: { min: -ETIQUETA_MAX_DESLOCAR_MM, max: ETIQUETA_MAX_DESLOCAR_MM },
 }
 
 function invalido(campo: keyof EtiquetaConfig, valor: string): boolean {
@@ -196,6 +207,9 @@ export function EtiquetasTab() {
           colunas: num(campos.colunas),
           espaco: num(campos.espaco),
           margem: num(campos.margem),
+          espacoLinha: num(campos.espacoLinha),
+          deslocarX: num(campos.deslocarX),
+          deslocarY: num(campos.deslocarY),
         })
         const linha = dimsLinha(config)
         const layout = layoutDaEtiqueta(config)
@@ -284,13 +298,47 @@ export function EtiquetasTab() {
                 largo
                 onChange={v => setCampo(t.tipo, 'margem', v)}
               />
+              <MedidaInput
+                label="Vão entre linhas (mm)"
+                valor={campos.espacoLinha}
+                erro={invalido('espacoLinha', campos.espacoLinha)}
+                min={0} max={ETIQUETA_MAX_ESPACO_MM} step="0.5"
+                largo
+                onChange={v => setCampo(t.tipo, 'espacoLinha', v)}
+              />
+            </div>
+
+            {/* Ajuste fino */}
+            <p className="text-xs font-semibold uppercase tracking-wide text-gray-400 dark:text-unno-dim mt-6 mb-2">
+              Ajuste fino da posição
+            </p>
+            <p className="text-xs text-gray-500 dark:text-unno-muted mb-2">
+              Se a impressão sair certa de tamanho mas deslocada, empurre por aqui.
+              Positivo move para a direita / para baixo; negativo, para a esquerda /
+              para cima. Mexa de 1 em 1mm e imprima uma etiqueta para conferir.
+            </p>
+            <div className="flex flex-wrap items-end gap-3">
+              <MedidaInput
+                label="Deslocar → (mm)"
+                valor={campos.deslocarX}
+                erro={invalido('deslocarX', campos.deslocarX)}
+                min={-ETIQUETA_MAX_DESLOCAR_MM} max={ETIQUETA_MAX_DESLOCAR_MM} step="0.5"
+                onChange={v => setCampo(t.tipo, 'deslocarX', v)}
+              />
+              <MedidaInput
+                label="Deslocar ↓ (mm)"
+                valor={campos.deslocarY}
+                erro={invalido('deslocarY', campos.deslocarY)}
+                min={-ETIQUETA_MAX_DESLOCAR_MM} max={ETIQUETA_MAX_DESLOCAR_MM} step="0.5"
+                onChange={v => setCampo(t.tipo, 'deslocarY', v)}
+              />
             </div>
 
             <div className="mt-3 rounded-lg bg-gray-50 dark:bg-white/[.04] px-3 py-2.5 text-xs text-gray-600 dark:text-unno-muted">
               <p>
-                Largura total do rolo:{' '}
+                Página enviada à impressora:{' '}
                 <strong className="text-gray-900 dark:text-unno-text">
-                  {arredonda(linha.largura)}mm
+                  {arredonda(linha.largura)} × {arredonda(linha.altura)}mm
                 </strong>{' '}
                 <span className="text-gray-400">
                   ({config.colunas} × {arredonda(config.largura)}
@@ -299,8 +347,13 @@ export function EtiquetasTab() {
                 </span>
               </p>
               <p className="mt-1">
-                Compare com o rolo na mão. Se não bater, o alinhamento sai errado —
-                ajuste o vão ou a borda até a conta fechar.
+                É esse tamanho que precisa estar configurado também no driver da
+                impressora — que costuma pedir em centímetros:{' '}
+                <strong className="text-gray-900 dark:text-unno-text">
+                  Width {emCm(linha.largura)} / Height {emCm(linha.altura)}
+                </strong>
+                . Se não bater, o navegador encolhe a impressão para caber e tudo
+                sai menor e fora de lugar.
               </p>
               <p className="mt-1">
                 Desenho usado: <strong>{layout === 'retrato' ? 'em pé' : 'deitado'}</strong>
@@ -330,8 +383,147 @@ export function EtiquetasTab() {
           Faça um teste em uma folha comum antes de gastar rolo.
         </p>
       </Card>
+
+      <Ajuda valores={valores} />
     </div>
   )
+}
+
+/**
+ * O passo a passo da impressora.
+ *
+ * Fica aqui, e não numa conversa ou num documento à parte, porque é onde a
+ * dúvida aparece — e porque os números que o driver pede são calculados a
+ * partir da configuração de cima, em vez de escritos à mão e envelhecerem.
+ */
+function Ajuda({ valores }: { valores: Record<EtiquetaTipo, Campos> }) {
+  const linhas = TIPOS.map(t => {
+    const config = saneiaConfig({
+      largura: num(valores[t.tipo].largura),
+      altura: num(valores[t.tipo].altura),
+      colunas: num(valores[t.tipo].colunas),
+      espaco: num(valores[t.tipo].espaco),
+      margem: num(valores[t.tipo].margem),
+      espacoLinha: num(valores[t.tipo].espacoLinha),
+    })
+    return { tipo: t, pagina: dimsLinha(config) }
+  })
+
+  return (
+    <Card className="p-5">
+      <details className="group">
+        <summary className="flex cursor-pointer items-center justify-between gap-3 list-none">
+          <div>
+            <h2 className="text-base font-semibold text-gray-900 dark:text-unno-text">
+              Como configurar a impressora
+            </h2>
+            <p className="text-sm text-gray-500 dark:text-unno-muted mt-0.5">
+              Passo a passo do Windows, e o que muda ao trocar de rolo
+            </p>
+          </div>
+          <svg
+            className="w-5 h-5 shrink-0 text-gray-400 transition-transform group-open:rotate-180"
+            fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}
+          >
+            <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 8.25l-7.5 7.5-7.5-7.5" />
+          </svg>
+        </summary>
+
+        <div className="mt-4 space-y-5 text-sm text-gray-600 dark:text-unno-muted">
+          <p>
+            O tamanho do papel precisa estar dito em dois lugares: aqui em cima e
+            no driver da impressora, no Windows. Se os dois não baterem, o
+            navegador encolhe a impressão para caber no que o driver diz — e sai
+            tudo menor e fora de lugar.
+          </p>
+
+          <Passos titulo="1. Abrir as preferências da impressora">
+            <li>Tecla <Tecla>Windows</Tecla>, digite <Tecla>Painel de Controle</Tecla> e tecle Enter</li>
+            <li>Em "Exibir por", no canto superior direito, escolha <strong>Ícones grandes</strong></li>
+            <li>Clique em <strong>Dispositivos e Impressoras</strong></li>
+            <li>Botão direito na etiquetadora → <strong>Preferências de impressão</strong></li>
+          </Passos>
+
+          <Passos titulo="2. Tamanho do papel (aba Options)">
+            <li>Em "Paper Format", escolha <strong>cm</strong></li>
+            <li>
+              Em "Size", coloque a medida do formato que você vai imprimir:
+              <ul className="mt-1 ml-4 space-y-0.5">
+                {linhas.map(l => (
+                  <li key={l.tipo.tipo}>
+                    <span className="text-gray-500 dark:text-unno-dim">{l.tipo.curto}: </span>
+                    <strong className="text-gray-900 dark:text-unno-text">
+                      Width {emCm(l.pagina.largura)} / Height {emCm(l.pagina.altura)}
+                    </strong>
+                  </li>
+                ))}
+              </ul>
+            </li>
+            <li>Ajuste "Speed" e "Darkness" ao seu gosto (mais escuro = mais nítido, mais devagar)</li>
+          </Passos>
+
+          <Passos titulo="3. Sensor do rolo (aba Advanced Setup)">
+            <li>"Media type": <strong>Label with gaps</strong>, para rolo picotado</li>
+            <li>"Gap/Mark Height": o vão entre uma linha de etiquetas e a de baixo, em cm</li>
+            <li>Deixe <strong>"Top of form backup" marcado</strong> — é ele que devolve a etiqueta à posição certa</li>
+            <li>Se o alinhamento vertical começar a fugir, clique em <strong>Calibrate</strong></li>
+          </Passos>
+
+          <Passos titulo="4. Na hora de imprimir">
+            <li>Em "Destino", escolha a etiquetadora</li>
+            <li>Abra "Mais definições": <strong>Escala 100</strong> (nunca "ajustar à página")</li>
+            <li><strong>Margens: Nenhuma</strong></li>
+            <li>Marque <strong>Gráficos de plano de fundo</strong>, senão a tarja preta da validade sai vazia</li>
+          </Passos>
+
+          <div className="rounded-lg bg-amber-50 dark:bg-unno-amber/10 border border-amber-200 dark:border-unno-amber/30 px-3 py-2.5">
+            <p className="font-medium text-amber-900 dark:text-unno-amber">Ao trocar de rolo</p>
+            <p className="mt-1 text-amber-900/80 dark:text-unno-muted">
+              O MischaOS guarda um formato para cada tipo de etiqueta e escolhe
+              sozinho — você não mexe em nada aqui. Mas <strong>o driver do Windows
+              tem um tamanho de papel só para a impressora inteira</strong>. Então,
+              toda vez que trocar o rolo, refaça os passos 2 e 3 com a medida do
+              formato novo. Vale conferir também o "Gap/Mark Height", que muda de
+              um rolo para outro.
+            </p>
+          </div>
+
+          <div className="rounded-lg bg-gray-50 dark:bg-white/[.04] px-3 py-2.5">
+            <p className="font-medium text-gray-800 dark:text-unno-text">Se sair torto</p>
+            <p className="mt-1">
+              Primeiro confira o <strong>tamanho</strong>: se a impressão saiu menor
+              que a etiqueta, é o driver que não bate — nenhum ajuste de posição
+              resolve isso. Só depois que o tamanho estiver certo use o
+              <strong> Ajuste fino</strong> aqui de cima, de meio em meio milímetro,
+              imprimindo uma etiqueta a cada mudança.
+            </p>
+          </div>
+        </div>
+      </details>
+    </Card>
+  )
+}
+
+function Passos({ titulo, children }: { titulo: string; children: ReactNode }) {
+  return (
+    <div>
+      <p className="font-medium text-gray-800 dark:text-unno-text mb-1.5">{titulo}</p>
+      <ol className="list-decimal ml-5 space-y-1">{children}</ol>
+    </div>
+  )
+}
+
+function Tecla({ children }: { children: ReactNode }) {
+  return (
+    <kbd className="px-1.5 py-0.5 rounded border border-gray-300 dark:border-white/[.12] bg-gray-50 dark:bg-white/[.06] text-xs font-mono">
+      {children}
+    </kbd>
+  )
+}
+
+/** O driver pede em centímetros; a configuração é em milímetros. */
+function emCm(mm: number): string {
+  return (Math.round(mm) / 10).toFixed(2).replace('.', ',')
 }
 
 function arredonda(n: number): string {
@@ -392,12 +584,14 @@ function PreviewLinha({ config }: { config: EtiquetaConfig }) {
   return (
     <div className="flex items-center gap-3">
       <div
-        className="flex items-center bg-gray-100 dark:bg-white/[.06] rounded-sm shrink-0"
+        className="flex items-start bg-gray-100 dark:bg-white/[.06] rounded-sm shrink-0 overflow-hidden"
         style={{
           width: `${linha.largura * px}px`,
           height: `${linha.altura * px}px`,
           padding: `0 ${config.margem * px}px`,
           gap: `${config.espaco * px}px`,
+          // Reproduz o ajuste fino, para dar para ver o empurrão antes de imprimir.
+          transform: `translate(${config.deslocarX * px}px, ${config.deslocarY * px}px)`,
         }}
       >
         {Array.from({ length: config.colunas }, (_, i) => (
