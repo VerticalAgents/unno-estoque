@@ -6,6 +6,26 @@ import { Button } from '../../components/ui/Button'
 import { Badge } from '../../components/ui/Badge'
 import type { Contagem, ContagemInsumo, ContagemEcLote, ContagemEpLocal } from '../../types/contagem'
 
+/**
+ * Um dos quatro números da linha de contagem.
+ *
+ * No computador é célula de coluna, e o rótulo vem do cabeçalho da lista.
+ * No celular não há cabeçalho — `sm:contents` desmancha a grade e devolve o
+ * número para a linha —, então cada um carrega o próprio rótulo.
+ */
+function NumeroContagem({ rotulo, className, children }: {
+  rotulo: string
+  className?: string
+  children: React.ReactNode
+}) {
+  return (
+    <span className="sm:w-20 sm:text-right sm:px-3 sm:py-2.5 flex flex-col sm:block">
+      <span className="text-[0.6rem] uppercase tracking-wide text-gray-400 sm:hidden">{rotulo}</span>
+      <span className={className}>{children}</span>
+    </span>
+  )
+}
+
 type InsumoJoined = ContagemInsumo & {
   insumo: { nome: string; codigo: string; unidade_medida: string }
 }
@@ -154,20 +174,25 @@ export function ContagemResumoPage() {
 
       {/* Tabela de insumos */}
       <div className="bg-white border border-gray-200 rounded-xl overflow-hidden mb-6">
-        <table className="w-full text-sm">
-          <thead>
-            <tr className="bg-gray-50 border-b border-gray-200">
-              <th className="text-left px-4 py-2.5 font-medium text-gray-600">Insumo</th>
-              <th className="text-right px-3 py-2.5 font-medium text-gray-600">Teórico</th>
-              <th className="text-right px-3 py-2.5 font-medium text-gray-600">Físico</th>
-              <th className="text-right px-3 py-2.5 font-medium text-gray-600">Dif.</th>
-              {/* É esta coluna que vira a taxa de perda do insumo: com o
-                  fechamento dando baixa pelo teórico (065), a auditoria virou
-                  a única medição real de perda. */}
-              <th className="text-right px-4 py-2.5 font-medium text-gray-600">Perda</th>
-            </tr>
-          </thead>
-          <tbody>
+        {/* Esta lista nunca foi tabela de verdade: a linha sempre foi um
+            botão (para expandir), com células fingindo colunas. Então, em vez
+            de manter duas versões, a própria linha se reorganiza — números
+            lado a lado no computador, em grade de quatro no celular, cada um
+            com seu rótulo. */}
+        <div className="text-sm">
+          {/* Cabeçalho só onde os números ficam alinhados em coluna. */}
+          <div className="hidden sm:flex bg-gray-50 border-b border-gray-200 font-medium text-gray-600">
+            <span className="flex-1 px-4 py-2.5">Insumo</span>
+            <span className="w-20 text-right px-3 py-2.5">Teórico</span>
+            <span className="w-20 text-right px-3 py-2.5">Físico</span>
+            <span className="w-20 text-right px-3 py-2.5">Dif.</span>
+            {/* É esta coluna que vira a taxa de perda do insumo: com o
+                fechamento dando baixa pelo teórico (065), a auditoria virou
+                a única medição real de perda. */}
+            <span className="w-20 text-right px-4 py-2.5">Perda</span>
+          </div>
+
+          <div>
             {itens.map(item => {
               const dif = (item.qtd_fisica ?? item.qtd_teorica) - item.qtd_teorica
               // Perda positiva = faltou no estoque. `dif` é o contrário (físico
@@ -177,33 +202,43 @@ export function ContagemResumoPage() {
                 : null
               const isExpanded = expandedId === item.id
               return (
-                <tr key={item.id} className="group">
-                  <td colSpan={5} className="p-0">
+                <div key={item.id}>
                     <button
                       onClick={() => toggleExpand(item.id)}
-                      className="w-full flex items-center border-b border-gray-100 hover:bg-gray-50 transition-colors"
+                      className="w-full text-left flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-0
+                                 border-b border-gray-100 hover:bg-gray-50 transition-colors py-1 sm:py-0"
                     >
-                      <td className="text-left px-4 py-2.5 flex-1">
+                      <span className="px-4 py-1.5 sm:py-2.5 flex-1 min-w-0">
                         <span className="font-medium text-gray-900">{item.insumo.nome}</span>
                         <span className="text-xs text-gray-400 ml-1">{item.insumo.unidade_medida}</span>
-                      </td>
-                      <td className="text-right px-3 py-2.5 text-gray-600 w-20">{item.qtd_teorica.toFixed(1)}</td>
-                      <td className="text-right px-3 py-2.5 text-gray-600 w-20">{item.qtd_fisica?.toFixed(1) ?? '—'}</td>
-                      <td className={[
-                        'text-right px-3 py-2.5 font-medium w-20',
-                        dif < 0 ? 'text-red-600' : dif > 0 ? 'text-emerald-600' : 'text-gray-400',
-                      ].join(' ')}>
-                        {dif !== 0 ? (dif > 0 ? '+' : '') + dif.toFixed(1) : '—'}
-                      </td>
-                      <td className={[
-                        'text-right px-4 py-2.5 font-medium w-20',
-                        perdaPct == null ? 'text-gray-300'
-                          : perdaPct <= 3 ? 'text-emerald-600'
-                          : perdaPct <= 8 ? 'text-yellow-600' : 'text-red-600',
-                      ].join(' ')}>
-                        {perdaPct == null ? '—'
-                          : `${perdaPct > 0 ? '+' : ''}${perdaPct.toFixed(1)}%`}
-                      </td>
+                      </span>
+                      {/* No celular os quatro números viram grade com rótulo:
+                          sem o cabeçalho da tabela, número solto não diz nada. */}
+                      <span className="grid grid-cols-4 gap-1 px-4 pb-1 sm:contents">
+                        <NumeroContagem rotulo="Teórico" className="text-gray-600">
+                          {item.qtd_teorica.toFixed(1)}
+                        </NumeroContagem>
+                        <NumeroContagem rotulo="Físico" className="text-gray-600">
+                          {item.qtd_fisica?.toFixed(1) ?? '—'}
+                        </NumeroContagem>
+                        <NumeroContagem
+                          rotulo="Dif."
+                          className={dif < 0 ? 'text-red-600 font-medium' : dif > 0 ? 'text-emerald-600 font-medium' : 'text-gray-400'}
+                        >
+                          {dif !== 0 ? (dif > 0 ? '+' : '') + dif.toFixed(1) : '—'}
+                        </NumeroContagem>
+                        <NumeroContagem
+                          rotulo="Perda"
+                          className={[
+                            'font-medium',
+                            perdaPct == null ? 'text-gray-300'
+                              : perdaPct <= 3 ? 'text-emerald-600'
+                              : perdaPct <= 8 ? 'text-yellow-600' : 'text-red-600',
+                          ].join(' ')}
+                        >
+                          {perdaPct == null ? '—' : `${perdaPct > 0 ? '+' : ''}${perdaPct.toFixed(1)}%`}
+                        </NumeroContagem>
+                      </span>
                     </button>
 
                     {/* Detalhes expandidos */}
@@ -254,12 +289,11 @@ export function ContagemResumoPage() {
                         ))}
                       </div>
                     )}
-                  </td>
-                </tr>
+                </div>
               )
             })}
-          </tbody>
-        </table>
+          </div>
+        </div>
       </div>
 
       {/* Ações */}
