@@ -44,13 +44,12 @@ export function Layout() {
       <div className="flex flex-col flex-1 min-w-0 overflow-hidden">
         <Header onMenuToggle={() => setSidebarOpen(true)} darkMode={darkMode} />
 
-        <main className="flex-1 overflow-y-auto">
+        {/* A barra flutua por cima; a folga aqui é o que faz a rolagem
+            terminar acima dela em vez de esconder o fim de cada tela. */}
+        <main className="flex-1 overflow-y-auto espaco-barra-flutuante">
           <Outlet />
         </main>
 
-        {/* Irmã do <main>, e não presa por cima dele: assim a rolagem já
-            para em cima da barra e nenhuma tela precisa reservar espaço
-            embaixo para não ficar escondida. */}
         <BarraInferior onAbrirMenu={() => setSidebarOpen(true)} />
       </div>
     </div>

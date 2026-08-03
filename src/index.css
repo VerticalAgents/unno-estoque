@@ -51,16 +51,29 @@
     }
   }
 
-  /* Folga para a faixa do gesto de home do iPhone, que fica desenhada por
-     cima de tudo. Precisa morar aqui, em folha de estilo: aplicado como
-     estilo em linha (via JavaScript), o WebKit do iOS descarta o `env()`
-     e a folga simplesmente não acontece — foi o que cobriu os rótulos da
-     barra inferior na primeira tentativa.
+  /* ── Barra inferior flutuante ──────────────────────────
+     Estas duas regras andam juntas: a barra flutua por cima do conteúdo,
+     então a área que rola precisa terminar acima dela. Mudou a altura de
+     uma, muda a da outra.
 
-     O `max` garante um respiro mesmo onde não há área segura declarada
-     (Android, e o iPhone quando o `env` volta zero). */
-  .folga-segura-baixo {
-    padding-bottom: max(env(safe-area-inset-bottom, 0px), 8px);
+     Moram aqui, em folha de estilo, e não como estilo em linha: o WebKit
+     do iOS descarta `env()` aplicado por JavaScript, e foi assim que a
+     faixa do gesto de home acabou desenhada por cima dos rótulos.
+
+     O `max` garante respiro onde não há área segura declarada (Android, e
+     o iPhone quando o `env` volta zero). */
+  .barra-flutuante {
+    bottom: max(env(safe-area-inset-bottom, 0px), 10px);
+  }
+  .espaco-barra-flutuante {
+    padding-bottom: calc(78px + max(env(safe-area-inset-bottom, 0px), 10px));
+  }
+  @media (min-width: 1024px) {
+    /* A partir de lg a barra some e a lateral assume; a folga sobrando
+       deixaria um vão no fim de toda tela. */
+    .espaco-barra-flutuante {
+      padding-bottom: 0;
+    }
   }
 
   /* Alvo de toque mínimo de 44px (recomendação de Apple e Google), para

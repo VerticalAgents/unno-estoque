@@ -65,13 +65,15 @@ export function BarraInferior({ onAbrirMenu }: { onAbrirMenu: () => void }) {
 
   return (
     <nav
-      // `folga-segura-baixo` (index.css) desvia da faixa do gesto de home do
-      // iPhone, que é desenhada por cima da tela. A folga mora no CSS de
-      // propósito: como estilo em linha o WebKit descarta o `env()`.
-      className="lg:hidden shrink-0 border-t border-gray-200 dark:border-white/[.08]
-                 bg-white/90 dark:bg-unno-bg/85 backdrop-blur-xl folga-segura-baixo"
+      // Cápsula flutuante, presa acima da faixa do gesto de home
+      // (`barra-flutuante`, no index.css). O conteúdo que rola por baixo
+      // ganha a folga correspondente com `espaco-barra-flutuante`.
+      className="lg:hidden fixed left-3 right-3 z-30 barra-flutuante
+                 rounded-[28px] border border-black/[.06] dark:border-white/[.08]
+                 bg-white/85 dark:bg-unno-elevated/85 backdrop-blur-xl
+                 shadow-[0_6px_24px_rgba(0,0,0,0.12)] dark:shadow-[0_6px_24px_rgba(0,0,0,0.5)]"
     >
-      <div className="flex items-stretch">
+      <div className="flex items-stretch p-1.5">
         {visiveis.map(item => {
           const ativo = pathname === item.to || pathname.startsWith(item.to + '/')
           return (
@@ -82,10 +84,12 @@ export function BarraInferior({ onAbrirMenu }: { onAbrirMenu: () => void }) {
                 // min-w-0 é o que permite o item encolher: sem ele o rótulo
                 // define a largura mínima, "TRANSFERIR" empurra os vizinhos
                 // e o quinto item sai da tela num aparelho de 360px.
-                'flex-1 min-w-0 flex flex-col items-center justify-center gap-1 py-2 min-h-[56px]',
-                'text-[0.55rem] font-semibold uppercase transition-colors',
+                'flex-1 min-w-0 flex flex-col items-center justify-center gap-1 py-2 min-h-[52px]',
+                'rounded-[22px] text-[0.55rem] font-semibold uppercase transition-colors',
+                // A pílula marca onde você está sem depender só da cor —
+                // no meio da produção, com a tela suja, a forma se lê antes.
                 ativo
-                  ? 'text-brand-600 dark:text-brand-400'
+                  ? 'bg-gray-100 dark:bg-white/[.08] text-brand-600 dark:text-brand-400'
                   : 'text-gray-400 dark:text-unno-dim',
               ].join(' ')}
             >
@@ -105,8 +109,8 @@ export function BarraInferior({ onAbrirMenu }: { onAbrirMenu: () => void }) {
 
         <button
           onClick={onAbrirMenu}
-          className="flex-1 min-w-0 flex flex-col items-center justify-center gap-1 py-2 min-h-[56px]
-                     text-[0.55rem] font-semibold uppercase
+          className="flex-1 min-w-0 flex flex-col items-center justify-center gap-1 py-2 min-h-[52px]
+                     rounded-[22px] text-[0.55rem] font-semibold uppercase
                      text-gray-400 dark:text-unno-dim"
         >
           <svg className="w-6 h-6 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.6}>
