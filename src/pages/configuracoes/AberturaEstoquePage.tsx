@@ -40,6 +40,7 @@ type Recipiente = {
 }
 
 type Marca = { id: string; nome: string }
+type Fornecedor = { id: string; nome: string }
 
 /**
  * Um conjunto de embalagens iguais na prateleira.
@@ -52,6 +53,7 @@ type Marca = { id: string; nome: string }
  */
 type Linha = {
   key: string
+  fornecedor_id: string
   marca_id: string
   validade: string
   sem_validade: boolean
@@ -68,6 +70,7 @@ type Balde = {
 
 const novaLinha = (tamanhoPadrao?: number | null): Linha => ({
   key: Math.random().toString(36).slice(2),
+  fornecedor_id: '',
   marca_id: '',
   validade: '',
   sem_validade: false,
@@ -102,7 +105,14 @@ export function AberturaEstoquePage() {
   const [insumos, setInsumos] = useState<Insumo[]>([])
   const [recipientes, setRecipientes] = useState<Recipiente[]>([])
   const [marcasPorInsumo, setMarcasPorInsumo] = useState<Record<string, Marca[]>>({})
+  const [fornecedores, setFornecedores] = useState<Fornecedor[]>([])
   const [jaTemLotes, setJaTemLotes] = useState(false)
+
+  // Insumos cujo tamanho de embalagem deve voltar para o cadastro, para os
+  // próximos recebimentos já virem preenchidos. Marcado por padrão quando o
+  // insumo ainda não tem tamanho — é informação que a pessoa está descobrindo
+  // agora, com o pacote na mão, e seria perdida ao fim do assistente.
+  const [guardarTamanho, setGuardarTamanho] = useState<Record<string, boolean>>({})
 
   const [linhas, setLinhas] = useState<Record<string, Linha[]>>({})
   const [baldes, setBaldes] = useState<Record<string, Balde>>({})
@@ -123,22 +133,28 @@ export function AberturaEstoquePage() {
         .eq('tipo', 'estoque_produtivo')
         .eq('ativo', true)
         .order('nome'),
-      supabase
-        .from('fornecedores_insumos_marcas')
-        .select('insumo_id, marca:marcas(id, nome)'),
+      // Vem de insumos_marcas: é o vínculo "esta marca existe para este
+      // insumo", independente de quem vende. O vínculo com fornecedor é outra
+      // tabela e serve para o recebimento filtrar depois.
+      supabase.from('insumos_marcas').select('insumo_id, marca:marcas(id, nome)'),
       supabase
         .from('lotes')
         .select('id', { count: 'exact', head: true })
         .eq('empresa_id', profile.empresa_id)
         .eq('status', 'ativo'),
-    ]).then(([ins, loc, vinc, lot]) => {
+      supabase
+        .from('fornecedores')
+        .select('id, nome')
+        .eq('empresa_id', profile.empresa_id)
+        .eq('ativo', true)
+        .order('nome'),
+    ]).then(([ins, loc, vinc, lot, forn]) => {
       const listaInsumos = (ins.data ?? []) as Insumo[]
       setInsumos(listaInsumos)
       setRecipientes((loc.data ?? []) as Recipiente[])
       setJaTemLotes((lot.count ?? 0) > 0)
+      setFornecedores((forn.data ?? []) as Fornecedor[])
 
-      // Marcas que já foram vinculadas a cada insumo. Sem vínculo, a linha
-      // simplesmente não mostra o campo — é opcional, não vale poluir a tela.
       const porInsumo: Record<string, Marca[]> = {}
       for (const v of (vinc.data ?? []) as { insumo_id: string; marca: Marca | Marca[] | null }[]) {
         const m = Array.isArray(v.marca) ? v.marca[0] : v.marca
@@ -151,8 +167,13 @@ export function AberturaEstoquePage() {
       // Uma linha em branco por insumo, e todo balde começa vazio: o padrão é
       // "não tenho", para que o que for preenchido seja sempre uma afirmação.
       const iniciais: Record<string, Linha[]> = {}
-      for (const i of listaInsumos) iniciais[i.id] = [novaLinha(i.tamanho_embalagem)]
+      const guardar: Record<string, boolean> = {}
+      for (const i of listaInsumos) {
+        iniciais[i.id] = [novaLinha(i.tamanho_embalagem)]
+        guardar[i.id] = i.tamanho_embalagem == null
+      }
       setLinhas(iniciais)
+      setGuardarTamanho(guardar)
 
       const b: Record<string, Balde> = {}
       for (const r of (loc.data ?? []) as Recipiente[]) {
@@ -162,6 +183,153 @@ export function AberturaEstoquePage() {
       setCarregando(false)
     })
   }, [profile])
+
+  // ── Cadastros feitos sem sair da abertura ───────────────────
+  //
+  // Sair daqui para cadastrar uma marca significaria perder tudo que já foi
+  // digitado — e no onboarding é justamente quando se descobre que falta
+  // cadastro. Cada função grava no banco na hora e devolve o item para a tela.
+
+  async function criarFornecedor(nome: string): Promise<Fornecedor | null> {
+    if (!profile || !nome.trim()) return null
+    const { data, error } = await supabase
+      .from('fornecedores')
+      .insert({ empresa_id: profile.empresa_id, nome: nome.trim() })
+      .select('id, nome')
+      .single()
+    if (error) {
+      setErro(`Não foi possível criar o fornecedor: ${error.message}`)
+      return null
+    }
+    setFornecedores(prev => [...prev, data as Fornecedor].sort((a, b) => a.nome.localeCompare(b.nome)))
+    return data as Fornecedor
+  }
+
+  /**
+   * Cria a marca e a amarra ao insumo. Se houver fornecedor escolhido, amarra
+   * também o trio (fornecedor, insumo, marca) — é esse vínculo que faz o
+   * Recebimento oferecer a marca certa depois de escolher o fornecedor.
+   */
+  async function criarMarca(
+    insumoId: string,
+    nome: string,
+    fornecedorId?: string,
+  ): Promise<Marca | null> {
+    if (!profile || !nome.trim()) return null
+
+    // Marca repetida não é erro do usuário: a mesma marca serve a vários
+    // insumos, e o banco tem UNIQUE(empresa, nome). Reaproveita a existente.
+    const { data: existente } = await supabase
+      .from('marcas')
+      .select('id, nome')
+      .eq('empresa_id', profile.empresa_id)
+      .ilike('nome', nome.trim())
+      .maybeSingle()
+
+    let marca = existente as Marca | null
+    if (!marca) {
+      const { data, error } = await supabase
+        .from('marcas')
+        .insert({ empresa_id: profile.empresa_id, nome: nome.trim() })
+        .select('id, nome')
+        .single()
+      if (error) {
+        setErro(`Não foi possível criar a marca: ${error.message}`)
+        return null
+      }
+      marca = data as Marca
+    }
+
+    await supabase
+      .from('insumos_marcas')
+      .upsert({ insumo_id: insumoId, marca_id: marca.id }, { onConflict: 'insumo_id,marca_id' })
+
+    if (fornecedorId) {
+      await supabase.from('fornecedores_insumos_marcas').upsert(
+        { fornecedor_id: fornecedorId, insumo_id: insumoId, marca_id: marca.id },
+        { onConflict: 'fornecedor_id,insumo_id,marca_id' },
+      )
+    }
+
+    setMarcasPorInsumo(prev => {
+      const atual = prev[insumoId] ?? []
+      if (atual.some(m => m.id === marca!.id)) return prev
+      return { ...prev, [insumoId]: [...atual, marca!] }
+    })
+    return marca
+  }
+
+  /** Liga uma marca que já existe ao fornecedor escolhido, sem duplicar nada. */
+  async function vincularFornecedorMarca(insumoId: string, marcaId: string, fornecedorId: string) {
+    if (!marcaId || !fornecedorId) return
+    await supabase.from('fornecedores_insumos_marcas').upsert(
+      { fornecedor_id: fornecedorId, insumo_id: insumoId, marca_id: marcaId },
+      { onConflict: 'fornecedor_id,insumo_id,marca_id' },
+    )
+  }
+
+  async function criarRecipiente(
+    insumo: Insumo,
+    dados: { nome: string; capacidade: string; tara: string },
+  ): Promise<boolean> {
+    if (!profile || !dados.nome.trim()) return false
+    const qr = `QR-EP-${crypto.randomUUID().replace(/-/g, '').slice(0, 12).toUpperCase()}`
+    const { data, error } = await supabase
+      .from('locais')
+      .insert({
+        empresa_id: profile.empresa_id,
+        nome: dados.nome.trim(),
+        tipo: 'estoque_produtivo',
+        subtipo: 'balde',
+        insumo_id: insumo.id,
+        capacidade_max: dados.capacidade ? parseFloat(dados.capacidade) : null,
+        unidade_capacidade: dados.capacidade ? insumo.unidade_medida : null,
+        peso_tara: dados.tara ? parseFloat(dados.tara) : 0,
+        qr_code_fixo: qr,
+        ativo: true,
+      })
+      .select('id, nome, insumo_id, capacidade_max, peso_tara')
+      .single()
+
+    if (error) {
+      setErro(`Não foi possível criar o recipiente: ${error.message}`)
+      return false
+    }
+    const novo = data as Recipiente
+    setRecipientes(prev => [...prev, novo].sort((a, b) => a.nome.localeCompare(b.nome)))
+    setBaldes(prev => ({ ...prev, [novo.id]: { modo: 'vazio', peso_bruto: '', linha_key: '' } }))
+    return true
+  }
+
+  /**
+   * Apagar recipiente só é seguro enquanto ele está vazio — depois há histórico
+   * de transferência e produção apontando para ele.
+   */
+  async function excluirRecipiente(rec: Recipiente): Promise<boolean> {
+    const { count } = await supabase
+      .from('locais_lotes')
+      .select('id', { count: 'exact', head: true })
+      .eq('local_id', rec.id)
+      .gt('quantidade', 0)
+
+    if ((count ?? 0) > 0) {
+      setErro(`${rec.nome} tem conteúdo registrado e não pode ser excluído.`)
+      return false
+    }
+
+    const { error } = await supabase.from('locais').delete().eq('id', rec.id)
+    if (error) {
+      setErro(`Não foi possível excluir: ${error.message}`)
+      return false
+    }
+    setRecipientes(prev => prev.filter(r => r.id !== rec.id))
+    setBaldes(prev => {
+      const novo = { ...prev }
+      delete novo[rec.id]
+      return novo
+    })
+    return true
+  }
 
   const recipientesPorInsumo = useMemo(() => {
     const m: Record<string, Recipiente[]> = {}
@@ -318,6 +486,7 @@ export function AberturaEstoquePage() {
         const comum = {
           insumo_id: insumo.id,
           marca_id: l.marca_id || null,
+          fornecedor_id: l.fornecedor_id || null,
           validade: l.sem_validade ? null : l.validade || null,
         }
         // Os baldes entram uma vez só, no primeiro lote que essa linha gerar.
@@ -354,6 +523,23 @@ export function AberturaEstoquePage() {
       setErro('Nada foi informado — preencha ao menos um insumo.')
       setSalvando(false)
       return
+    }
+
+    // O tamanho da embalagem volta para o cadastro do insumo antes de criar os
+    // lotes: assim o próximo recebimento já vem preenchido, e a descoberta
+    // feita aqui com o pacote na mão não se perde.
+    const tamanhos = insumos
+      .map(i => {
+        const primeira = (linhas[i.id] ?? [])[0]
+        const t = primeira ? num(primeira.tamanho) : 0
+        return guardarTamanho[i.id] && t > 0 && t !== i.tamanho_embalagem
+          ? { id: i.id, tamanho: t }
+          : null
+      })
+      .filter(Boolean) as { id: string; tamanho: number }[]
+
+    for (const t of tamanhos) {
+      await supabase.from('insumos').update({ tamanho_embalagem: t.tamanho }).eq('id', t.id)
     }
 
     const { data, error } = await supabase.rpc('abrir_estoque_inicial', {
@@ -414,9 +600,15 @@ export function AberturaEstoquePage() {
           insumos={insumos}
           linhas={linhas}
           marcasPorInsumo={marcasPorInsumo}
+          fornecedores={fornecedores}
+          guardarTamanho={guardarTamanho}
+          onGuardarTamanho={(id, v) => setGuardarTamanho(prev => ({ ...prev, [id]: v }))}
           onAlterar={alterarLinha}
           onDesdobrar={desdobrar}
           onRemover={removerLinha}
+          onCriarMarca={criarMarca}
+          onCriarFornecedor={criarFornecedor}
+          onVincular={vincularFornecedorMarca}
         />
       )}
 
@@ -429,6 +621,8 @@ export function AberturaEstoquePage() {
           setBaldes={setBaldes}
           setRecipientes={setRecipientes}
           conteudoDoBalde={conteudoDoBalde}
+          onCriarRecipiente={criarRecipiente}
+          onExcluirRecipiente={excluirRecipiente}
         />
       )}
 
@@ -498,16 +692,28 @@ function EtapaPrateleira({
   insumos,
   linhas,
   marcasPorInsumo,
+  fornecedores,
+  guardarTamanho,
+  onGuardarTamanho,
   onAlterar,
   onDesdobrar,
   onRemover,
+  onCriarMarca,
+  onCriarFornecedor,
+  onVincular,
 }: {
   insumos: Insumo[]
   linhas: Record<string, Linha[]>
   marcasPorInsumo: Record<string, Marca[]>
+  fornecedores: Fornecedor[]
+  guardarTamanho: Record<string, boolean>
+  onGuardarTamanho: (insumoId: string, valor: boolean) => void
   onAlterar: (insumoId: string, key: string, campo: keyof Linha, valor: string | boolean) => void
   onDesdobrar: (insumoId: string) => void
   onRemover: (insumoId: string, key: string) => void
+  onCriarMarca: (insumoId: string, nome: string, fornecedorId?: string) => Promise<Marca | null>
+  onCriarFornecedor: (nome: string) => Promise<Fornecedor | null>
+  onVincular: (insumoId: string, marcaId: string, fornecedorId: string) => void
 }) {
   return (
     <div className="space-y-3">
@@ -582,6 +788,19 @@ function EtapaPrateleira({
                     </label>
                   </div>
 
+                  {/* Só na primeira linha: o tamanho é do insumo, não da linha. */}
+                  {idx === 0 && num(l.tamanho) > 0 && num(l.tamanho) !== insumo.tamanho_embalagem && (
+                    <label className="mt-2 flex items-center gap-2 text-xs text-gray-600">
+                      <input
+                        type="checkbox"
+                        checked={guardarTamanho[insumo.id] ?? false}
+                        onChange={e => onGuardarTamanho(insumo.id, e.target.checked)}
+                        className="rounded border-gray-300"
+                      />
+                      Guardar no cadastro do insumo, para os próximos recebimentos
+                    </label>
+                  )}
+
                   <div className="mt-3">
                     <label className="flex flex-col gap-1">
                       <span className="text-xs font-semibold uppercase tracking-wide text-gray-500">
@@ -640,25 +859,42 @@ function EtapaPrateleira({
                       </label>
                     </div>
 
-                    {marcas.length > 0 && (
-                      <label className="flex flex-col gap-1">
-                        <span className="text-xs font-semibold uppercase tracking-wide text-gray-500">
-                          Marca (opcional)
-                        </span>
-                        <select
-                          value={l.marca_id}
-                          onChange={e => onAlterar(insumo.id, l.key, 'marca_id', e.target.value)}
-                          className="rounded-lg border border-gray-300 bg-white px-3 py-2.5 text-sm focus:border-brand-500 focus:outline-none focus:ring-[3px] focus:ring-brand-500/10"
-                        >
-                          <option value="">Sem marca</option>
-                          {marcas.map(m => (
-                            <option key={m.id} value={m.id}>
-                              {m.nome}
-                            </option>
-                          ))}
-                        </select>
-                      </label>
-                    )}
+                    <SeletorComNovo
+                      rotulo="Fornecedor (opcional)"
+                      vazio="Sem fornecedor"
+                      opcoes={fornecedores}
+                      valor={l.fornecedor_id}
+                      onEscolher={id => {
+                        onAlterar(insumo.id, l.key, 'fornecedor_id', id)
+                        if (id && l.marca_id) onVincular(insumo.id, l.marca_id, id)
+                      }}
+                      onCriar={async nome => {
+                        const f = await onCriarFornecedor(nome)
+                        if (f) {
+                          onAlterar(insumo.id, l.key, 'fornecedor_id', f.id)
+                          if (l.marca_id) onVincular(insumo.id, l.marca_id, f.id)
+                        }
+                      }}
+                      rotuloNovo="nome do fornecedor"
+                      acaoNovo="cadastrar fornecedor"
+                    />
+
+                    <SeletorComNovo
+                      rotulo="Marca (opcional)"
+                      vazio="Sem marca"
+                      opcoes={marcas}
+                      valor={l.marca_id}
+                      onEscolher={id => {
+                        onAlterar(insumo.id, l.key, 'marca_id', id)
+                        if (id && l.fornecedor_id) onVincular(insumo.id, id, l.fornecedor_id)
+                      }}
+                      onCriar={async nome => {
+                        const m = await onCriarMarca(insumo.id, nome, l.fornecedor_id || undefined)
+                        if (m) onAlterar(insumo.id, l.key, 'marca_id', m.id)
+                      }}
+                      rotuloNovo="nome da marca"
+                      acaoNovo="cadastrar marca"
+                    />
                   </div>
                 </div>
               ))}
@@ -677,6 +913,105 @@ function EtapaPrateleira({
   )
 }
 
+/**
+ * Um select que também cadastra.
+ *
+ * No onboarding é a regra, não a exceção: a pessoa descobre que falta a marca
+ * exatamente na hora de escolhê-la. Mandá-la para outra tela custaria tudo que
+ * ela já digitou aqui.
+ */
+function SeletorComNovo({
+  rotulo,
+  vazio,
+  opcoes,
+  valor,
+  onEscolher,
+  onCriar,
+  rotuloNovo,
+  acaoNovo,
+}: {
+  rotulo: string
+  vazio: string
+  opcoes: { id: string; nome: string }[]
+  valor: string
+  onEscolher: (id: string) => void
+  onCriar: (nome: string) => Promise<void>
+  rotuloNovo: string
+  acaoNovo: string
+}) {
+  const [criando, setCriando] = useState(false)
+  const [nome, setNome] = useState('')
+  const [salvando, setSalvando] = useState(false)
+
+  async function confirmar() {
+    if (!nome.trim()) return
+    setSalvando(true)
+    await onCriar(nome)
+    setSalvando(false)
+    setNome('')
+    setCriando(false)
+  }
+
+  return (
+    <div className="flex flex-col gap-1">
+      <span className="text-xs font-semibold uppercase tracking-wide text-gray-500">{rotulo}</span>
+
+      {criando ? (
+        <div className="flex gap-2">
+          <input
+            autoFocus
+            value={nome}
+            onChange={e => setNome(e.target.value)}
+            onKeyDown={e => {
+              if (e.key === 'Enter') { e.preventDefault(); confirmar() }
+              if (e.key === 'Escape') { setCriando(false); setNome('') }
+            }}
+            placeholder={rotuloNovo}
+            className="flex-1 min-w-0 rounded-lg border border-brand-400 bg-white px-3 py-2.5 text-sm focus:outline-none focus:ring-[3px] focus:ring-brand-500/10"
+          />
+          <button
+            type="button"
+            onClick={confirmar}
+            disabled={salvando || !nome.trim()}
+            className="shrink-0 rounded-lg bg-brand-600 px-3 py-2 text-sm font-medium text-white disabled:opacity-40"
+          >
+            Salvar
+          </button>
+          <button
+            type="button"
+            onClick={() => { setCriando(false); setNome('') }}
+            className="shrink-0 rounded-lg border border-gray-300 px-3 py-2 text-sm text-gray-600"
+          >
+            ✕
+          </button>
+        </div>
+      ) : (
+        <>
+          <select
+            value={valor}
+            onChange={e => onEscolher(e.target.value)}
+            className="rounded-lg border border-gray-300 bg-white px-3 py-2.5 text-sm focus:border-brand-500 focus:outline-none focus:ring-[3px] focus:ring-brand-500/10"
+          >
+            <option value="">{vazio}</option>
+            {opcoes.map(o => (
+              <option key={o.id} value={o.id}>
+                {o.nome}
+              </option>
+            ))}
+          </select>
+          <button
+            type="button"
+            onClick={() => setCriando(true)}
+            className="self-start text-xs font-medium text-brand-700 hover:underline"
+          >
+            + {acaoNovo}
+          </button>
+        </>
+      )}
+    </div>
+  )
+}
+
 // ── Etapa 2 ───────────────────────────────────────────────────
 function EtapaBaldes({
   insumos,
@@ -686,6 +1021,8 @@ function EtapaBaldes({
   setBaldes,
   setRecipientes,
   conteudoDoBalde,
+  onCriarRecipiente,
+  onExcluirRecipiente,
 }: {
   insumos: Insumo[]
   recipientesPorInsumo: Record<string, Recipiente[]>
@@ -694,8 +1031,15 @@ function EtapaBaldes({
   setBaldes: React.Dispatch<React.SetStateAction<Record<string, Balde>>>
   setRecipientes: React.Dispatch<React.SetStateAction<Recipiente[]>>
   conteudoDoBalde: (rec: Recipiente, insumo: Insumo) => number
+  onCriarRecipiente: (
+    insumo: Insumo,
+    dados: { nome: string; capacidade: string; tara: string },
+  ) => Promise<boolean>
+  onExcluirRecipiente: (rec: Recipiente) => Promise<boolean>
 }) {
-  const comRecipientes = insumos.filter(i => (recipientesPorInsumo[i.id] ?? []).length > 0)
+  // Todos os insumos aparecem, mesmo sem recipiente: é aqui que se descobre
+  // que falta cadastrar o pote, e daqui se cadastra.
+  const comRecipientes = insumos
 
   function ajustar(id: string, patch: Partial<Balde>) {
     setBaldes(prev => ({ ...prev, [id]: { ...prev[id], ...patch } }))
@@ -739,11 +1083,21 @@ function EtapaBaldes({
                   <div key={rec.id} className="rounded-lg border border-gray-200 p-3">
                     <div className="flex items-baseline justify-between gap-2 mb-2">
                       <span className="text-sm font-medium text-gray-800 truncate">{rec.nome}</span>
-                      {rec.capacidade_max != null && (
-                        <span className="text-xs text-gray-400 shrink-0">
-                          cabe {rec.capacidade_max} {insumo.unidade_medida}
-                        </span>
-                      )}
+                      <span className="flex items-center gap-2 shrink-0">
+                        {rec.capacidade_max != null && (
+                          <span className="text-xs text-gray-400">
+                            cabe {rec.capacidade_max} {insumo.unidade_medida}
+                          </span>
+                        )}
+                        <button
+                          type="button"
+                          onClick={() => onExcluirRecipiente(rec)}
+                          title="Excluir recipiente"
+                          className="text-xs text-red-600 hover:underline"
+                        >
+                          excluir
+                        </button>
+                      </span>
                     </div>
 
                     <div className="flex gap-2">
@@ -822,9 +1176,102 @@ function EtapaBaldes({
                 )
               })}
             </div>
+
+            <NovoRecipiente insumo={insumo} onCriar={onCriarRecipiente} />
           </Card>
         )
       })}
+    </div>
+  )
+}
+
+/** Cadastro de pote sem sair da contagem — o caso do insumo que ainda não tem. */
+function NovoRecipiente({
+  insumo,
+  onCriar,
+}: {
+  insumo: Insumo
+  onCriar: (
+    insumo: Insumo,
+    dados: { nome: string; capacidade: string; tara: string },
+  ) => Promise<boolean>
+}) {
+  const [aberto, setAberto] = useState(false)
+  const [nome, setNome] = useState('')
+  const [capacidade, setCapacidade] = useState('')
+  const [tara, setTara] = useState('')
+  const [salvando, setSalvando] = useState(false)
+  const b = bancada(insumo.unidade_medida)
+
+  async function salvar() {
+    if (!nome.trim()) return
+    setSalvando(true)
+    const ok = await onCriar(insumo, { nome, capacidade, tara })
+    setSalvando(false)
+    if (ok) {
+      setNome(''); setCapacidade(''); setTara(''); setAberto(false)
+    }
+  }
+
+  if (!aberto) {
+    return (
+      <button
+        type="button"
+        onClick={() => setAberto(true)}
+        className="mt-3 text-xs font-medium text-brand-700 hover:underline"
+      >
+        + cadastrar recipiente para {insumo.nome}
+      </button>
+    )
+  }
+
+  return (
+    <div className="mt-3 rounded-lg border border-brand-200 bg-brand-50/50 p-3 space-y-2">
+      <input
+        autoFocus
+        value={nome}
+        onChange={e => setNome(e.target.value)}
+        placeholder="Nome do pote (ex: Pote G Açúcar #3)"
+        className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2.5 text-sm"
+      />
+      <div className="grid grid-cols-2 gap-2">
+        <input
+          type="number"
+          inputMode="decimal"
+          value={capacidade}
+          onChange={e => setCapacidade(e.target.value)}
+          placeholder={`Limite (${insumo.unidade_medida})`}
+          className="rounded-lg border border-gray-300 bg-white px-3 py-2.5 text-sm"
+        />
+        <input
+          type="number"
+          inputMode="decimal"
+          value={tara}
+          onChange={e => setTara(e.target.value)}
+          placeholder={`Peso vazio (${b.rotulo})`}
+          className="rounded-lg border border-gray-300 bg-white px-3 py-2.5 text-sm"
+        />
+      </div>
+      <div className="flex gap-2">
+        <button
+          type="button"
+          onClick={salvar}
+          disabled={salvando || !nome.trim()}
+          className="rounded-lg bg-brand-600 px-3 py-2 text-sm font-medium text-white disabled:opacity-40"
+        >
+          Salvar recipiente
+        </button>
+        <button
+          type="button"
+          onClick={() => setAberto(false)}
+          className="rounded-lg border border-gray-300 px-3 py-2 text-sm text-gray-600"
+        >
+          Cancelar
+        </button>
+      </div>
+      <p className="text-xs text-gray-500">
+        O QR do pote é gerado agora. Imprima a etiqueta depois em Recipientes.
+      </p>
     </div>
   )
 }
