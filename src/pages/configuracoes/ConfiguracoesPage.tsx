@@ -1,4 +1,5 @@
 import { useEffect, useState, type FormEvent } from 'react'
+import { Link } from 'react-router-dom'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../contexts/AuthContext'
 import type { CategoriaInsumo, Empresa, Usuario } from '../../types/database.types'
@@ -10,7 +11,7 @@ import { ALL_ROUTES } from '../../lib/permissions'
 import { MotivosDescarteTab } from './MotivosDescarteTab'
 import { EtiquetasTab } from './EtiquetasTab'
 
-type Tab = 'perfil' | 'senha' | 'empresa' | 'funcionarios' | 'categorias' | 'producao' | 'etiquetas' | 'travas'
+type Tab = 'perfil' | 'senha' | 'empresa' | 'funcionarios' | 'categorias' | 'producao' | 'etiquetas' | 'travas' | 'abertura'
 
 /**
  * As regras que o sistema pode impor. Cada uma pode BLOQUEAR (recusa sempre)
@@ -81,6 +82,7 @@ export function ConfiguracoesPage() {
     { key: 'producao', label: 'Produção' },
     { key: 'etiquetas', label: 'Etiquetas' },
     { key: 'travas', label: 'Travas', adminOnly: true },
+    { key: 'abertura', label: 'Abertura de estoque', adminOnly: true },
   ]
 
   const [activeTab, setActiveTab] = useState<Tab>('perfil')
@@ -125,6 +127,7 @@ export function ConfiguracoesPage() {
       )}
       {activeTab === 'etiquetas' && <EtiquetasTab />}
       {activeTab === 'travas' && isAdmin && <TravasTab />}
+      {activeTab === 'abertura' && isAdmin && <AberturaTab />}
     </div>
   )
 }
@@ -144,6 +147,35 @@ export function ConfiguracoesPage() {
  * Mudar aqui vale para os cálculos daqui para a frente. Sessões já fechadas
  * guardam o consumo do dia em que aconteceram e não são recalculadas.
  */
+/**
+ * A porta de entrada de quem está migrando a operação para o sistema.
+ *
+ * Fica em Configurações e não no Recebimento de propósito: saldo de abertura
+ * não é compra, e misturar os dois na mesma tela é o começo de um relatório
+ * de entradas que ninguém consegue explicar depois.
+ */
+function AberturaTab() {
+  return (
+    <Card className="p-5">
+      <h2 className="font-semibold text-gray-900 mb-1">Abertura de estoque</h2>
+      <p className="text-sm text-gray-600 mb-4">
+        Para quem está começando a usar o sistema com estoque já existente. Você conta o que
+        está na prateleira, pesa o que está nos baldes, e o sistema cria os lotes e as
+        etiquetas com QR — sem precisar inventar um recebimento que nunca houve.
+      </p>
+      <ol className="text-sm text-gray-600 space-y-1.5 mb-4 list-decimal pl-5">
+        <li>Confira antes se os insumos, as marcas e os recipientes já estão cadastrados.</li>
+        <li>Conte o que está fora dos baldes.</li>
+        <li>Pese o que está dentro deles.</li>
+        <li>Imprima as etiquetas e cole nas embalagens.</li>
+      </ol>
+      <Link to="/configuracoes/abertura-estoque">
+        <Button size="lg">Começar abertura de estoque</Button>
+      </Link>
+    </Card>
+  )
+}
+
 function ProducaoTab() {
   const { profile } = useAuth()
   const [fichas, setFichas] = useState<

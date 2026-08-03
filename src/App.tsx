@@ -31,6 +31,7 @@ import { NovaContagemEpPage } from './pages/contagem/NovaContagemEpPage'
 import { ContagemResumoPage } from './pages/contagem/ContagemResumoPage'
 import { DevPage } from './pages/dev/DevPage'
 import { ConfiguracoesPage } from './pages/configuracoes/ConfiguracoesPage'
+import { AberturaEstoquePage } from './pages/configuracoes/AberturaEstoquePage'
 import { RecipienteListPage } from './pages/recipientes/RecipienteListPage'
 import { EtiquetaRecipientePage } from './pages/recipientes/EtiquetaRecipientePage'
 import { ProdutosEstoquePage } from './pages/estoque/ProdutosEstoquePage'
@@ -84,6 +85,7 @@ export default function App() {
           <Route path="recipientes" element={<RecipienteListPage />} />
           <Route path="recipientes/:id/etiqueta" element={<EtiquetaRecipientePage />} />
           <Route path="configuracoes" element={<ConfiguracoesPage />} />
+          <Route path="configuracoes/abertura-estoque" element={<AberturaEstoquePage />} />
           <Route path="dev" element={<DevPage />} />
         </Route>
         <Route path="*" element={<Navigate to="/dashboard" replace />} />
