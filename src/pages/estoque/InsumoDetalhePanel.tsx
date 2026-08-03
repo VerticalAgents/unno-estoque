@@ -68,33 +68,29 @@ function DescarteModal({
     setError('')
     setSaving(true)
 
-    const _loteId = alvo.tipo === 'lote' ? alvo.lote.id : (alvo.recipiente as RecipienteEP & { lote_id?: string }).insumo_id
-    const localId = alvo.tipo === 'recipiente' ? alvo.recipiente.id : null
-    void _loteId
-
-    // Para recipiente EP, precisamos do lote atual dele
-    let resolvedLoteId = alvo.tipo === 'lote' ? alvo.lote.id : ''
-    if (alvo.tipo === 'recipiente') {
-      const { data } = await supabase
-        .from('locais_estado_atual')
-        .select('lote_id')
-        .eq('local_id', alvo.recipiente.id)
-        .maybeSingle()
-      resolvedLoteId = data?.lote_id ?? ''
-      if (!resolvedLoteId) { setError('Não foi possível identificar o lote deste recipiente.'); setSaving(false); return }
-    }
-
-    const { data, error: rpcError } = await supabase.rpc('registrar_perda_insumo', {
-      p_empresa_id:     profile.empresa_id,
-      p_lote_id:        resolvedLoteId,
-      p_insumo_id:      insumo.insumo_id,
-      p_local_id:       localId,
-      p_quantidade:     qty,
-      p_unidade:        insumo.unidade_medida,
-      p_motivo:         motivo,
-      p_descricao:      descricao || null,
-      p_responsavel_id: profile.id,
-    })
+    // O recipiente tem RPC própria: ele pode conter vários lotes misturados, e
+    // o descarte é rateado entre eles no banco. Mandar um lote só daqui debitava
+    // tudo do primeiro — e a baixa ia parar no estoque central, não no pote.
+    const { data, error: rpcError } = alvo.tipo === 'recipiente'
+      ? await supabase.rpc('registrar_perda_recipiente', {
+          p_empresa_id:     profile.empresa_id,
+          p_local_id:       alvo.recipiente.id,
+          p_quantidade:     qty,
+          p_motivo:         motivo,
+          p_descricao:      descricao || null,
+          p_responsavel_id: profile.id,
+        })
+      : await supabase.rpc('registrar_perda_insumo', {
+          p_empresa_id:     profile.empresa_id,
+          p_lote_id:        alvo.lote.id,
+          p_insumo_id:      insumo.insumo_id,
+          p_local_id:       null,
+          p_quantidade:     qty,
+          p_unidade:        insumo.unidade_medida,
+          p_motivo:         motivo,
+          p_descricao:      descricao || null,
+          p_responsavel_id: profile.id,
+        })
 
     setSaving(false)
     if (rpcError || !(data as { ok: boolean })?.ok) {
