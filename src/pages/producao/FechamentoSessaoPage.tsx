@@ -29,10 +29,13 @@ interface LocalRow {
   consumo_teorico: number
   local: { nome: string }
   insumo: { nome: string; unidade_medida: string }
-  lote: { codigo: string; unidade: string }
+  lote: { codigo: string; unidade: string; validade_pos_abertura: string | null }
   sobra: number
   zerado: boolean
 }
+
+/** "#2" antes de "#10" — comparação alfabética põe o 10 na frente. */
+const naturalmente = new Intl.Collator('pt-BR', { numeric: true, sensitivity: 'base' })
 
 // ── Persistence helpers ──────────────────────────────────────
 
@@ -78,14 +81,19 @@ export function FechamentoSessaoPage() {
    * Agrupa as linhas por recipiente. Um pote pode ter vários lotes desde que a
    * mistura foi liberada (migration 035), e a conferência é feita por pote.
    *
-   * A ordem é por validade: o pote cujo conteúdo vence antes aparece primeiro.
-   * É apenas SUGESTÃO — na prática a produção usa o que estiver à mão, e o
-   * sistema não impõe nada.
+   * A ordem é a MESMA fila que o banco usa para distribuir o teórico
+   * (migration 059): dentro de cada insumo, validade mais próxima primeiro e,
+   * empatando, o número menor. Se a tela ordenasse diferente, o "usar
+   * primeiro" apontaria um pote e os números apontariam outro.
+   *
+   * É SUGESTÃO — na prática a produção usa o que estiver à mão, e o sistema
+   * não impõe nada.
    */
   const potes = useMemo(() => {
     const mapa = new Map<string, {
-      local_id: string; nome: string; insumo: string; unidade: string
-      inicial: number; teorico: number; sobra: number; lotes: LocalRow[]
+      local_id: string; nome: string; insumo: string; insumo_id: string; unidade: string
+      inicial: number; teorico: number; sobra: number; validade: string
+      lotes: LocalRow[]
     }>()
 
     for (const l of locais) {
@@ -93,19 +101,36 @@ export function FechamentoSessaoPage() {
         local_id: l.local_id,
         nome: l.local?.nome ?? '—',
         insumo: l.insumo?.nome ?? '—',
+        insumo_id: l.insumo_id,
         unidade: l.lote?.unidade ?? l.insumo?.unidade_medida ?? '',
-        inicial: 0, teorico: 0, sobra: 0, lotes: [] as LocalRow[],
+        inicial: 0, teorico: 0, sobra: 0,
+        // sem validade vai para o fim da fila, não para o começo
+        validade: '9999-12-31',
+        lotes: [] as LocalRow[],
       }
       atual.inicial += l.quantidade_inicial
       atual.teorico += l.consumo_teorico ?? 0
+      const v = l.lote?.validade_pos_abertura
+      if (v && v < atual.validade) atual.validade = v
       atual.lotes.push(l)
       mapa.set(l.local_id, atual)
     }
 
-    return [...mapa.values()].map(p => ({
-      ...p,
-      sobra: sobraLocal[p.local_id] ?? p.inicial,
-    }))
+    const lista = [...mapa.values()]
+      .map(p => ({ ...p, sobra: sobraLocal[p.local_id] ?? p.inicial }))
+      .sort((a, b) =>
+        naturalmente.compare(a.insumo, b.insumo) ||
+        a.validade.localeCompare(b.validade) ||
+        naturalmente.compare(a.nome, b.nome))
+
+    // "Usar primeiro" é por INSUMO, não uma vez na página: cada insumo tem a
+    // sua fila. Marca o primeiro pote que a produção precisa de fato abrir.
+    const jaMarcado = new Set<string>()
+    return lista.map(p => {
+      const primeiro = p.teorico > 0 && !jaMarcado.has(p.insumo_id)
+      if (primeiro) jaMarcado.add(p.insumo_id)
+      return { ...p, primeiroDoInsumo: primeiro }
+    })
   }, [locais, sobraLocal])
 
   function setSobraLocalValue(localId: string, valor: number) {
@@ -139,7 +164,7 @@ export function FechamentoSessaoPage() {
         .select('*, ficha_tecnica:fichas_tecnicas(nome), ficha_versao:fichas_tecnicas_versoes(peso_medio_g, perda_esperada_g_forma)')
         .eq('sessao_id', id),
       supabase.from('sessoes_producao_locais')
-        .select('*, local:locais(nome), insumo:insumos(nome,unidade_medida), lote:lotes(codigo,unidade)')
+        .select('*, local:locais(nome), insumo:insumos(nome,unidade_medida), lote:lotes(codigo,unidade,validade_pos_abertura)')
         .eq('sessao_id', id),
     ]).then(([s, sk, loc]) => {
       if (s.data) setSessao(s.data as typeof sessao)
@@ -398,7 +423,7 @@ export function FechamentoSessaoPage() {
         {/* Um peso por RECIPIENTE, não por lote: a balança pesa o pote inteiro.
             Quando há mistura, o sistema rateia o consumo entre os lotes de dentro
             na proporção do que cada um tinha (fechar_sessao_producao). */}
-        {potes.map((p, idx) => {
+        {potes.map((p) => {
           const zerado = p.lotes.every(l => l.zerado)
           const consumoReal = p.inicial - p.sobra
           const desvio = getDesvioStatus(consumoReal, p.teorico)
@@ -411,7 +436,7 @@ export function FechamentoSessaoPage() {
                     {p.nome}
                     {/* Sugestão sem efeito no cálculo: quem produz usa o que
                         estiver à mão. Serve só para gastar antes o que vence antes. */}
-                    {idx === 0 && potes.length > 1 && (
+                    {p.primeiroDoInsumo && (
                       <span className="ml-2 text-[0.65rem] font-semibold uppercase tracking-wide text-brand-600 dark:text-brand-400">
                         sugerido usar primeiro
                       </span>
@@ -453,6 +478,15 @@ export function FechamentoSessaoPage() {
                 Inicial: {p.inicial.toFixed(3)} {p.unidade}
                 {p.teorico > 0 && ` · Teórico: ${p.teorico.toFixed(3)} ${p.unidade}`}
               </p>
+
+              {/* Com o teórico enfileirado (059), sobra pote que a produção do
+                  dia nem precisa abrir. Sem dizer isso, o pote sem número
+                  parece um campo que alguém esqueceu de preencher. */}
+              {p.teorico === 0 && (
+                <p className="text-xs text-gray-400 italic">
+                  A produção do dia não precisa deste recipiente.
+                </p>
+              )}
 
               {!zerado && (
                 <Input
