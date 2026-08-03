@@ -51,6 +51,18 @@
     }
   }
 
+  /* Folga para a faixa do gesto de home do iPhone, que fica desenhada por
+     cima de tudo. Precisa morar aqui, em folha de estilo: aplicado como
+     estilo em linha (via JavaScript), o WebKit do iOS descarta o `env()`
+     e a folga simplesmente não acontece — foi o que cobriu os rótulos da
+     barra inferior na primeira tentativa.
+
+     O `max` garante um respiro mesmo onde não há área segura declarada
+     (Android, e o iPhone quando o `env` volta zero). */
+  .folga-segura-baixo {
+    padding-bottom: max(env(safe-area-inset-bottom, 0px), 8px);
+  }
+
   /* Alvo de toque mínimo de 44px (recomendação de Apple e Google), para
      mão molhada e apressada de produção. Vale para os botões de ícone
      espalhados pelas listas, que hoje têm menos de 30px.

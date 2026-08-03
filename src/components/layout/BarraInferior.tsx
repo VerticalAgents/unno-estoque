@@ -65,11 +65,11 @@ export function BarraInferior({ onAbrirMenu }: { onAbrirMenu: () => void }) {
 
   return (
     <nav
+      // `folga-segura-baixo` (index.css) desvia da faixa do gesto de home do
+      // iPhone, que é desenhada por cima da tela. A folga mora no CSS de
+      // propósito: como estilo em linha o WebKit descarta o `env()`.
       className="lg:hidden shrink-0 border-t border-gray-200 dark:border-white/[.08]
-                 bg-white/90 dark:bg-unno-bg/85 backdrop-blur-xl"
-      // No iPhone sem botão físico, a faixa do gesto de home fica por cima
-      // de tudo. Sem esta folga, o último item nasce embaixo do risquinho.
-      style={{ paddingBottom: 'env(safe-area-inset-bottom, 0px)' }}
+                 bg-white/90 dark:bg-unno-bg/85 backdrop-blur-xl folga-segura-baixo"
     >
       <div className="flex items-stretch">
         {visiveis.map(item => {
