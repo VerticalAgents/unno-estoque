@@ -3,6 +3,7 @@ import { Outlet, Navigate, useLocation } from 'react-router-dom'
 import { useAuth } from '../../contexts/AuthContext'
 import { Sidebar } from './Sidebar'
 import { Header } from './Header'
+import { BarraInferior } from './BarraInferior'
 import { useDarkMode } from '../../hooks/useDarkMode'
 import { canAccess } from '../../lib/permissions'
 
@@ -46,6 +47,11 @@ export function Layout() {
         <main className="flex-1 overflow-y-auto">
           <Outlet />
         </main>
+
+        {/* Irmã do <main>, e não presa por cima dele: assim a rolagem já
+            para em cima da barra e nenhuma tela precisa reservar espaço
+            embaixo para não ficar escondida. */}
+        <BarraInferior onAbrirMenu={() => setSidebarOpen(true)} />
       </div>
     </div>
   )
