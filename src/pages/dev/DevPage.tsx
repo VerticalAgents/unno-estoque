@@ -95,58 +95,66 @@ export function DevPage() {
 
   // ── Limpeza ──────────────────────────────────────────────
 
+  /**
+   * A limpeza mora no banco (migration 062), não aqui.
+   *
+   * Antes eram oito chamadas emendadas sem conferir o erro de nenhuma. Bastava
+   * uma falhar para o botão dizer "Tudo limpo." com o estoque de pé — e era o
+   * que acontecia: `locais_lotes` nunca era apagada e bloqueava o DELETE em
+   * `lotes` por chave estrangeira. Numa função só, ou apaga tudo ou nada.
+   */
   const limparTudo = useAction(async () => {
     if (!eid) throw new Error('empresa_id ausente')
-    // Ordem respeita FK
-    await supabase.from('sessoes_producao_locais').delete().eq('sessao_id', supabase.from('sessoes_producao').select('id').eq('empresa_id', eid) as never)
-    await supabase.from('sessoes_producao_skus').delete().in('sessao_id',
-      (await supabase.from('sessoes_producao').select('id').eq('empresa_id', eid)).data?.map(r => r.id) ?? [])
-    await supabase.from('sessoes_producao').delete().eq('empresa_id', eid)
-    await supabase.from('perdas_insumos').delete().eq('empresa_id', eid)
-    await supabase.from('reembalagens').delete().eq('empresa_id', eid)
-    await supabase.from('movimentacoes_itens').delete().in('movimentacao_id',
-      (await supabase.from('movimentacoes').select('id').eq('empresa_id', eid)).data?.map(r => r.id) ?? [])
-    await supabase.from('locais_estado_atual').delete().in('local_id',
-      (await supabase.from('locais').select('id').eq('empresa_id', eid)).data?.map(r => r.id) ?? [])
-    await supabase.from('lotes').delete().eq('empresa_id', eid)
-    await supabase.from('movimentacoes').delete().eq('empresa_id', eid)
-    return 'Tudo limpo.'
+    const { data, error } = await supabase.rpc('dev_limpar_movimento', { p_empresa_id: eid })
+    if (error) throw error
+    const r = data as { lotes: number; sessoes: number; recipientes_esvaziados: number; movimentacoes: number }
+    return `${r.lotes} lote(s), ${r.recipientes_esvaziados} recipiente(s), `
+      + `${r.sessoes} sessão(ões) e ${r.movimentacoes} movimentação(ões) apagados.`
   })
 
   const limparLotes = useAction(async () => {
     if (!eid) throw new Error('empresa_id ausente')
-    await supabase.from('reembalagens').delete().eq('empresa_id', eid)
-    await supabase.from('movimentacoes_itens').delete().in('movimentacao_id',
-      (await supabase.from('movimentacoes').select('id').eq('empresa_id', eid)).data?.map(r => r.id) ?? [])
-    await supabase.from('locais_estado_atual').delete().in('local_id',
-      (await supabase.from('locais').select('id').eq('empresa_id', eid)).data?.map(r => r.id) ?? [])
-    await supabase.from('lotes').delete().eq('empresa_id', eid)
-    await supabase.from('movimentacoes').delete().eq('empresa_id', eid)
-    return 'Lotes e estoque limpos.'
+    const { data, error } = await supabase.rpc('dev_limpar_estoque', { p_empresa_id: eid })
+    if (error) throw error
+    const r = data as { lotes: number; recipientes_esvaziados: number }
+    return `${r.lotes} lote(s) e ${r.recipientes_esvaziados} recipiente(s) apagados.`
   })
 
   const limparEP = useAction(async () => {
     if (!eid) throw new Error('empresa_id ausente')
-    const { data: locais } = await supabase.from('locais').select('id').eq('empresa_id', eid)
-    await supabase.from('locais_estado_atual').delete().in('local_id', locais?.map(r => r.id) ?? [])
-    return 'Estado do EP zerado.'
+    const { data, error } = await supabase.rpc('dev_esvaziar_recipientes', { p_empresa_id: eid })
+    if (error) throw error
+    const r = data as { recipientes_esvaziados: number }
+    return r.recipientes_esvaziados === 0
+      ? 'Os recipientes já estavam vazios.'
+      : `${r.recipientes_esvaziados} recipiente(s) esvaziado(s).`
   })
 
   const limparSessoes = useAction(async () => {
     if (!eid) throw new Error('empresa_id ausente')
-    const { data: sessoes } = await supabase.from('sessoes_producao').select('id').eq('empresa_id', eid)
+    const { data: sessoes, error: e1 } = await supabase
+      .from('sessoes_producao').select('id').eq('empresa_id', eid)
+    if (e1) throw e1
     const ids = sessoes?.map(r => r.id) ?? []
     if (ids.length) {
-      await supabase.from('sessoes_producao_locais').delete().in('sessao_id', ids)
-      await supabase.from('sessoes_producao_skus').delete().in('sessao_id', ids)
+      // pos_producao cai por CASCADE; estas duas não têm.
+      const { error: e2 } = await supabase.from('sessoes_producao_locais').delete().in('sessao_id', ids)
+      if (e2) throw e2
+      const { error: e3 } = await supabase.from('sessoes_producao_skus').delete().in('sessao_id', ids)
+      if (e3) throw e3
     }
-    await supabase.from('sessoes_producao').delete().eq('empresa_id', eid)
+    const { error: e4 } = await supabase.from('sessoes_producao').delete().eq('empresa_id', eid)
+    if (e4) throw e4
     return `${ids.length} sessão(ões) removida(s).`
   })
 
   const limparPerdas = useAction(async () => {
     if (!eid) throw new Error('empresa_id ausente')
-    const { data } = await supabase.from('perdas_insumos').delete().eq('empresa_id', eid).select('id')
+    // Era `perdas_insumos`, no plural — tabela que não existe. O erro nunca
+    // aparecia porque ninguém olhava o retorno.
+    const { data, error } = await supabase
+      .from('perdas_insumo').delete().eq('empresa_id', eid).select('id')
+    if (error) throw error
     return `${data?.length ?? 0} perda(s) removida(s).`
   })
 
@@ -318,19 +326,19 @@ export function DevPage() {
         <Section title="Limpeza">
           <ActionCard
             label="Limpar tudo"
-            description="Remove lotes, estoque, movimentações, reembalagens, sessões de produção e perdas."
+            description="Apaga todo o movimento: lotes, conteúdo dos recipientes, movimentações, sessões, contagens, expedições, pós-produção, perdas e reembalagens. Cadastros (insumos, recipientes, fichas, usuários) e planos de semana ficam."
             danger
             action={limparTudo}
           />
           <ActionCard
             label="Limpar lotes e estoque"
-            description="Remove lotes, movimentações e estado do EP. Mantém sessões de produção e perdas."
+            description="Apaga lotes, conteúdo dos recipientes, movimentações e perdas. As sessões continuam, mas perdem o vínculo com os recipientes."
             danger
             action={limparLotes}
           />
           <ActionCard
-            label="Zerar apenas EP"
-            description="Reseta locais_estado_atual. Lotes continuam no EC."
+            label="Esvaziar recipientes (EP)"
+            description="Despeja o conteúdo dos recipientes fora. O saldo NÃO volta para o estoque central: a transferência já o havia debitado de lá."
             danger
             action={limparEP}
           />
