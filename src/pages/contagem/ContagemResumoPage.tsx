@@ -160,16 +160,25 @@ export function ContagemResumoPage() {
               <th className="text-left px-4 py-2.5 font-medium text-gray-600">Insumo</th>
               <th className="text-right px-3 py-2.5 font-medium text-gray-600">Teórico</th>
               <th className="text-right px-3 py-2.5 font-medium text-gray-600">Físico</th>
-              <th className="text-right px-4 py-2.5 font-medium text-gray-600">Dif.</th>
+              <th className="text-right px-3 py-2.5 font-medium text-gray-600">Dif.</th>
+              {/* É esta coluna que vira a taxa de perda do insumo: com o
+                  fechamento dando baixa pelo teórico (063), a auditoria virou
+                  a única medição real de perda. */}
+              <th className="text-right px-4 py-2.5 font-medium text-gray-600">Perda</th>
             </tr>
           </thead>
           <tbody>
             {itens.map(item => {
               const dif = (item.qtd_fisica ?? item.qtd_teorica) - item.qtd_teorica
+              // Perda positiva = faltou no estoque. `dif` é o contrário (físico
+              // menos teórico), daí o sinal invertido.
+              const perdaPct = item.qtd_fisica != null && item.qtd_teorica > 0
+                ? (-dif / item.qtd_teorica) * 100
+                : null
               const isExpanded = expandedId === item.id
               return (
                 <tr key={item.id} className="group">
-                  <td colSpan={4} className="p-0">
+                  <td colSpan={5} className="p-0">
                     <button
                       onClick={() => toggleExpand(item.id)}
                       className="w-full flex items-center border-b border-gray-100 hover:bg-gray-50 transition-colors"
@@ -181,10 +190,19 @@ export function ContagemResumoPage() {
                       <td className="text-right px-3 py-2.5 text-gray-600 w-20">{item.qtd_teorica.toFixed(1)}</td>
                       <td className="text-right px-3 py-2.5 text-gray-600 w-20">{item.qtd_fisica?.toFixed(1) ?? '—'}</td>
                       <td className={[
-                        'text-right px-4 py-2.5 font-medium w-20',
+                        'text-right px-3 py-2.5 font-medium w-20',
                         dif < 0 ? 'text-red-600' : dif > 0 ? 'text-emerald-600' : 'text-gray-400',
                       ].join(' ')}>
                         {dif !== 0 ? (dif > 0 ? '+' : '') + dif.toFixed(1) : '—'}
+                      </td>
+                      <td className={[
+                        'text-right px-4 py-2.5 font-medium w-20',
+                        perdaPct == null ? 'text-gray-300'
+                          : perdaPct <= 3 ? 'text-emerald-600'
+                          : perdaPct <= 8 ? 'text-yellow-600' : 'text-red-600',
+                      ].join(' ')}>
+                        {perdaPct == null ? '—'
+                          : `${perdaPct > 0 ? '+' : ''}${perdaPct.toFixed(1)}%`}
                       </td>
                     </button>
 

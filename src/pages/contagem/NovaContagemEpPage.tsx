@@ -6,10 +6,24 @@ import { QRScanner } from '../../components/qr/QRScanner'
 import { Button } from '../../components/ui/Button'
 import { Input } from '../../components/ui/Input'
 import type { ContagemInsumo, ContagemEpLocal, StatusFisico } from '../../types/contagem'
+import { bancada, daBancada, emBancada, usaTara } from '../../lib/unidades'
 
 type InsumoJoined = ContagemInsumo & {
   insumo: { nome: string; codigo: string; unidade_medida: string }
 }
+
+/**
+ * UNIDADES NESTA TELA — a confusão aqui inflava o estoque em mil vezes.
+ *
+ * `contagem_ep_locais.peso_bruto` e `peso_tara` são em GRAMAS: é peso de
+ * recipiente, mesma convenção de `locais.peso_tara`.
+ *
+ * `qtd_liquida` e `qtd_estado_atual` são na UNIDADE DO INSUMO (kg, quase
+ * sempre), porque `aplicar_contagem` entrega `qtd_liquida` direto a
+ * `ajustar_conteudo_recipiente`, que escreve em `locais_lotes`.
+ *
+ * Converter na fronteira, portanto: a balança fala grama, o banco fala quilo.
+ */
 
 export function NovaContagemEpPage() {
   const { id } = useParams<{ id: string }>()
@@ -46,6 +60,9 @@ export function NovaContagemEpPage() {
   }, [id])
 
   const currentItem = itens[currentIdx]
+  // A balança fala a unidade da bancada; o banco, a do cadastro.
+  const unidade = currentItem?.insumo?.unidade_medida ?? ''
+  const b = bancada(unidade)
 
   useEffect(() => {
     if (!currentItem) return
@@ -97,8 +114,9 @@ export function NovaContagemEpPage() {
       return
     }
 
-    // Verifica se tem tara cadastrada
-    if (!localMatch.peso_tara || localMatch.peso_tara === 0) {
+    // Tara só faz sentido onde se pesa. Em insumo medido em mL ou unidade o
+    // operador informa o conteúdo direto, sem descontar recipiente.
+    if (usaTara(unidade) && !localMatch.peso_tara) {
       setShowTaraPrompt(true)
       setTaraInput('')
     }
@@ -157,8 +175,12 @@ export function NovaContagemEpPage() {
     const localItem = locais.find(l => l.id === activeLocalId)
     if (!localItem) return
 
-    const tara = localItem.peso_tara ?? 0
-    const liquido = Math.max(0, peso - tara)
+    // Peso e tara vêm da balança, em gramas. `qtd_liquida` vai para o banco na
+    // unidade do insumo — era aqui que 4,8 kg viravam 4800 e o estoque físico
+    // saía mil vezes maior.
+    const tara = usaTara(unidade) ? (localItem.peso_tara ?? 0) : 0
+    const liquidoNaBalanca = Math.max(0, peso - tara)
+    const liquido = daBancada(liquidoNaBalanca, b.fator)
 
     await supabase.from('contagem_ep_locais').update({
       status_fisico: 'usado',
@@ -337,7 +359,7 @@ export function NovaContagemEpPage() {
                   min="0"
                   value={taraInput}
                   onChange={e => setTaraInput(e.target.value)}
-                  placeholder="Peso tara (g)"
+                  placeholder={`Peso do recipiente vazio (${b.rotulo})`}
                 />
                 <Button size="sm" onClick={salvarTara} disabled={!taraInput}>
                   Salvar
@@ -389,22 +411,35 @@ export function NovaContagemEpPage() {
               {activeLocal.status_fisico === 'usado' && (
                 <div className="space-y-2">
                   <Input
-                    label="Peso bruto (g)"
+                    label={usaTara(unidade)
+                      ? `Peso na balança, com recipiente (${b.rotulo})`
+                      : `Conteúdo do recipiente (${b.rotulo})`}
                     type="number"
-                    step="1"
+                    step={b.fator === 1 ? '0.001' : '1'}
                     min="0"
                     value={pesoBruto}
                     onChange={e => setPesoBruto(e.target.value)}
-                    placeholder="Peso na balança com recipiente"
+                    placeholder={usaTara(unidade) ? 'Peso na balança com recipiente' : 'Quanto há dentro'}
                   />
-                  {pesoBruto && (
-                    <div className="text-xs text-gray-600 space-y-0.5">
-                      <p>Tara: {activeLocal.peso_tara ?? 0}g</p>
-                      <p className="font-semibold text-gray-900">
-                        Líquido: {Math.max(0, parseFloat(pesoBruto) - (activeLocal.peso_tara ?? 0)).toFixed(0)}g
-                      </p>
-                    </div>
-                  )}
+                  {pesoBruto && (() => {
+                    // A conta fica à vista: sem mostrar, a subtração da tara é
+                    // um ato de fé, e tara errada passa despercebida.
+                    const tara = usaTara(unidade) ? (activeLocal.peso_tara ?? 0) : 0
+                    const liquidoBalanca = Math.max(0, parseFloat(pesoBruto) - tara)
+                    return (
+                      <div className="text-xs text-gray-600 space-y-0.5">
+                        {tara > 0 && <p>Tara: {tara} {b.rotulo}</p>}
+                        <p className="font-semibold text-gray-900">
+                          Conteúdo: {Math.round(liquidoBalanca * 1000) / 1000} {b.rotulo}
+                          {b.fator !== 1 && (
+                            <span className="font-normal text-gray-500">
+                              {' '}({emBancada(daBancada(liquidoBalanca, b.fator), 1)} {unidade})
+                            </span>
+                          )}
+                        </p>
+                      </div>
+                    )
+                  })()}
                   <Button size="md" fullWidth onClick={salvarPeso} disabled={!pesoBruto}>
                     Confirmar peso
                   </Button>

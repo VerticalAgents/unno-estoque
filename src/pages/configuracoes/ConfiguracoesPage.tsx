@@ -8,8 +8,9 @@ import { Input, Select } from '../../components/ui/Input'
 import { Badge } from '../../components/ui/Badge'
 import { ALL_ROUTES } from '../../lib/permissions'
 import { MotivosDescarteTab } from './MotivosDescarteTab'
+import { EtiquetasTab } from './EtiquetasTab'
 
-type Tab = 'perfil' | 'senha' | 'empresa' | 'funcionarios' | 'categorias' | 'producao' | 'travas'
+type Tab = 'perfil' | 'senha' | 'empresa' | 'funcionarios' | 'categorias' | 'producao' | 'etiquetas' | 'travas'
 
 /**
  * As regras que o sistema pode impor. Cada uma pode BLOQUEAR (recusa sempre)
@@ -78,6 +79,7 @@ export function ConfiguracoesPage() {
     { key: 'funcionarios', label: 'Funcionários', adminOnly: true },
     { key: 'categorias', label: 'Categorias' },
     { key: 'producao', label: 'Produção' },
+    { key: 'etiquetas', label: 'Etiquetas' },
     { key: 'travas', label: 'Travas', adminOnly: true },
   ]
 
@@ -121,6 +123,7 @@ export function ConfiguracoesPage() {
           <MotivosDescarteTab />
         </div>
       )}
+      {activeTab === 'etiquetas' && <EtiquetasTab />}
       {activeTab === 'travas' && isAdmin && <TravasTab />}
     </div>
   )

@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useState } from 'react'
+import { useEffect, useState } from 'react'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../contexts/AuthContext'
 import { Card } from '../../components/ui/Card'
@@ -20,24 +20,9 @@ interface SessaoRow {
   }[]
 }
 
-/** Uma linha da view `v_perda_por_insumo` (migration 060). */
-interface PerdaInsumoRow {
-  sessao_id: string
-  insumo_codigo: string
-  insumo_nome: string
-  unidade_medida: string
-  categoria: string | null
-  categoria_cor: string | null
-  teorico: number
-  consumido: number
-  desvio: number
-  perda_pct: number | null
-}
-
 interface WeekBucket {
   label: string
   produzido: number
-  perdaInsumos: number
   perdaProduto: number
   count: number
 }
@@ -48,24 +33,6 @@ export function HistoricoProducaoPage() {
   const [loading, setLoading] = useState(true)
   const [periodo, setPeriodo] = useState(90)
   const [filtroProduto, setFiltroProduto] = useState('')
-  // Perda aberta por insumo, carregada só quando a sessão é expandida: são
-  // ~18 linhas por sessão e quase nunca se olha todas as sessões.
-  const [expandida, setExpandida] = useState<string | null>(null)
-  const [perdas, setPerdas] = useState<Record<string, PerdaInsumoRow[]>>({})
-
-  function alternarDetalhe(sessaoId: string) {
-    if (expandida === sessaoId) { setExpandida(null); return }
-    setExpandida(sessaoId)
-    if (perdas[sessaoId]) return
-    supabase
-      .from('v_perda_por_insumo')
-      .select('*')
-      .eq('sessao_id', sessaoId)
-      // Maior perda primeiro: é o que se quer ver, não a ordem do cadastro.
-      .order('perda_pct', { ascending: false })
-      .then(({ data }) => setPerdas(p => ({ ...p, [sessaoId]: (data ?? []) as PerdaInsumoRow[] })))
-  }
-
   useEffect(() => {
     if (!profile) return
     setLoading(true)
@@ -100,8 +67,6 @@ export function HistoricoProducaoPage() {
   })
 
   const totalProduzido = filtered.reduce((acc, s) => acc + s.skus.reduce((a, sk) => a + (sk.quantidade_produzida ?? 0), 0), 0)
-  const sessoesComPerda = filtered.filter((s) => s.fator_perda_insumos != null)
-  const mediaInsumos = sessoesComPerda.length > 0 ? sessoesComPerda.reduce((a, s) => a + (s.fator_perda_insumos ?? 0), 0) / sessoesComPerda.length : 0
   const sessoesComPerdaProd = filtered.filter((s) => s.fator_perda_produto != null)
   const mediaProduto = sessoesComPerdaProd.length > 0 ? sessoesComPerdaProd.reduce((a, s) => a + (s.fator_perda_produto ?? 0), 0) / sessoesComPerdaProd.length : 0
 
@@ -123,12 +88,10 @@ export function HistoricoProducaoPage() {
         return d >= weekStart && d <= weekEnd
       })
       const produzido = sessoesSemana.reduce((a, s) => a + s.skus.reduce((a2, sk) => a2 + (sk.quantidade_produzida ?? 0), 0), 0)
-      const pi = sessoesSemana.filter((s) => s.fator_perda_insumos != null)
       const pp = sessoesSemana.filter((s) => s.fator_perda_produto != null)
       weekBuckets.push({
         label,
         produzido,
-        perdaInsumos: pi.length > 0 ? pi.reduce((a, s) => a + (s.fator_perda_insumos ?? 0), 0) / pi.length : 0,
         perdaProduto: pp.length > 0 ? pp.reduce((a, s) => a + (s.fator_perda_produto ?? 0), 0) / pp.length : 0,
         count: sessoesSemana.length,
       })
@@ -159,17 +122,14 @@ export function HistoricoProducaoPage() {
       </div>
 
       {/* Cards resumo */}
-      <div className="grid grid-cols-3 gap-3 mb-6">
+      {/* A perda de insumo saiu daqui: o fechamento passou a dar baixa pelo
+          teórico (migration 063) e ela é apurada na auditoria de estoque. Ver
+          Perdas. Manter o card mostrando 0% seria mentira confortável. */}
+      <div className="grid grid-cols-2 gap-3 mb-6">
         <Card className="p-4">
           <p className="text-xs text-gray-500 uppercase tracking-wide">Total produzido</p>
           <p className="text-2xl font-bold text-gray-900 mt-1">{totalProduzido.toLocaleString()} un</p>
           <p className="text-xs text-gray-400">{filtered.length} sessões</p>
-        </Card>
-        <Card className="p-4">
-          <p className="text-xs text-gray-500 uppercase tracking-wide">Perda média insumos</p>
-          <p className={`text-2xl font-bold mt-1 ${mediaInsumos <= 3 ? 'text-emerald-600' : mediaInsumos <= 8 ? 'text-yellow-600' : 'text-red-600'}`}>
-            {mediaInsumos.toFixed(1)}%
-          </p>
         </Card>
         <Card className="p-4">
           <p className="text-xs text-gray-500 uppercase tracking-wide">Perda média produto</p>
@@ -216,25 +176,16 @@ export function HistoricoProducaoPage() {
                   <th className="px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide text-center">Fornadas</th>
                   <th className="px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide text-right">Planejado</th>
                   <th className="px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide text-right">Produzido</th>
-                  <th className="px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide text-right">Perda ins.</th>
                   <th className="px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide text-right">Perda prod.</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-50">
                 {filtered.map((s) => {
                   const sku = s.skus[0]
-                  const pi = s.fator_perda_insumos
                   const pp = s.fator_perda_produto
-                  const aberta = expandida === s.id
-                  const detalhe = perdas[s.id]
                   return (
-                    <Fragment key={s.id}>
-                    <tr
-                      className="hover:bg-gray-50 cursor-pointer"
-                      onClick={() => alternarDetalhe(s.id)}
-                    >
+                    <tr key={s.id} className="hover:bg-gray-50">
                       <td className="px-4 py-3 text-gray-600">
-                        <span className="text-gray-400 mr-1">{aberta ? '▾' : '▸'}</span>
                         {formatDate(s.data_producao)}
                       </td>
                       <td className="px-4 py-3 font-mono text-xs text-gray-500">{s.codigo}</td>
@@ -243,13 +194,6 @@ export function HistoricoProducaoPage() {
                       <td className="px-4 py-3 text-right text-gray-600">{sku?.quantidade_planejada ?? '—'}</td>
                       <td className="px-4 py-3 text-right font-semibold text-gray-900">{sku?.quantidade_produzida ?? '—'}</td>
                       <td className="px-4 py-3 text-right">
-                        {pi != null ? (
-                          <span className={`font-semibold ${pi <= 3 ? 'text-emerald-600' : pi <= 8 ? 'text-yellow-600' : 'text-red-600'}`}>
-                            {pi.toFixed(1)}%
-                          </span>
-                        ) : <span className="text-gray-400">—</span>}
-                      </td>
-                      <td className="px-4 py-3 text-right">
                         {pp != null ? (
                           <span className={`font-semibold ${pp <= 3 ? 'text-emerald-600' : pp <= 8 ? 'text-yellow-600' : 'text-red-600'}`}>
                             {pp.toFixed(1)}%
@@ -257,73 +201,11 @@ export function HistoricoProducaoPage() {
                         ) : <span className="text-gray-400">—</span>}
                       </td>
                     </tr>
-
-                    {/* Perda aberta por insumo. A média da sessão esconde o que
-                        pesa no custo: 3% de chocolate em pó e 3% de farinha são
-                        prejuízos de ordens diferentes. */}
-                    {aberta && (
-                      <tr>
-                        <td colSpan={8} className="px-4 pb-4 pt-1 bg-gray-50">
-                          {!detalhe && <p className="text-xs text-gray-400">Carregando…</p>}
-                          {detalhe?.length === 0 && (
-                            <p className="text-xs text-gray-400">
-                              Sem consumo registrado por insumo nesta sessão.
-                            </p>
-                          )}
-                          {detalhe && detalhe.length > 0 && (
-                            <table className="w-full text-xs">
-                              <thead>
-                                <tr className="text-left text-gray-400">
-                                  <th className="py-1 font-medium">Insumo</th>
-                                  <th className="py-1 font-medium text-right">Teórico</th>
-                                  <th className="py-1 font-medium text-right">Consumido</th>
-                                  <th className="py-1 font-medium text-right">Diferença</th>
-                                  <th className="py-1 font-medium text-right">Perda</th>
-                                </tr>
-                              </thead>
-                              <tbody>
-                                {detalhe.map((d) => {
-                                  const pct = d.perda_pct
-                                  return (
-                                    <tr key={d.insumo_codigo} className="border-t border-gray-100">
-                                      <td className="py-1.5 text-gray-700">
-                                        <span
-                                          className="inline-block w-2 h-2 rounded-full mr-1.5 align-middle"
-                                          style={{ backgroundColor: d.categoria_cor ?? '#9ca3af' }}
-                                        />
-                                        {d.insumo_nome}
-                                      </td>
-                                      <td className="py-1.5 text-right text-gray-500">
-                                        {Number(d.teorico).toFixed(3)} {d.unidade_medida}
-                                      </td>
-                                      <td className="py-1.5 text-right text-gray-500">
-                                        {Number(d.consumido).toFixed(3)} {d.unidade_medida}
-                                      </td>
-                                      <td className="py-1.5 text-right text-gray-500">
-                                        {Number(d.desvio) > 0 ? '+' : ''}{Number(d.desvio).toFixed(3)}
-                                      </td>
-                                      <td className="py-1.5 text-right">
-                                        {pct != null ? (
-                                          <span className={`font-semibold ${pct <= 3 ? 'text-emerald-600' : pct <= 8 ? 'text-yellow-600' : 'text-red-600'}`}>
-                                            {Number(pct) > 0 ? '+' : ''}{Number(pct).toFixed(1)}%
-                                          </span>
-                                        ) : <span className="text-gray-400">—</span>}
-                                      </td>
-                                    </tr>
-                                  )
-                                })}
-                              </tbody>
-                            </table>
-                          )}
-                        </td>
-                      </tr>
-                    )}
-                    </Fragment>
                   )
                 })}
                 {filtered.length === 0 && (
                   <tr>
-                    <td colSpan={8} className="px-4 py-8 text-center text-gray-400">Nenhuma sessão fechada neste período.</td>
+                    <td colSpan={7} className="px-4 py-8 text-center text-gray-400">Nenhuma sessão fechada neste período.</td>
                   </tr>
                 )}
               </tbody>

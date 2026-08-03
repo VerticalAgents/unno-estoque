@@ -2,25 +2,25 @@ import { useEffect, useState } from 'react'
 import { useLocation, Link } from 'react-router-dom'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../contexts/AuthContext'
-import type { Lote, Empresa } from '../../types/database.types'
-import { QRCodeSVG } from 'qrcode.react'
-import { formatDate, formatDateTime } from '../../lib/utils'
+import type { Empresa } from '../../types/database.types'
 import { Button } from '../../components/ui/Button'
-
-type LoteWithInsumo = Lote & {
-  insumo: { nome: string; codigo: string; unidade_medida: string; shelf_life_dias_pos_abertura?: number }
-  fornecedor?: { nome: string }
-  marca?: { nome: string }
-  recebido_usuario?: { nome: string }
-}
+import { EtiquetaLoteContent, type LoteEtiqueta } from '../../components/etiqueta/EtiquetaLote'
+import {
+  EtiquetaCanvas,
+  EtiquetaLinhaRolo,
+  emLinhas,
+  etiquetaPrintStyles,
+  useEtiquetaConfig,
+} from '../../lib/etiquetas'
 
 type RouterLote = { lote_id: string; codigo: string; qr_code: string; quantidade: number }
 
 export function ImpressaoLotesPage() {
   const location = useLocation()
   const { profile } = useAuth()
+  const { config } = useEtiquetaConfig('lote')
   const routerLotes: RouterLote[] = (location.state as { lotes?: RouterLote[] })?.lotes ?? []
-  const [lotes, setLotes] = useState<LoteWithInsumo[]>([])
+  const [lotes, setLotes] = useState<LoteEtiqueta[]>([])
   const [empresa, setEmpresa] = useState<Empresa | null>(null)
   const [loading, setLoading] = useState(true)
 
@@ -34,7 +34,7 @@ export function ImpressaoLotesPage() {
         .in('id', ids),
       supabase.from('empresas').select('*').eq('id', profile.empresa_id).single(),
     ]).then(([l, e]) => {
-      const sorted = ids.map(id => (l.data ?? []).find((x: { id: string }) => x.id === id)).filter(Boolean) as LoteWithInsumo[]
+      const sorted = ids.map(id => (l.data ?? []).find((x: { id: string }) => x.id === id)).filter(Boolean) as LoteEtiqueta[]
       setLotes(sorted)
       setEmpresa(e.data as Empresa)
       setLoading(false)
@@ -54,9 +54,13 @@ export function ImpressaoLotesPage() {
     </div>
   )
 
+  // O rolo anda de linha inteira: as etiquetas são agrupadas de `colunas` em
+  // `colunas`, e cada grupo desses é uma página para o navegador.
+  const linhas = emLinhas(lotes, config.colunas)
+
   return (
     <>
-      <style>{printStyles}</style>
+      <style>{etiquetaPrintStyles(config)}</style>
 
       {/* Screen UI */}
       <div className="etiqueta-screen-ui p-4 sm:p-6 max-w-2xl mx-auto">
@@ -71,19 +75,37 @@ export function ImpressaoLotesPage() {
             {lotes.length} etiqueta{lotes.length > 1 ? 's' : ''} gerada{lotes.length > 1 ? 's' : ''}
           </h1>
           <p className="text-sm text-gray-500 mt-0.5">
-            {lotes[0]?.insumo.nome} · {lotes.length} QR Codes
+            {lotes[0]?.insumo.nome} · etiqueta {config.largura}×{config.altura}mm
+            {config.colunas > 1 && ` · ${linhas.length} linha${linhas.length > 1 ? 's' : ''} do rolo`}
           </p>
         </div>
 
-        {/* Preview */}
-        <div className="space-y-4 mb-6">
-          {lotes.map((lote, idx) => (
-            <div key={lote.id} className="bg-white border-2 border-dashed border-gray-300 rounded-xl p-3 inline-block">
-              <p className="text-xs font-medium text-gray-400 mb-2">Etiqueta {idx + 1} de {lotes.length}</p>
-              <LabelContent lote={lote} empresa={empresa} />
+        {/* Preview — cada bloco é uma linha do rolo, como vai sair no papel */}
+        <div className="space-y-4 mb-6 overflow-x-auto">
+          {linhas.map((linha, i) => (
+            <div key={i} className="bg-white border-2 border-dashed border-gray-300 rounded-xl p-3 inline-block">
+              <p className="text-xs font-medium text-gray-400 mb-2">
+                {config.colunas > 1
+                  ? `Linha ${i + 1} de ${linhas.length}`
+                  : `Etiqueta ${i + 1} de ${linhas.length}`}
+              </p>
+              <EtiquetaLinhaRolo config={config}>
+                {linha.map(lote => (
+                  <EtiquetaCanvas key={lote.id} dims={config}>
+                    <EtiquetaLoteContent lote={lote} empresa={empresa} dims={config} />
+                  </EtiquetaCanvas>
+                ))}
+              </EtiquetaLinhaRolo>
             </div>
           ))}
         </div>
+
+        {config.colunas > 1 && lotes.length % config.colunas !== 0 && (
+          <p className="text-xs text-gray-500 mb-4 -mt-2">
+            A última linha tem {config.colunas - (lotes.length % config.colunas)} etiqueta(s)
+            em branco — o rolo avança a linha inteira mesmo assim.
+          </p>
+        )}
 
         <div className="flex gap-3">
           <Link to="/recebimento/novo">
@@ -108,151 +130,20 @@ export function ImpressaoLotesPage() {
         </div>
       </div>
 
-      {/* Print target */}
+      {/* Print target — uma página por linha do rolo */}
       <div className="etiqueta-print-target">
-        {lotes.map((lote, idx) => (
-          <div key={lote.id} className={idx < lotes.length - 1 ? 'etiqueta-page-break' : ''}>
-            <LabelContent lote={lote} empresa={empresa} />
+        {linhas.map((linha, i) => (
+          <div key={i} className={i < linhas.length - 1 ? 'etiqueta-page-break' : ''}>
+            <EtiquetaLinhaRolo config={config}>
+              {linha.map(lote => (
+                <EtiquetaCanvas key={lote.id} dims={config}>
+                  <EtiquetaLoteContent lote={lote} empresa={empresa} dims={config} />
+                </EtiquetaCanvas>
+              ))}
+            </EtiquetaLinhaRolo>
           </div>
         ))}
       </div>
     </>
-  )
-}
-
-// ── Print CSS ────────────────────────────────────────────────
-
-const printStyles = `
-  .etiqueta-print-target { display: none; }
-
-  @page { size: 100mm 75mm; margin: 0; }
-
-  @media print {
-    html, body { margin: 0 !important; padding: 0 !important; }
-
-    body > * { visibility: hidden; }
-
-    .etiqueta-print-target {
-      display: block !important;
-      visibility: visible !important;
-      position: absolute;
-      top: 0;
-      left: 0;
-    }
-    .etiqueta-print-target * { visibility: visible !important; }
-    .etiqueta-page-break { page-break-after: always; }
-    * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
-  }
-`
-
-// ── Label content ────────────────────────────────────────────
-
-function LabelContent({ lote, empresa }: { lote: LoteWithInsumo; empresa: Empresa | null }) {
-  const marcaForn = [
-    (lote.marca as unknown as { nome: string } | null)?.nome,
-    (lote.fornecedor as unknown as { nome: string } | null)?.nome,
-  ].filter(Boolean).join(' - ')
-
-  const responsavel = (lote.recebido_usuario as unknown as { nome: string } | null)?.nome ?? ''
-  const cnpj = empresa?.cnpj ?? ''
-  const endereco = [empresa?.endereco, empresa?.cidade, empresa?.estado].filter(Boolean).join(', ')
-  const empresaNome = empresa?.nome ?? "Unno"
-  const shelfLife = (lote.insumo as unknown as { shelf_life_dias_pos_abertura?: number })?.shelf_life_dias_pos_abertura
-  const qrContent = [lote.codigo, lote.data_recebimento, lote.numero_nf ?? ''].filter(Boolean).join('|')
-
-  return (
-    <div style={{
-      width: '100mm',
-      height: '75mm',
-      fontFamily: 'sans-serif',
-      display: 'flex',
-      flexDirection: 'column',
-      overflow: 'hidden',
-      boxSizing: 'border-box',
-    }}>
-      <div style={{ padding: '4mm 4mm 3mm 4mm', flexShrink: 0 }}>
-        <div style={{ fontSize: '14pt', fontWeight: 'bold', lineHeight: 1.2 }}>
-          {lote.insumo.nome}
-        </div>
-        <div style={{ fontSize: '8pt', color: '#6b7280', marginTop: '1mm' }}>
-          {empresaNome}
-        </div>
-      </div>
-
-      <div style={{
-        flex: 1,
-        display: 'flex',
-        borderTop: '1.5pt solid #000',
-        borderBottom: '1.5pt solid #000',
-        minHeight: 0,
-      }}>
-        <div style={{
-          flex: '0 0 62mm',
-          padding: '2.5mm 3mm',
-          display: 'flex',
-          flexDirection: 'column',
-          justifyContent: 'space-between',
-          borderRight: '1pt solid #000',
-        }}>
-          <Field label="RECEBIMENTO:" value={formatDate(lote.data_recebimento)} />
-          <Field label="VALIDADE ORIGINAL:" value={formatDate(lote.validade_original)} />
-          <Field label="MANIPULAÇÃO:" value={formatDateTime(lote.created_at)} />
-          <Field label="VALIDADE:" value={formatDate(lote.validade_pos_abertura)} bold />
-          <Field label="APÓS ABERTURA:" value={shelfLife != null ? `${shelfLife} DIAS` : '—'} />
-          <Field label="MARCA/FORN.:" value={marcaForn || '—'} />
-        </div>
-
-        <div style={{
-          flex: 1,
-          padding: '2.5mm 3mm',
-          display: 'flex',
-          flexDirection: 'column',
-          alignItems: 'center',
-        }}>
-          <div style={{ fontSize: '7pt', alignSelf: 'flex-start' }}>
-            <span style={{ fontWeight: 'bold' }}>LOTE: </span>{lote.codigo}
-          </div>
-          <div style={{ fontSize: '7pt', alignSelf: 'flex-start', marginTop: '1.5mm' }}>
-            <span style={{ fontWeight: 'bold' }}>NF: </span>{lote.numero_nf || '—'}
-          </div>
-          <div style={{ marginTop: '2mm', flex: 1, display: 'flex', alignItems: 'center' }}>
-            <QRCodeSVG value={qrContent} size={90} level="M" includeMargin={false} />
-          </div>
-        </div>
-      </div>
-
-      <div style={{
-        padding: '1.5mm 4mm',
-        display: 'flex',
-        justifyContent: 'space-between',
-        alignItems: 'flex-end',
-        flexShrink: 0,
-      }}>
-        <div>
-          <div style={{ fontSize: '6.5pt' }}>
-            <span style={{ fontWeight: 'bold' }}>RESP.: </span>
-            <span style={{ fontWeight: 'bold' }}>{responsavel}</span>
-          </div>
-          <div style={{ fontSize: '6.5pt', marginTop: '0.5mm' }}>
-            <span style={{ fontWeight: 'bold' }}>CNPJ: </span>{cnpj}
-          </div>
-          <div style={{ fontSize: '6.5pt', marginTop: '0.5mm', maxWidth: '70mm', overflow: 'hidden', whiteSpace: 'nowrap', textOverflow: 'ellipsis' }}>
-            <span style={{ fontWeight: 'bold' }}>END.: </span>{endereco}
-          </div>
-        </div>
-        <div style={{ fontSize: '6pt', color: '#6b7280', whiteSpace: 'nowrap' }}>
-          #{lote.codigo}
-        </div>
-      </div>
-    </div>
-  )
-}
-
-function Field({ label, value, bold }: { label: string; value: string; bold?: boolean }) {
-  return (
-    <div style={{ fontSize: '7.5pt', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-      <span style={{ fontWeight: 'bold' }}>{label} </span>
-      <span style={{ fontWeight: bold ? 'bold' : 'normal' }}>{value}</span>
-    </div>
   )
 }
