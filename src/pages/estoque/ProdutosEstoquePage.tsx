@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../contexts/AuthContext'
 import { Card } from '../../components/ui/Card'
+import { CartaoLista, ListaResponsiva, ListaVazia } from '../../components/ui/ListaResponsiva'
 import { formatDate, daysUntil } from '../../lib/utils'
 
 interface LoteRow {
@@ -100,6 +101,54 @@ export function ProdutosEstoquePage() {
       ) : (
         <Card>
           <div className="overflow-x-auto">
+            <ListaResponsiva
+              cartoes={
+                lotes.length === 0
+                  ? (
+                    <ListaVazia>
+                      Nenhum lote de produto encontrado. Feche sessões de produção com
+                      produto cadastrado para gerar lotes.
+                    </ListaVazia>
+                  )
+                  : lotes.map(l => {
+                      const dias = daysUntil(l.validade)
+                      return (
+                        <CartaoLista
+                          key={l.id}
+                          // Vencido ou vencendo é o que muda a decisão de hoje.
+                          alerta={l.status === 'ativo' && dias <= 7}
+                          titulo={
+                            <span className={`font-medium text-gray-900 dark:text-unno-text ${l.status !== 'ativo' ? 'opacity-60' : ''}`}>
+                              {l.produto?.nome}
+                            </span>
+                          }
+                          subtitulo={`${l.produto?.codigo ?? ''} · ${l.codigo}`}
+                          destaque={<>{l.quantidade_disponivel.toLocaleString()} un</>}
+                          marcadores={
+                            <span className={`inline-flex px-2 py-0.5 rounded text-[0.65rem] font-medium ${
+                              l.status === 'ativo' ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-300' :
+                              l.status === 'vencido' ? 'bg-red-50 text-red-700 dark:bg-unno-danger/15 dark:text-unno-danger' :
+                              'bg-gray-100 text-gray-600 dark:bg-white/[.06] dark:text-unno-muted'
+                            }`}>
+                              {l.status}
+                            </span>
+                          }
+                          campos={[
+                            { rotulo: 'Produção', valor: formatDate(l.data_producao) },
+                            {
+                              rotulo: 'Validade',
+                              valor: <span className={validadeClass(l.validade)}>{formatDate(l.validade)}</span>,
+                            },
+                            {
+                              rotulo: 'Dias',
+                              valor: <span className={`font-bold ${validadeClass(l.validade)}`}>{diasLabel(l.validade)}</span>,
+                            },
+                          ]}
+                        />
+                      )
+                    })
+              }
+              tabela={
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-gray-100 text-left">
@@ -164,6 +213,8 @@ export function ProdutosEstoquePage() {
                 )}
               </tbody>
             </table>
+              }
+            />
           </div>
         </Card>
       )}

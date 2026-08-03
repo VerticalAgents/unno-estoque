@@ -3,8 +3,23 @@ import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../contexts/AuthContext'
 import type { EstoqueConsolidado, CategoriaInsumo } from '../../types/database.types'
 import { Card } from '../../components/ui/Card'
+import { CartaoLista, ListaResponsiva, ListaVazia } from '../../components/ui/ListaResponsiva'
 import { formatQty, formatDate, daysUntil } from '../../lib/utils'
 import { InsumoDetalhePanel } from './InsumoDetalhePanel'
+
+/** Selo curto de alerta, do tamanho de caber três lado a lado num cartão. */
+function Selo({ cor, children }: { cor: 'amber' | 'blue' | 'purple'; children: React.ReactNode }) {
+  const cores = {
+    amber: 'bg-amber-100 text-amber-700 dark:bg-unno-amber/15 dark:text-unno-amber',
+    blue: 'bg-blue-100 text-blue-700 dark:bg-blue-500/15 dark:text-blue-300',
+    purple: 'bg-purple-100 text-purple-700 dark:bg-purple-500/15 dark:text-purple-300',
+  }
+  return (
+    <span className={`px-1.5 py-0.5 rounded text-[0.65rem] font-medium ${cores[cor]}`}>
+      {children}
+    </span>
+  )
+}
 
 // Validade mais próxima do vencimento por insumo
 type ValidadeInfo = {
@@ -140,7 +155,63 @@ export function EstoquePage() {
         <div className="flex justify-center py-12"><div className="w-6 h-6 border-2 border-brand-600 border-t-transparent rounded-full animate-spin" /></div>
       ) : (
         <Card>
-          <div className="overflow-x-auto">
+          <ListaResponsiva
+            cartoes={
+              filtered.length === 0
+                ? <ListaVazia>Nenhum insumo encontrado.</ListaVazia>
+                : filtered.map(e => {
+                    const meta = insumosMeta[e.insumo_id]
+                    const cat = catMap[meta?.categoria_id ?? '']
+                    const val = validades[e.insumo_id]
+                    const alertaEC = meta?.estoque_minimo_ec != null && e.qtd_estoque_central < meta.estoque_minimo_ec
+                    const alertaEP = meta?.estoque_minimo_ep != null && e.qtd_estoque_produtivo < meta.estoque_minimo_ep
+                    const alertaEtiqueta = insumosSemEtiqueta.has(e.insumo_id)
+                    return (
+                      <CartaoLista
+                        key={e.insumo_id}
+                        onClick={() => setInsumoSelecionado(e)}
+                        alerta={alertaEC || alertaEP || e.alerta_reposicao || alertaEtiqueta}
+                        titulo={
+                          <>
+                            {cat?.cor_hex && (
+                              <span className="w-2 h-2 mt-1.5 rounded-full shrink-0" style={{ backgroundColor: cat.cor_hex }} />
+                            )}
+                            <span className="font-medium text-gray-900 dark:text-unno-text">{e.insumo_nome}</span>
+                          </>
+                        }
+                        subtitulo={`${e.insumo_codigo}${cat?.nome ? ` · ${cat.nome}` : ''}`}
+                        // O total é o que se procura de relance; o resto é detalhe.
+                        destaque={formatQty(e.qtd_total, e.unidade_medida)}
+                        marcadores={
+                          (alertaEC || e.alerta_reposicao || alertaEP || alertaEtiqueta) ? (
+                            <>
+                              {(alertaEC || e.alerta_reposicao) && <Selo cor="amber">⚠ comprar</Selo>}
+                              {alertaEP && <Selo cor="blue">⚠ transferir</Selo>}
+                              {alertaEtiqueta && <Selo cor="purple">⚠ etiquetar</Selo>}
+                            </>
+                          ) : undefined
+                        }
+                        campos={[
+                          { rotulo: 'EC', valor: formatQty(e.qtd_estoque_central, e.unidade_medida) },
+                          { rotulo: 'EP', valor: formatQty(e.qtd_estoque_produtivo, e.unidade_medida) },
+                          {
+                            rotulo: 'Val. EC',
+                            valor: val?.validade_ec
+                              ? <span className={validadeClass(val.validade_ec)}>{formatDate(val.validade_ec)}</span>
+                              : <span className="text-gray-300">—</span>,
+                          },
+                          {
+                            rotulo: 'Val. EP',
+                            valor: val?.validade_ep
+                              ? <span className={validadeClass(val.validade_ep)}>{formatDate(val.validade_ep)}</span>
+                              : <span className="text-gray-300">—</span>,
+                          },
+                        ]}
+                      />
+                    )
+                  })
+            }
+            tabela={
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-gray-100 text-left">
@@ -199,7 +270,8 @@ export function EstoquePage() {
                 )}
               </tbody>
             </table>
-          </div>
+            }
+          />
         </Card>
       )}
 
