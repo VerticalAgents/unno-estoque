@@ -68,16 +68,19 @@ type Balde = {
   linha_key: string // de qual linha veio o conteúdo (só importa se houver mais de uma)
 }
 
-const novaLinha = (tamanhoPadrao?: number | null): Linha => ({
+const novaLinha = (tamanhoPadrao?: number | null, validadePadrao?: string): Linha => ({
   key: Math.random().toString(36).slice(2),
   fornecedor_id: '',
   marca_id: '',
-  validade: '',
+  validade: validadePadrao ?? '',
   sem_validade: false,
   fechadas: '',
   tamanho: tamanhoPadrao ? String(tamanhoPadrao) : '',
   aberta: '',
 })
+
+/** O que o insumo já tem de saldo registrado, para a abertura em duas idas. */
+type SaldoAtual = { total: number; lotes: number; validade: string | null }
 
 const num = (s: string) => parseFloat(s) || 0
 const inteiro = (s: string) => parseInt(s) || 0
@@ -107,6 +110,7 @@ export function AberturaEstoquePage() {
   const [marcasPorInsumo, setMarcasPorInsumo] = useState<Record<string, Marca[]>>({})
   const [fornecedores, setFornecedores] = useState<Fornecedor[]>([])
   const [jaTemLotes, setJaTemLotes] = useState(false)
+  const [saldoAtual, setSaldoAtual] = useState<Record<string, SaldoAtual>>({})
 
   // Insumos cujo tamanho de embalagem deve voltar para o cadastro, para os
   // próximos recebimentos já virem preenchidos. Marcado por padrão quando o
@@ -137,9 +141,12 @@ export function AberturaEstoquePage() {
       // insumo", independente de quem vende. O vínculo com fornecedor é outra
       // tabela e serve para o recebimento filtrar depois.
       supabase.from('insumos_marcas').select('insumo_id, marca:marcas(id, nome)'),
+      // O que já existe de saldo. Serve a duas coisas: avisar quem volta para
+      // uma segunda ida (o caso de quem cadastrou a prateleira num dia e os
+      // baldes no outro) e herdar a validade do que já foi registrado.
       supabase
         .from('lotes')
-        .select('id', { count: 'exact', head: true })
+        .select('insumo_id, quantidade_disponivel, validade_original')
         .eq('empresa_id', profile.empresa_id)
         .eq('status', 'ativo'),
       supabase
@@ -152,8 +159,26 @@ export function AberturaEstoquePage() {
       const listaInsumos = (ins.data ?? []) as Insumo[]
       setInsumos(listaInsumos)
       setRecipientes((loc.data ?? []) as Recipiente[])
-      setJaTemLotes((lot.count ?? 0) > 0)
       setFornecedores((forn.data ?? []) as Fornecedor[])
+
+      const lotesAtivos = (lot.data ?? []) as {
+        insumo_id: string
+        quantidade_disponivel: number
+        validade_original: string | null
+      }[]
+      setJaTemLotes(lotesAtivos.length > 0)
+
+      const saldos: Record<string, SaldoAtual> = {}
+      for (const l of lotesAtivos) {
+        const s = (saldos[l.insumo_id] ??= { total: 0, lotes: 0, validade: null })
+        s.total += Number(l.quantidade_disponivel) || 0
+        s.lotes += 1
+        // A mais próxima: é a que descreve o que já está aberto e em uso.
+        if (l.validade_original && (!s.validade || l.validade_original < s.validade)) {
+          s.validade = l.validade_original
+        }
+      }
+      setSaldoAtual(saldos)
 
       const porInsumo: Record<string, Marca[]> = {}
       for (const v of (vinc.data ?? []) as { insumo_id: string; marca: Marca | Marca[] | null }[]) {
@@ -169,7 +194,10 @@ export function AberturaEstoquePage() {
       const iniciais: Record<string, Linha[]> = {}
       const guardar: Record<string, boolean> = {}
       for (const i of listaInsumos) {
-        iniciais[i.id] = [novaLinha(i.tamanho_embalagem)]
+        // Quem já registrou a prateleira e volta só para os baldes não deveria
+        // ter de redigitar a validade: o que está no pote saiu daqueles mesmos
+        // pacotes. Sem isso o lote do balde nasceria com validade de dez anos.
+        iniciais[i.id] = [novaLinha(i.tamanho_embalagem, saldos[i.id]?.validade ?? undefined)]
         guardar[i.id] = i.tamanho_embalagem == null
       }
       setLinhas(iniciais)
@@ -590,8 +618,10 @@ export function AberturaEstoquePage() {
 
       {jaTemLotes && (
         <div className="mb-4 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">
-          Já existe estoque ativo no sistema. Você pode seguir para lançar o que faltou,
-          mas confira antes para não contar a mesma coisa duas vezes.
+          <strong>Já existe estoque lançado.</strong> Cada insumo mostra abaixo o que já foi
+          registrado — preencha só o que faltou. Se você veio agora apenas para os baldes,
+          deixe a etapa 1 inteira em branco e vá direto para a etapa 2: a validade já vem
+          herdada do que você lançou antes.
         </div>
       )}
 
@@ -601,6 +631,7 @@ export function AberturaEstoquePage() {
           linhas={linhas}
           marcasPorInsumo={marcasPorInsumo}
           fornecedores={fornecedores}
+          saldoAtual={saldoAtual}
           guardarTamanho={guardarTamanho}
           onGuardarTamanho={(id, v) => setGuardarTamanho(prev => ({ ...prev, [id]: v }))}
           onAlterar={alterarLinha}
@@ -693,6 +724,7 @@ function EtapaPrateleira({
   linhas,
   marcasPorInsumo,
   fornecedores,
+  saldoAtual,
   guardarTamanho,
   onGuardarTamanho,
   onAlterar,
@@ -706,6 +738,7 @@ function EtapaPrateleira({
   linhas: Record<string, Linha[]>
   marcasPorInsumo: Record<string, Marca[]>
   fornecedores: Fornecedor[]
+  saldoAtual: Record<string, SaldoAtual>
   guardarTamanho: Record<string, boolean>
   onGuardarTamanho: (insumoId: string, valor: boolean) => void
   onAlterar: (insumoId: string, key: string, campo: keyof Linha, valor: string | boolean) => void
@@ -736,6 +769,19 @@ function EtapaPrateleira({
                 {insumo.unidade_medida}
               </span>
             </div>
+
+            {/* Segunda ida: o que já foi registrado antes fica à vista, senão
+                é fácil somar de novo o mesmo saco. */}
+            {saldoAtual[insumo.id] && (
+              <div className="mb-3 rounded-lg bg-gray-50 px-3 py-2 text-xs text-gray-600">
+                Já registrado: <strong className="text-gray-900">
+                  {saldoAtual[insumo.id].total.toFixed(3)} {insumo.unidade_medida}
+                </strong>{' '}
+                em {saldoAtual[insumo.id].lotes} lote
+                {saldoAtual[insumo.id].lotes === 1 ? '' : 's'}. Preencha abaixo só o que
+                ainda <strong>não</strong> foi lançado.
+              </div>
+            )}
 
             <div className="space-y-3">
               {ls.map((l, idx) => (
