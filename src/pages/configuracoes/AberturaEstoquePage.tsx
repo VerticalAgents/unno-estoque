@@ -82,6 +82,28 @@ const novaLinha = (tamanhoPadrao?: number | null, validadePadrao?: string): Linh
 /** O que o insumo já tem de saldo registrado, para a abertura em duas idas. */
 type SaldoAtual = { total: number; lotes: number; validade: string | null }
 
+/**
+ * O tipo físico do pote, deduzido do nome.
+ *
+ * Os nomes seguem "<tipo> <insumo> #<n>": "Pote G Açúcar #1", "Saco de Conf.
+ * 750g Nutella #12". Tirando o nome do insumo e a numeração sobra o tipo — e
+ * potes do mesmo tipo pesam o mesmo vazios, que é o que permite informar 11
+ * taras em vez de 73.
+ *
+ * A comparação é pela PRIMEIRA palavra do insumo, não pelo nome inteiro: o
+ * pote do "Açúcar Refinado" se chama só "Pote G Açúcar". Exigir o nome
+ * completo faria esse caso cair fora do agrupamento sem ninguém notar.
+ */
+function tipoDoPote(nomePote: string, nomeInsumo: string): string {
+  const primeira = (nomeInsumo ?? '').trim().split(/\s+/)[0]
+  let t = nomePote
+  if (primeira) {
+    const i = t.indexOf(primeira)
+    if (i > 0) t = t.slice(0, i)
+  }
+  return t.replace(/#\s*\d+\s*$/, '').replace(/\s+/g, ' ').trim() || nomePote
+}
+
 const num = (s: string) => parseFloat(s) || 0
 const inteiro = (s: string) => parseInt(s) || 0
 
@@ -327,6 +349,38 @@ export function AberturaEstoquePage() {
     setRecipientes(prev => [...prev, novo].sort((a, b) => a.nome.localeCompare(b.nome)))
     setBaldes(prev => ({ ...prev, [novo.id]: { modo: 'vazio', peso_bruto: '', linha_key: '' } }))
     return true
+  }
+
+  /** Grava a tara em um pote só. */
+  async function salvarTara(localId: string, tara: number) {
+    await supabase.from('locais').update({ peso_tara: tara }).eq('id', localId)
+    setRecipientes(prev => prev.map(r => (r.id === localId ? { ...r, peso_tara: tara } : r)))
+  }
+
+  /**
+   * Grava a mesma tara em todos os potes de um tipo.
+   *
+   * Pesar 72 potes vazios um a um é o tipo de trabalho que faz a pessoa
+   * desistir do inventário no meio. Pote do mesmo tipo pesa o mesmo.
+   */
+  async function salvarTaraDoTipo(tipo: string, tara: number) {
+    const alvos = recipientes.filter(r => {
+      const insumo = insumos.find(i => i.id === r.insumo_id)
+      return tipoDoPote(r.nome, insumo?.nome ?? '') === tipo
+    })
+    if (alvos.length === 0) return
+
+    const { error } = await supabase
+      .from('locais')
+      .update({ peso_tara: tara })
+      .in('id', alvos.map(a => a.id))
+
+    if (error) {
+      setErro(`Não foi possível salvar a tara: ${error.message}`)
+      return
+    }
+    const ids = new Set(alvos.map(a => a.id))
+    setRecipientes(prev => prev.map(r => (ids.has(r.id) ? { ...r, peso_tara: tara } : r)))
   }
 
   /**
@@ -650,10 +704,11 @@ export function AberturaEstoquePage() {
           linhas={linhas}
           baldes={baldes}
           setBaldes={setBaldes}
-          setRecipientes={setRecipientes}
           conteudoDoBalde={conteudoDoBalde}
           onCriarRecipiente={criarRecipiente}
           onExcluirRecipiente={excluirRecipiente}
+          onSalvarTara={salvarTara}
+          onSalvarTaraDoTipo={salvarTaraDoTipo}
         />
       )}
 
@@ -1058,6 +1113,115 @@ function SeletorComNovo({
   )
 }
 
+/**
+ * Tara de uma vez, por tipo de pote.
+ *
+ * Pote do mesmo tipo pesa o mesmo vazio. Sem isto são 73 pesagens de pote
+ * vazio antes de começar o inventário de verdade — com isto, 11.
+ *
+ * Só aparecem tipos cujos insumos são medidos em peso: descontar gramas de um
+ * volume em mL exigiria a densidade, e de "unidades" não faz sentido.
+ */
+function TarasPorTipo({
+  insumos,
+  recipientesPorInsumo,
+  onSalvarTaraDoTipo,
+}: {
+  insumos: Insumo[]
+  recipientesPorInsumo: Record<string, Recipiente[]>
+  onSalvarTaraDoTipo: (tipo: string, tara: number) => Promise<void>
+}) {
+  const [aberto, setAberto] = useState(true)
+  const [valores, setValores] = useState<Record<string, string>>({})
+  const [salvando, setSalvando] = useState<string | null>(null)
+
+  const tipos = useMemo(() => {
+    const m: Record<string, { potes: Recipiente[]; usaTara: boolean }> = {}
+    for (const insumo of insumos) {
+      for (const rec of recipientesPorInsumo[insumo.id] ?? []) {
+        const t = tipoDoPote(rec.nome, insumo.nome)
+        const e = (m[t] ??= { potes: [], usaTara: false })
+        e.potes.push(rec)
+        if (usaTara(insumo.unidade_medida)) e.usaTara = true
+      }
+    }
+    return Object.entries(m)
+      .filter(([, v]) => v.usaTara)
+      .sort((a, b) => b[1].potes.length - a[1].potes.length)
+  }, [insumos, recipientesPorInsumo])
+
+  if (tipos.length === 0) return null
+
+  const faltando = tipos.filter(([, v]) => v.potes.some(p => !p.peso_tara)).length
+
+  return (
+    <Card className="p-4">
+      <button
+        type="button"
+        onClick={() => setAberto(a => !a)}
+        className="flex w-full items-center justify-between gap-2 text-left"
+      >
+        <span>
+          <span className="font-semibold text-gray-900">Peso dos potes vazios (tara)</span>
+          <span className="block text-xs text-gray-500 mt-0.5">
+            {faltando > 0
+              ? `${faltando} de ${tipos.length} tipos ainda sem peso`
+              : 'todos os tipos já têm peso'}
+          </span>
+        </span>
+        <span className="text-gray-400 text-sm shrink-0">{aberto ? '▾' : '▸'}</span>
+      </button>
+
+      {aberto && (
+        <>
+          <p className="text-xs text-gray-500 mt-3 mb-3">
+            Pote do mesmo tipo pesa o mesmo. Informe uma vez por tipo e vale para todos —
+            dá para corrigir um pote específico depois, na lista abaixo.
+          </p>
+          <div className="space-y-2">
+            {tipos.map(([tipo, info]) => {
+              const taras = [...new Set(info.potes.map(p => p.peso_tara ?? 0))]
+              const atual = taras.length === 1 ? taras[0] : null
+              return (
+                <div key={tipo} className="flex items-center gap-2">
+                  <span className="flex-1 min-w-0 text-sm text-gray-700">
+                    <span className="block truncate">{tipo}</span>
+                    <span className="text-xs text-gray-400">
+                      {info.potes.length} pote{info.potes.length === 1 ? '' : 's'}
+                      {atual != null && atual > 0 && ` · ${atual} g`}
+                      {atual == null && ' · pesos diferentes'}
+                    </span>
+                  </span>
+                  <input
+                    type="number"
+                    inputMode="decimal"
+                    value={valores[tipo] ?? ''}
+                    onChange={e => setValores(v => ({ ...v, [tipo]: e.target.value }))}
+                    placeholder={atual ? String(atual) : 'g'}
+                    className="w-24 shrink-0 rounded-lg border border-gray-300 bg-white px-2 py-2 text-sm"
+                  />
+                  <button
+                    type="button"
+                    disabled={!valores[tipo] || salvando === tipo}
+                    onClick={async () => {
+                      setSalvando(tipo)
+                      await onSalvarTaraDoTipo(tipo, parseFloat(valores[tipo]))
+                      setSalvando(null)
+                    }}
+                    className="shrink-0 rounded-lg bg-brand-600 px-3 py-2 text-sm font-medium text-white disabled:opacity-40"
+                  >
+                    Aplicar
+                  </button>
+                </div>
+              )
+            })}
+          </div>
+        </>
+      )}
+    </Card>
+  )
+}
+
 // ── Etapa 2 ───────────────────────────────────────────────────
 function EtapaBaldes({
   insumos,
@@ -1065,23 +1229,25 @@ function EtapaBaldes({
   linhas,
   baldes,
   setBaldes,
-  setRecipientes,
   conteudoDoBalde,
   onCriarRecipiente,
   onExcluirRecipiente,
+  onSalvarTara,
+  onSalvarTaraDoTipo,
 }: {
   insumos: Insumo[]
   recipientesPorInsumo: Record<string, Recipiente[]>
   linhas: Record<string, Linha[]>
   baldes: Record<string, Balde>
   setBaldes: React.Dispatch<React.SetStateAction<Record<string, Balde>>>
-  setRecipientes: React.Dispatch<React.SetStateAction<Recipiente[]>>
   conteudoDoBalde: (rec: Recipiente, insumo: Insumo) => number
   onCriarRecipiente: (
     insumo: Insumo,
     dados: { nome: string; capacidade: string; tara: string },
   ) => Promise<boolean>
   onExcluirRecipiente: (rec: Recipiente) => Promise<boolean>
+  onSalvarTara: (localId: string, tara: number) => Promise<void>
+  onSalvarTaraDoTipo: (tipo: string, tara: number) => Promise<void>
 }) {
   // Todos os insumos aparecem, mesmo sem recipiente: é aqui que se descobre
   // que falta cadastrar o pote, e daqui se cadastra.
@@ -1091,12 +1257,10 @@ function EtapaBaldes({
     setBaldes(prev => ({ ...prev, [id]: { ...prev[id], ...patch } }))
   }
 
-  /** A tara fica salva no recipiente: pesa-se uma vez, vale para sempre. */
   async function salvarTara(rec: Recipiente, valor: string) {
     const tara = parseFloat(valor)
     if (isNaN(tara) || tara < 0) return
-    await supabase.from('locais').update({ peso_tara: tara }).eq('id', rec.id)
-    setRecipientes(prev => prev.map(r => (r.id === rec.id ? { ...r, peso_tara: tara } : r)))
+    await onSalvarTara(rec.id, tara)
   }
 
   return (
@@ -1106,6 +1270,12 @@ function EtapaBaldes({
         que aparece no visor — o sistema desconta a tara sozinho. O que estiver vazio, deixe
         como está.
       </p>
+
+      <TarasPorTipo
+        insumos={insumos}
+        recipientesPorInsumo={recipientesPorInsumo}
+        onSalvarTaraDoTipo={onSalvarTaraDoTipo}
+      />
 
       {comRecipientes.map(insumo => {
         const b = bancada(insumo.unidade_medida)
@@ -1163,22 +1333,33 @@ function EtapaBaldes({
                       ))}
                     </div>
 
+                    {/* A tara fica sempre à mão, não só quando falta: é comum
+                        descobrir que o valor do tipo não serve para um pote
+                        específico bem na hora de pesá-lo. */}
+                    {temTara && (
+                      <div className="mt-2 flex items-center gap-2">
+                        <span className="text-xs text-gray-500 shrink-0">Vazio pesa</span>
+                        <input
+                          type="number"
+                          inputMode="decimal"
+                          defaultValue={rec.peso_tara ? String(rec.peso_tara) : ''}
+                          key={`tara-${rec.id}-${rec.peso_tara ?? 0}`}
+                          onBlur={e => salvarTara(rec, e.target.value)}
+                          placeholder="—"
+                          className={[
+                            'w-24 rounded-lg border px-2 py-1.5 text-sm',
+                            precisaTara ? 'border-amber-400 bg-amber-50' : 'border-gray-300 bg-white',
+                          ].join(' ')}
+                        />
+                        <span className="text-xs text-gray-500">{b.rotulo}</span>
+                        {precisaTara && (
+                          <span className="text-xs text-amber-700">informe para poder pesar</span>
+                        )}
+                      </div>
+                    )}
+
                     {est?.modo === 'peso' && (
                       <div className="mt-2 space-y-2">
-                        {precisaTara && (
-                          <div className="rounded-lg border border-amber-200 bg-amber-50 p-2">
-                            <p className="text-xs text-amber-800 mb-1.5">
-                              Este pote ainda não tem tara. Pese-o vazio uma vez:
-                            </p>
-                            <input
-                              type="number"
-                              inputMode="decimal"
-                              placeholder={`Peso do pote vazio (${b.rotulo})`}
-                              onBlur={e => salvarTara(rec, e.target.value)}
-                              className="w-full rounded-lg border border-amber-300 bg-white px-3 py-2 text-sm"
-                            />
-                          </div>
-                        )}
                         <div className="flex items-center gap-2">
                           <input
                             type="number"
@@ -1194,11 +1375,6 @@ function EtapaBaldes({
                             </span>
                           )}
                         </div>
-                        {temTara && (rec.peso_tara ?? 0) > 0 && (
-                          <p className="text-xs text-gray-400">
-                            tara do pote: {rec.peso_tara} {b.rotulo}
-                          </p>
-                        )}
                       </div>
                     )}
 
