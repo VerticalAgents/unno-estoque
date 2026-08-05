@@ -3,6 +3,7 @@ import { useParams, useNavigate, Link } from 'react-router-dom'
 import { supabase } from '../../lib/supabase'
 import { QRScanner } from '../../components/qr/QRScanner'
 import { Button } from '../../components/ui/Button'
+import { parseQRLoteCodigo } from '../../lib/qr'
 import type { ContagemInsumo, ContagemEcLote } from '../../types/contagem'
 
 type InsumoJoined = ContagemInsumo & {
@@ -61,15 +62,24 @@ export function NovaContagemEcPage() {
   async function handleScan(qrValue: string) {
     setScanError('')
 
-    // Busca o lote pelo QR code
+    /**
+     * A etiqueta impressa não carrega o `qr_code` do banco: ela carrega
+     * `codigo|data|nf` (ver EtiquetaLote). Comparar o valor lido direto com
+     * `lotes.qr_code` — que é "QR-" + código — nunca casava, e toda leitura
+     * caía em "QR code não reconhecido". A Transferência já traduzia; esta
+     * tela não, e o defeito só apareceu quando as etiquetas foram para o
+     * estoque de verdade.
+     */
+    const codigo = parseQRLoteCodigo(qrValue)
+
     const { data: loteData } = await supabase
       .from('lotes')
       .select('id')
-      .eq('qr_code', qrValue)
-      .single()
+      .eq('codigo', codigo)
+      .maybeSingle()
 
     if (!loteData) {
-      setScanError('QR code não reconhecido como lote.')
+      setScanError(`Lote ${codigo} não encontrado no sistema.`)
       return
     }
 
