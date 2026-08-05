@@ -5,6 +5,7 @@ import { QRScanner } from '../../components/qr/QRScanner'
 import { Button } from '../../components/ui/Button'
 import { parseQRLoteCodigo } from '../../lib/qr'
 import { NavegadorInsumos } from './NavegadorInsumos'
+import { ordemNatural } from '../../lib/utils'
 import type { ContagemInsumo, ContagemEcLote } from '../../types/contagem'
 
 type InsumoJoined = ContagemInsumo & {
@@ -52,7 +53,10 @@ export function NovaContagemEcPage() {
         .order('created_at'),
       supabase.from('contagens').select('status').eq('id', id).single(),
     ]).then(([itensRes, contRes]) => {
-      const items = (itensRes.data ?? []) as unknown as InsumoJoined[]
+      // Ordena na exibição, e não só na criação: contagens abertas antes da
+      // migration 070 têm a ordem aleatória gravada e só se consertam aqui.
+      const items = ((itensRes.data ?? []) as unknown as InsumoJoined[])
+        .sort((a, b) => ordemNatural(a.insumo.codigo, b.insumo.codigo))
       setItens(items)
       setStatusContagem((contRes.data as { status: string } | null)?.status ?? 'em_andamento')
       // Começa no primeiro que falta; se estiver tudo feito, no último, para
@@ -105,9 +109,10 @@ export function NovaContagemEcPage() {
       .from('contagem_ec_lotes')
       .select('*, lote:lotes(quantidade_recebida)')
       .eq('contagem_insumo_id', currentItem.id)
-      .order('lote_codigo')
       .then(({ data }) => {
-        setLotes((data ?? []) as unknown as LoteEsperado[])
+        // Ordem natural: no banco, "INS002-0001.10/12" vem antes de ".2/12".
+        setLotes(((data ?? []) as unknown as LoteEsperado[])
+          .sort((a, b) => ordemNatural(a.lote_codigo, b.lote_codigo)))
       })
 
     // Marca como em_contagem se ainda pendente

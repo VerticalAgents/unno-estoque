@@ -8,6 +8,7 @@ import { Input } from '../../components/ui/Input'
 import type { ContagemInsumo, ContagemEpLocal, StatusFisico } from '../../types/contagem'
 import { bancada, daBancada, emBancada, usaTara } from '../../lib/unidades'
 import { NavegadorInsumos } from './NavegadorInsumos'
+import { ordemNatural } from '../../lib/utils'
 
 type InsumoJoined = ContagemInsumo & {
   insumo: { nome: string; codigo: string; unidade_medida: string }
@@ -95,7 +96,9 @@ export function NovaContagemEpPage() {
         .order('created_at'),
       supabase.from('contagens').select('status').eq('id', id).single(),
     ]).then(([itensRes, contRes]) => {
-      const items = (itensRes.data ?? []) as unknown as InsumoJoined[]
+      // Ver o comentário gêmeo no EC: ordem gravada não se conserta sozinha.
+      const items = ((itensRes.data ?? []) as unknown as InsumoJoined[])
+        .sort((a, b) => ordemNatural(a.insumo.codigo, b.insumo.codigo))
       setItens(items)
       setStatusContagem((contRes.data as { status: string } | null)?.status ?? 'em_andamento')
       const idx = items.findIndex(i => i.status !== 'finalizado')
@@ -115,9 +118,10 @@ export function NovaContagemEpPage() {
       .from('contagem_ep_locais')
       .select('*')
       .eq('contagem_insumo_id', currentItem.id)
-      .order('local_nome')
       .then(({ data }) => {
-        setLocais((data ?? []) as ContagemEpLocal[])
+        // Ordem natural: no banco, "Pote #10" vem antes de "Pote #2".
+        setLocais(((data ?? []) as ContagemEpLocal[])
+          .sort((a, b) => ordemNatural(a.local_nome, b.local_nome)))
       })
 
     if (currentItem.status === 'pendente') {

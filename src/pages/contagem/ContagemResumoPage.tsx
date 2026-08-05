@@ -5,6 +5,7 @@ import { useAuth } from '../../contexts/AuthContext'
 import { Button } from '../../components/ui/Button'
 import { Badge } from '../../components/ui/Badge'
 import type { Contagem, ContagemInsumo, ContagemEcLote, ContagemEpLocal } from '../../types/contagem'
+import { ordemNatural } from '../../lib/utils'
 
 /**
  * Um dos quatro números da linha de contagem.
@@ -54,7 +55,9 @@ export function ContagemResumoPage() {
         .order('created_at'),
     ]).then(([{ data: c }, { data: items }]) => {
       setContagem(c as unknown as Contagem)
-      setItens((items ?? []) as unknown as InsumoJoined[])
+      // Mesma ordem da tela de contagem: conferir o resumo é reler a lista.
+      setItens(((items ?? []) as unknown as InsumoJoined[])
+        .sort((a, b) => ordemNatural(a.insumo.codigo, b.insumo.codigo)))
       setLoading(false)
     })
   }, [id])
@@ -72,15 +75,15 @@ export function ContagemResumoPage() {
         .from('contagem_ec_lotes')
         .select('*')
         .eq('contagem_insumo_id', itemId)
-        .order('lote_codigo')
-      setDetailsEc((data ?? []) as ContagemEcLote[])
+      setDetailsEc(((data ?? []) as ContagemEcLote[])
+        .sort((a, b) => ordemNatural(a.lote_codigo, b.lote_codigo)))
     } else {
       const { data } = await supabase
         .from('contagem_ep_locais')
         .select('*')
         .eq('contagem_insumo_id', itemId)
-        .order('local_nome')
-      setDetailsEp((data ?? []) as ContagemEpLocal[])
+      setDetailsEp(((data ?? []) as ContagemEpLocal[])
+        .sort((a, b) => ordemNatural(a.local_nome, b.local_nome)))
     }
   }
 

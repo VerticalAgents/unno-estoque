@@ -144,3 +144,16 @@ export function getDesvioStatus(consumoReal: number, consumoTeorico: number): De
 export function truncate(str: string, maxLen: number): string {
   return str.length > maxLen ? str.slice(0, maxLen - 1) + '…' : str
 }
+
+// ── Ordem natural ────────────────────────────────────────────
+
+/**
+ * Comparador para códigos e nomes numerados: INS2 antes de INS10.
+ *
+ * É o gêmeo em JavaScript da função `chave_natural` do banco (migration 053).
+ * Existe porque nem toda lista dá para reordenar no SQL — listas já gravadas,
+ * como os insumos de uma contagem antiga, só têm conserto na exibição.
+ */
+export function ordemNatural(a: string, b: string): number {
+  return (a ?? '').localeCompare(b ?? '', 'pt-BR', { numeric: true, sensitivity: 'base' })
+}
