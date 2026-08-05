@@ -380,7 +380,7 @@ export function NovaContagemEcPage() {
                 <span className="block text-xs font-semibold text-amber-700 mt-0.5">
                   {parcialmenteRetirado(lote)
                     ? `ABERTO · já saíram ${quantoSaiu(lote)} de ${lote.lote?.quantidade_recebida} ${currentItem.insumo.unidade_medida}`
-                    : 'ABERTO · embalagem já estava começada'}
+                    : 'ABERTO · embalagem começada'}
                 </span>
               )}
             </div>
