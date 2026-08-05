@@ -44,6 +44,14 @@ interface QRScannerProps {
    * que faz a pessoa desistir e conferir no olho.
    */
   continuo?: boolean
+  /**
+   * A saída da leitura contínua.
+   *
+   * Sem isto, quem termina de bipar fica preso: o botão de concluir da tela
+   * está atrás da camada, e é preciso adivinhar que o X vem antes. A câmera é
+   * desligada antes de avisar a tela, para não ficar acesa por trás.
+   */
+  acaoConcluir?: { rotulo: string; onClick: () => void }
 }
 
 /** Quanto tempo ignorar a releitura do mesmo código, em modo contínuo. */
@@ -68,6 +76,7 @@ export function QRScanner({
   titulo,
   painel,
   continuo = false,
+  acaoConcluir,
 }: QRScannerProps) {
   const containerId = useRef(`qr-reader-${Math.random().toString(36).slice(2)}`)
   const scannerRef = useRef<Html5Qrcode | null>(null)
@@ -292,6 +301,22 @@ export function QRScanner({
         {painel && (
           <div className="shrink-0 max-h-[32vh] overflow-y-auto mx-4 mb-2 rounded-xl bg-white/95 p-3">
             {painel}
+          </div>
+        )}
+
+        {/* A saída fica em destaque e sozinha na linha: é o fim da tarefa, e
+            disputar espaço com lanterna e digitação a esconderia. */}
+        {acaoConcluir && (
+          <div className="shrink-0 px-4 pb-2">
+            <button
+              onClick={async () => {
+                await pararLeitura()
+                acaoConcluir.onClick()
+              }}
+              className="w-full rounded-xl bg-brand-600 px-4 py-3.5 text-sm font-semibold uppercase tracking-wide text-white"
+            >
+              {acaoConcluir.rotulo}
+            </button>
           </div>
         )}
 

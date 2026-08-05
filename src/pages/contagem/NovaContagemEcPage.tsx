@@ -231,6 +231,12 @@ export function NovaContagemEcPage() {
           continuo
           titulo={currentItem.insumo.nome}
           label={`${encontrados} de ${totalLotes} lotes encontrados`}
+          acaoConcluir={{
+            rotulo: encontrados === totalLotes
+              ? 'Todos encontrados — próximo insumo'
+              : `Finalizar com ${totalLotes - encontrados} faltante${totalLotes - encontrados > 1 ? 's' : ''}`,
+            onClick: () => { void finalizarInsumo() },
+          }}
           painel={
             <div>
               {scanError && (

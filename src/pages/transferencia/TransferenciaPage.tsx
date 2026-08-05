@@ -493,6 +493,10 @@ export function TransferenciaPage() {
                 continuo
                 titulo={lote.insumo.nome}
                 label={`${lotes.length} sublote${lotes.length === 1 ? '' : 's'} · ${formatQty(totalQty, unidade)}`}
+                acaoConcluir={{
+                  rotulo: 'Continuar para o recipiente',
+                  onClick: () => { setScanError(''); setStep('scan_local') },
+                }}
                 painel={
                   <div>
                     {scanError && (
