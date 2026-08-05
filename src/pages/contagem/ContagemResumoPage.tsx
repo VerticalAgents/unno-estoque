@@ -104,6 +104,25 @@ export function ContagemResumoPage() {
     setApplying(false)
   }
 
+  /**
+   * Desiste da contagem inteira.
+   *
+   * O status 'cancelada' já existia no banco desde a migration 019, mas não
+   * havia como chegar nele pela tela: uma contagem começada por engano ficava
+   * para sempre "em andamento" na lista. Nada do estoque é tocado — cancelar é
+   * jogar fora a conferência, não alterar saldo.
+   */
+  async function cancelarContagem() {
+    if (!id) return
+    const certeza = window.confirm(
+      'Cancelar esta contagem? Tudo que foi conferido nela será descartado. '
+      + 'O estoque não muda.',
+    )
+    if (!certeza) return
+    await supabase.from('contagens').update({ status: 'cancelada' }).eq('id', id)
+    navigate('/contagem')
+  }
+
   async function finalizarSemAplicar() {
     if (!id) return
     await supabase.from('contagens').update({
@@ -321,6 +340,22 @@ export function ContagemResumoPage() {
           <Button size="lg" fullWidth onClick={() => navigate(`/contagem/${contagem.tipo}/${id}`)}>
             Continuar contagem
           </Button>
+        </div>
+      )}
+
+      {/* A saída fica longe dos botões de seguir em frente, e discreta: é o
+          caminho raro, e clicar nele por engano custa a conferência inteira. */}
+      {(contagem.status === 'em_andamento' || contagem.status === 'finalizada') && (
+        <div className="mt-6 pt-4 border-t border-gray-200 text-center">
+          <button
+            onClick={() => void cancelarContagem()}
+            className="text-xs text-red-600 hover:underline"
+          >
+            Cancelar esta contagem
+          </button>
+          <p className="text-xs text-gray-400 mt-1">
+            Descarta o que foi conferido. O estoque não muda.
+          </p>
         </div>
       )}
 

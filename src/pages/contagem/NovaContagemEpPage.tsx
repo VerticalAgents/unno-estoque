@@ -7,6 +7,7 @@ import { Button } from '../../components/ui/Button'
 import { Input } from '../../components/ui/Input'
 import type { ContagemInsumo, ContagemEpLocal, StatusFisico } from '../../types/contagem'
 import { bancada, daBancada, emBancada, usaTara } from '../../lib/unidades'
+import { NavegadorInsumos } from './NavegadorInsumos'
 
 type InsumoJoined = ContagemInsumo & {
   insumo: { nome: string; codigo: string; unidade_medida: string }
@@ -36,6 +37,47 @@ export function NovaContagemEpPage() {
   const [loading, setLoading] = useState(true)
   const [scanError, setScanError] = useState('')
   const [saving, setSaving] = useState(false)
+  const [statusContagem, setStatusContagem] = useState('em_andamento')
+
+  /** Ver o comentário gêmeo em NovaContagemEcPage: reabrir devolve a contagem
+   *  para "em andamento", senão o resumo ofereceria aplicar número em edição. */
+  async function irParaInsumo(idx: number) {
+    const item = itens[idx]
+    if (!item || statusContagem === 'aplicada') return
+    setScanError('')
+    setActiveLocalId(null)
+    setPesoBruto('')
+    setCurrentIdx(idx)
+
+    if (item.status === 'finalizado') {
+      await supabase.from('contagem_insumos').update({ status: 'em_contagem' }).eq('id', item.id)
+      setItens(prev => prev.map((it, i) =>
+        i === idx ? { ...it, status: 'em_contagem' as const } : it
+      ))
+      if (statusContagem === 'finalizada') {
+        await supabase.from('contagens')
+          .update({ status: 'em_andamento', finalizada_at: null })
+          .eq('id', id)
+        setStatusContagem('em_andamento')
+      }
+    }
+  }
+
+  /** Recipiente conferido por engano volta a pendente. */
+  async function desmarcarLocal(localItemId: string) {
+    await supabase.from('contagem_ep_locais').update({
+      escaneado: false,
+      status_fisico: null,
+      peso_bruto: null,
+      qtd_liquida: null,
+    }).eq('id', localItemId)
+
+    // No banco os campos voltam a NULL; no estado da tela o tipo usa
+    // `undefined` para "não conferido".
+    setLocais(prev => prev.map(l => l.id === localItemId
+      ? { ...l, escaneado: false, status_fisico: undefined, peso_bruto: undefined, qtd_liquida: undefined }
+      : l))
+  }
 
   // Local sendo configurado (após scan)
   const [activeLocalId, setActiveLocalId] = useState<string | null>(null)
@@ -45,18 +87,21 @@ export function NovaContagemEpPage() {
 
   useEffect(() => {
     if (!id) return
-    supabase
-      .from('contagem_insumos')
-      .select('*, insumo:insumos(nome, codigo, unidade_medida)')
-      .eq('contagem_id', id)
-      .order('created_at')
-      .then(({ data }) => {
-        const items = (data ?? []) as unknown as InsumoJoined[]
-        setItens(items)
-        const idx = items.findIndex(i => i.status !== 'finalizado')
-        setCurrentIdx(idx >= 0 ? idx : items.length)
-        setLoading(false)
-      })
+    Promise.all([
+      supabase
+        .from('contagem_insumos')
+        .select('*, insumo:insumos(nome, codigo, unidade_medida)')
+        .eq('contagem_id', id)
+        .order('created_at'),
+      supabase.from('contagens').select('status').eq('id', id).single(),
+    ]).then(([itensRes, contRes]) => {
+      const items = (itensRes.data ?? []) as unknown as InsumoJoined[]
+      setItens(items)
+      setStatusContagem((contRes.data as { status: string } | null)?.status ?? 'em_andamento')
+      const idx = items.findIndex(i => i.status !== 'finalizado')
+      setCurrentIdx(idx >= 0 ? idx : Math.max(items.length - 1, 0))
+      setLoading(false)
+    })
   }, [id])
 
   const currentItem = itens[currentIdx]
@@ -234,8 +279,13 @@ export function NovaContagemEpPage() {
       idx === currentIdx ? { ...item, status: 'finalizado' as const, qtd_fisica: qtdFisica } : item
     ))
 
-    const nextIdx = currentIdx + 1
-    if (nextIdx >= itens.length) {
+    // Próximo que ainda falta — com a fila navegável, ir para o vizinho de
+    // baixo jogaria quem voltou para corrigir num insumo já conferido.
+    const restantes = itens
+      .map((it, i) => ({ i, status: i === currentIdx ? 'finalizado' : it.status }))
+      .filter(x => x.status !== 'finalizado')
+
+    if (restantes.length === 0) {
       await supabase.from('contagens').update({
         status: 'finalizada',
         finalizada_at: new Date().toISOString(),
@@ -243,7 +293,8 @@ export function NovaContagemEpPage() {
 
       navigate(`/contagem/resumo/${id}`)
     } else {
-      setCurrentIdx(nextIdx)
+      const proximo = restantes.find(x => x.i > currentIdx) ?? restantes[0]
+      setCurrentIdx(proximo.i)
       setLocais([])
     }
     setSaving(false)
@@ -292,12 +343,24 @@ export function NovaContagemEpPage() {
         </div>
       </div>
 
+      <NavegadorInsumos
+        itens={itens}
+        atual={currentIdx}
+        bloqueado={statusContagem === 'aplicada'}
+        onIr={idx => void irParaInsumo(idx)}
+      />
+
       {/* Insumo atual */}
       <div className="bg-white border border-gray-200 rounded-xl p-4 mb-4">
         <h2 className="font-semibold text-gray-900">{currentItem.insumo.nome}</h2>
         <p className="text-xs text-gray-500 mt-0.5">
           {currentItem.insumo.codigo} · Recipientes: {totalLocais} · Escaneados: {escaneados}
         </p>
+        {currentItem.status === 'finalizado' && (
+          <p className="text-xs text-amber-700 mt-1.5">
+            Já conferido. Escanear ou refazer aqui reabre este insumo.
+          </p>
+        )}
       </div>
 
       {/* Lista de recipientes */}
@@ -333,9 +396,15 @@ export function NovaContagemEpPage() {
               )}
             </div>
             {local.escaneado ? (
-              <svg className="w-5 h-5 text-emerald-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                <path strokeLinecap="round" strokeLinejoin="round" d="M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-              </svg>
+              <button
+                onClick={() => void desmarcarLocal(local.id)}
+                className="flex items-center gap-1.5 text-xs text-gray-600 hover:underline shrink-0"
+              >
+                <svg className="w-5 h-5 text-emerald-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+                refazer
+              </button>
             ) : (
               <span className="text-xs text-gray-400">Pendente</span>
             )}
