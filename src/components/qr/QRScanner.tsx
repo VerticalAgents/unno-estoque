@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { Html5Qrcode } from 'html5-qrcode'
 import { Button } from '../ui/Button'
 
@@ -25,17 +25,57 @@ interface QRScannerProps {
   onScan: (value: string) => void
   onError?: (error: string) => void
   label?: string
+  /** O que está sendo escaneado — fica em destaque no topo da camada. */
+  titulo?: string
+  /**
+   * Contexto da tarefa, desenhado dentro da camada de leitura.
+   *
+   * A camada ocupa a tela inteira e escondia justamente o que a pessoa
+   * precisava: qual insumo, quais lotes faltam, quantos já foram. Como o que
+   * importa muda de tela para tela, quem chama é que monta esse pedaço — e
+   * como ele é redesenhado a cada leitura, a lista se marca sozinha na frente
+   * de quem está bipando.
+   */
+  painel?: ReactNode
+  /**
+   * Continua lendo depois de cada acerto, em vez de fechar a câmera.
+   *
+   * Para conferir dez lotes seguidos, fechar e reabrir a câmera a cada um é o
+   * que faz a pessoa desistir e conferir no olho.
+   */
+  continuo?: boolean
+}
+
+/** Quanto tempo ignorar a releitura do mesmo código, em modo contínuo. */
+const REPETICAO_MS = 2500
+
+/**
+ * O QR carrega mais que o código (`INS001-0001.1/9|2026-08-05|123`). Para
+ * confirmar a leitura na tela, só o código interessa — o resto vira ruído
+ * bem no momento em que a pessoa precisa bater o olho e seguir.
+ */
+function codigoLegivel(valor: string): string {
+  return valor.replace(/^QR-/, '').split('|')[0].trim() || valor
 }
 
 /** `torch` é extensão de fabricante: não está na tipagem padrão do navegador. */
 type ComLanterna = MediaTrackCapabilities & { torch?: boolean }
 
-export function QRScanner({ onScan, onError, label = 'Aponte a câmera para o QR Code' }: QRScannerProps) {
+export function QRScanner({
+  onScan,
+  onError,
+  label = 'Aponte a câmera para o QR Code',
+  titulo,
+  painel,
+  continuo = false,
+}: QRScannerProps) {
   const containerId = useRef(`qr-reader-${Math.random().toString(36).slice(2)}`)
   const scannerRef = useRef<Html5Qrcode | null>(null)
+  const ultimaLeitura = useRef<{ valor: string; quando: number } | null>(null)
   const [lendo, setLendo] = useState(false)
   const [erro, setErro] = useState<string | null>(null)
   const [lido, setLido] = useState<string | null>(null)
+  const [ultimoOk, setUltimoOk] = useState<string | null>(null)
   const [temLanterna, setTemLanterna] = useState(false)
   const [lanternaAcesa, setLanternaAcesa] = useState(false)
   const [digitando, setDigitando] = useState(false)
@@ -63,11 +103,33 @@ export function QRScanner({ onScan, onError, label = 'Aponte a câmera para o QR
   }, [])
 
   function aceitar(valor: string) {
-    setLido(valor)
-    void pararLeitura()
     // Confirmação no tato: numa cozinha barulhenta ninguém ouve o bipe.
     navigator.vibrate?.(60)
+
+    if (continuo) {
+      // A câmera continua aberta, então o painel de quem chamou se atualiza na
+      // frente de quem está bipando. O aviso verde diz o que acabou de entrar.
+      setUltimoOk(valor)
+      onScan(valor)
+      return
+    }
+
+    setLido(valor)
+    void pararLeitura()
     onScan(valor)
+  }
+
+  /**
+   * A biblioteca avisa a cada quadro em que o QR aparece — segurar a etiqueta
+   * um segundo à frente da câmera dispararia dezenas de leituras do mesmo
+   * código. Só passa código novo, ou o mesmo depois da carência.
+   */
+  function aoLer(valor: string) {
+    const anterior = ultimaLeitura.current
+    const agora = Date.now()
+    if (anterior && anterior.valor === valor && agora - anterior.quando < REPETICAO_MS) return
+    ultimaLeitura.current = { valor, quando: agora }
+    aceitar(valor)
   }
 
   async function iniciarLeitura() {
@@ -91,7 +153,7 @@ export function QRScanner({ onScan, onError, label = 'Aponte a câmera para o QR
             return { width: lado, height: lado }
           },
         },
-        texto => aceitar(texto),
+        texto => aoLer(texto),
         () => { /* quadro sem QR não é erro */ },
       )
 
@@ -185,23 +247,20 @@ export function QRScanner({ onScan, onError, label = 'Aponte a câmera para o QR
 
   if (lendo) {
     return (
-      <div className="fixed inset-0 z-50 bg-black flex flex-col items-center justify-center">
-        {/* O tamanho do vídeo é da biblioteca, não nosso.
-            Esticar com `h-full`/`object-cover` para "preencher a tela" quebrou
-            a leitura: a html5-qrcode recorta a região que decodifica a partir
-            do tamanho do elemento, e um vídeo 4:3 (640x480) espremido num
-            retângulo de 390x844 faz o recorte cair fora de onde o QR está.
-            A câmera continuava rodando e nada era lido — medido em 05/08/2026
-            com câmera falsa: 12s sem leitura aqui, 1s com o vídeo natural. */}
-        <div id={containerId.current} className="w-full max-w-md" />
-
-        <div className="absolute top-0 inset-x-0 p-4 flex items-start justify-between gap-3
-                        bg-gradient-to-b from-black/70 to-transparent">
-          <p className="text-sm text-white/90 pt-2">{label}</p>
+      <div className="fixed inset-0 z-50 bg-black flex flex-col">
+        {/* Cabeçalho: o que escanear, e o que é. Fica no fluxo (não absoluto)
+            para o painel poder crescer sem cobrir a mira. */}
+        <div className="shrink-0 px-4 pt-4 pb-3 flex items-start justify-between gap-3">
+          <div className="min-w-0">
+            {titulo && (
+              <p className="text-base font-semibold text-white leading-tight truncate">{titulo}</p>
+            )}
+            <p className="text-xs text-white/70 mt-0.5">{label}</p>
+          </div>
           <button
             onClick={() => void pararLeitura()}
             aria-label="Fechar"
-            className="p-2 rounded-full bg-black/40 text-white"
+            className="shrink-0 p-2 rounded-full bg-white/15 text-white"
           >
             <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
               <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
@@ -209,8 +268,34 @@ export function QRScanner({ onScan, onError, label = 'Aponte a câmera para o QR
           </button>
         </div>
 
-        <div className="absolute bottom-0 inset-x-0 p-4 folga-segura-baixo
-                        bg-gradient-to-t from-black/70 to-transparent
+        {/* A mira. O tamanho do vídeo é da biblioteca, não nosso.
+            Esticar com `h-full`/`object-cover` para "preencher a tela" quebrou
+            a leitura: a html5-qrcode recorta a região que decodifica a partir
+            do tamanho do elemento, e um vídeo 4:3 (640x480) espremido num
+            retângulo de 390x844 faz o recorte cair fora de onde o QR está.
+            A câmera continuava rodando e nada era lido — medido em 05/08/2026
+            com câmera falsa: 12s sem leitura aqui, 1s com o vídeo natural. */}
+        <div className="flex-1 min-h-0 flex items-center justify-center overflow-hidden">
+          <div id={containerId.current} className="w-full max-w-md" />
+        </div>
+
+        {/* Confirmação da última leitura, em modo contínuo. */}
+        {continuo && ultimoOk && (
+          <div className="shrink-0 mx-4 mb-2 rounded-lg bg-emerald-500/90 px-3 py-2">
+            <p className="text-xs font-semibold text-white truncate">
+              Lido: {codigoLegivel(ultimoOk)}
+            </p>
+          </div>
+        )}
+
+        {/* Painel de quem chamou: a lista que se marca sozinha. */}
+        {painel && (
+          <div className="shrink-0 max-h-[32vh] overflow-y-auto mx-4 mb-2 rounded-xl bg-white/95 p-3">
+            {painel}
+          </div>
+        )}
+
+        <div className="shrink-0 px-4 pb-4 folga-segura-baixo
                         flex items-center justify-center gap-3">
           {temLanterna && (
             <button

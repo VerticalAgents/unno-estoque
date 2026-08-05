@@ -453,9 +453,36 @@ export function NovaContagemEpPage() {
       {/* Scanner (só mostra se não tem local ativo) */}
       {!activeLocalId && (
         <div className="mb-4">
+          {/* Sem modo contínuo aqui: cada recipiente lido abre o formulário de
+              peso, então a câmera tem de fechar mesmo. O painel leva a lista
+              para dentro da camada, que antes a escondia. */}
           <QRScanner
             onScan={handleScan}
-            label="Escaneie o QR code do recipiente"
+            titulo={currentItem.insumo.nome}
+            label={`${locais.filter(l => l.escaneado).length} de ${locais.length} recipientes conferidos`}
+            painel={
+              <div>
+                {scanError && (
+                  <p className="text-xs font-semibold text-red-700 mb-2">{scanError}</p>
+                )}
+                <div className="space-y-1">
+                  {locais.map(local => (
+                    <div key={local.id} className="flex items-center justify-between gap-2 text-xs">
+                      <span className={local.escaneado ? 'text-emerald-700 font-semibold' : 'text-gray-600'}>
+                        {local.escaneado ? '✓ ' : '○ '}{local.local_nome}
+                      </span>
+                      {local.escaneado && local.status_fisico && (
+                        <span className="text-gray-400 shrink-0">
+                          {local.status_fisico === 'cheio' ? 'cheio'
+                            : local.status_fisico === 'vazio' ? 'vazio'
+                            : `${local.qtd_liquida ?? 0}`}
+                        </span>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            }
           />
         </div>
       )}

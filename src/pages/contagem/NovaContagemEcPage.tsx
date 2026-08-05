@@ -212,11 +212,34 @@ export function NovaContagemEcPage() {
         ))}
       </div>
 
-      {/* Scanner */}
+      {/* Scanner — leva o contexto para dentro da câmera: qual insumo, quanto
+          falta e quais lotes, marcando-se sozinho a cada bipada. Sem isso a
+          camada de leitura tapava justamente a lista que orienta o trabalho. */}
       <div className="mb-4">
         <QRScanner
           onScan={handleScan}
-          label="Escaneie a etiqueta do lote"
+          continuo
+          titulo={currentItem.insumo.nome}
+          label={`${encontrados} de ${totalLotes} lotes encontrados`}
+          painel={
+            <div>
+              {scanError && (
+                <p className="text-xs font-semibold text-red-700 mb-2">{scanError}</p>
+              )}
+              <div className="space-y-1">
+                {lotes.map(lote => (
+                  <div key={lote.id} className="flex items-center justify-between gap-2 text-xs">
+                    <span className={lote.encontrado ? 'text-emerald-700 font-semibold' : 'text-gray-600'}>
+                      {lote.encontrado ? '✓ ' : '○ '}{lote.lote_codigo}
+                    </span>
+                    <span className="text-gray-400 shrink-0">
+                      {lote.qtd_lote} {currentItem.insumo.unidade_medida}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          }
         />
       </div>
 

@@ -485,9 +485,35 @@ export function TransferenciaPage() {
               Escaneie outros lotes do mesmo insumo, ou continue para escanear o recipiente
             </p>
             {travaScan ? painelTrava : (
+              /* Contínuo: aqui a pessoa junta vários sublotes seguidos, e
+                 fechar a câmera a cada um dobrava o trabalho. O painel mostra
+                 o que já entrou e o total acumulado sem sair da leitura. */
               <QRScanner
                 onScan={qr => adicionarLote(qr)}
-                label="Escanear lote adicional"
+                continuo
+                titulo={lote.insumo.nome}
+                label={`${lotes.length} sublote${lotes.length === 1 ? '' : 's'} · ${formatQty(totalQty, unidade)}`}
+                painel={
+                  <div>
+                    {scanError && (
+                      <p className="text-xs font-semibold text-red-700 mb-2">{scanError}</p>
+                    )}
+                    <div className="space-y-1">
+                      {lotes.map(l => (
+                        <div key={l.id} className="flex justify-between gap-2 text-xs">
+                          <span className="font-mono text-emerald-700 font-semibold truncate">✓ {l.codigo}</span>
+                          <span className="text-gray-500 shrink-0">
+                            {formatQty(l.quantidade_disponivel, l.unidade)}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                    <div className="mt-2 pt-2 border-t border-gray-200 flex justify-between text-xs font-semibold">
+                      <span className="text-gray-700">Total na mão</span>
+                      <span className="text-brand-700">{formatQty(totalQty, unidade)}</span>
+                    </div>
+                  </div>
+                }
               />
             )}
             {scanError && (
@@ -571,7 +597,21 @@ export function TransferenciaPage() {
             <p className="text-sm text-gray-500 mb-4">Aponte para o QR Code fixo no balde, caixa ou garrafa</p>
             <QRScanner
               onScan={handleScanLocal}
-              label="Escanear QR do recipiente EP"
+              titulo={lote.insumo.nome}
+              label={`${formatQty(totalQty, unidade)} na mão · escaneie o recipiente`}
+              painel={
+                <div className="text-xs">
+                  {scanError && !ro003Error && (
+                    <p className="font-semibold text-red-700 mb-2">{scanError}</p>
+                  )}
+                  <p className="text-gray-600">
+                    Procure um recipiente de <strong className="text-gray-900">{lote.insumo.nome}</strong>
+                  </p>
+                  <p className="text-gray-500 mt-1">
+                    {lotes.length} sublote{lotes.length === 1 ? '' : 's'} · {formatQty(totalQty, unidade)}
+                  </p>
+                </div>
+              }
             />
             {scanError && !ro003Error && (
               <div className="mt-3 p-3 bg-red-50 border border-red-200 rounded-lg text-sm text-red-700">
