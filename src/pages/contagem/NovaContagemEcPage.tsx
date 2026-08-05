@@ -21,28 +21,52 @@ type InsumoJoined = ContagemInsumo & {
  * já transferiu parte dele — três situações bem diferentes.
  */
 type LoteEsperado = ContagemEcLote & {
-  lote?: { quantidade_recebida: number; quantidade_disponivel: number } | null
+  lote?: {
+    quantidade_recebida: number
+    quantidade_disponivel: number
+    observacoes: string | null
+  } | null
 }
 
 /**
- * Fardo aberto: já saiu produto dele para o estoque produtivo.
+ * Quanto o sistema acredita que tem HOJE naquele fardo.
  *
- * Compara com o saldo ATUAL do lote, e não com `qtd_lote` (a fotografia do
- * início da contagem): estar aberto é uma característica da embalagem física,
- * verdadeira mesmo que a transferência tenha acontecido depois que a contagem
- * começou.
+ * `qtd_lote` é a fotografia do instante em que a contagem começou. Numa
+ * contagem que fica dias aberta ela envelhece: o fardo do qual se transferiu
+ * 10 kg continuava anunciando 25. Quem conta precisa do número de agora — a
+ * fotografia serve ao histórico, não a quem está de pé na prateleira.
  */
-function foiAberto(l: LoteEsperado): boolean {
-  const recebido = Number(l.lote?.quantidade_recebida ?? 0)
-  const atual = Number(l.lote?.quantidade_disponivel ?? recebido)
-  return recebido > 0 && atual < recebido - 0.0005
+function saldoAtual(l: LoteEsperado): number {
+  return Number(l.lote?.quantidade_disponivel ?? l.qtd_lote ?? 0)
 }
 
-/** Quanto já saiu do fardo. */
-function quantoSaiu(l: LoteEsperado): number {
+/**
+ * Fardo aberto — por dois caminhos diferentes, ambos verdadeiros:
+ *
+ *   1. Já saiu produto dele pelo sistema (transferência para o EP).
+ *   2. Nasceu aberto: é a embalagem que já estava começada quando o estoque
+ *      foi cadastrado, e a abertura marcou isso na observação (migration 069).
+ *
+ * Só o primeiro caso era detectado, e por isso o selo aparecia no fardo errado:
+ * o que ESTAVA aberto de verdade (20 kg de farinha, sobra de um saco começado)
+ * passava batido, porque nunca saiu nada dele pelo sistema.
+ */
+function foiAberto(l: LoteEsperado): boolean {
+  return nasceuAberto(l) || parcialmenteRetirado(l)
+}
+
+function nasceuAberto(l: LoteEsperado): boolean {
+  return (l.lote?.observacoes ?? '').toLowerCase().includes('embalagem aberta')
+}
+
+function parcialmenteRetirado(l: LoteEsperado): boolean {
   const recebido = Number(l.lote?.quantidade_recebida ?? 0)
-  const atual = Number(l.lote?.quantidade_disponivel ?? recebido)
-  return Number((recebido - atual).toFixed(3))
+  return recebido > 0 && saldoAtual(l) < recebido - 0.0005
+}
+
+/** Quanto já saiu do fardo pelo sistema. */
+function quantoSaiu(l: LoteEsperado): number {
+  return Number((Number(l.lote?.quantidade_recebida ?? 0) - saldoAtual(l)).toFixed(3))
 }
 
 export function NovaContagemEcPage() {
@@ -145,7 +169,7 @@ export function NovaContagemEcPage() {
     if (!currentItem) return
     supabase
       .from('contagem_ec_lotes')
-      .select('*, lote:lotes(quantidade_recebida, quantidade_disponivel)')
+      .select('*, lote:lotes(quantidade_recebida, quantidade_disponivel, observacoes)')
       .eq('contagem_insumo_id', currentItem.id)
       .then(({ data }) => {
         // Ordem natural: no banco, "INS002-0001.10/12" vem antes de ".2/12".
@@ -208,18 +232,22 @@ export function NovaContagemEcPage() {
     if (!currentItem) return
     setSaving(true)
 
-    const qtdFisica = lotes
-      .filter(l => l.encontrado)
-      .reduce((sum, l) => sum + l.qtd_lote, 0)
+    // Grava o mesmo número que a pessoa viu na tela — o saldo de agora, não a
+    // fotografia do início. E recalcula o teórico junto, senão o resumo
+    // compararia épocas diferentes e acusaria divergência onde não há: numa
+    // contagem aberta há dias, qualquer transferência viraria "falta".
+    const qtdFisica = lotes.filter(l => l.encontrado).reduce((s, l) => s + saldoAtual(l), 0)
+    const qtdTeorica = lotes.reduce((s, l) => s + saldoAtual(l), 0)
 
     await supabase.from('contagem_insumos').update({
       status: 'finalizado',
       qtd_fisica: qtdFisica,
+      qtd_teorica: qtdTeorica,
     }).eq('id', currentItem.id)
 
     // Atualiza local
     setItens(prev => prev.map((item, idx) =>
-      idx === currentIdx ? { ...item, status: 'finalizado' as const, qtd_fisica: qtdFisica } : item
+      idx === currentIdx ? { ...item, status: 'finalizado' as const, qtd_fisica: qtdFisica, qtd_teorica: qtdTeorica } : item
     ))
 
     // Vai para o próximo que ainda falta, e não simplesmente para o de baixo:
@@ -326,14 +354,15 @@ export function NovaContagemEcPage() {
                 {lote.lote_codigo}
               </span>
               <span className="text-xs text-gray-400 ml-2">
-                {lote.qtd_lote} {currentItem.insumo.unidade_medida}
+                {saldoAtual(lote)} {currentItem.insumo.unidade_medida}
               </span>
               {/* Fardo aberto tem menos do que a embalagem diz. Sem este aviso,
                   quem conta vê "15 kg" num fardo de 25 e desconfia de falta. */}
               {foiAberto(lote) && (
                 <span className="block text-xs font-semibold text-amber-700 mt-0.5">
-                  ABERTO · já saíram {quantoSaiu(lote)} de {lote.lote?.quantidade_recebida}{' '}
-                  {currentItem.insumo.unidade_medida}
+                  {parcialmenteRetirado(lote)
+                    ? `ABERTO · já saíram ${quantoSaiu(lote)} de ${lote.lote?.quantidade_recebida} ${currentItem.insumo.unidade_medida}`
+                    : 'ABERTO · embalagem já estava começada'}
                 </span>
               )}
             </div>
@@ -386,7 +415,7 @@ export function NovaContagemEcPage() {
                       )}
                     </span>
                     <span className="text-gray-400 shrink-0">
-                      {lote.qtd_lote} {currentItem.insumo.unidade_medida}
+                      {saldoAtual(lote)} {currentItem.insumo.unidade_medida}
                     </span>
                   </div>
                 ))}
