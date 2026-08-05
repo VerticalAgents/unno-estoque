@@ -113,23 +113,38 @@ export function NovaContagemEcPage() {
    * ela não pode continuar marcada como finalizada enquanto alguém mexe nela,
    * senão o resumo ofereceria "Aplicar" sobre um número em edição.
    */
-  async function irParaInsumo(idx: number) {
-    const item = itens[idx]
-    if (!item || statusContagem === 'aplicada') return
+  function irParaInsumo(idx: number) {
+    if (!itens[idx]) return
     setScanError('')
     setCurrentIdx(idx)
+  }
 
-    if (item.status === 'finalizado') {
-      await supabase.from('contagem_insumos').update({ status: 'em_contagem' }).eq('id', item.id)
-      setItens(prev => prev.map((it, i) =>
-        i === idx ? { ...it, status: 'em_contagem' as const } : it
-      ))
-      if (statusContagem === 'finalizada') {
-        await supabase.from('contagens')
-          .update({ status: 'em_andamento', finalizada_at: null })
-          .eq('id', id)
-        setStatusContagem('em_andamento')
-      }
+  /**
+   * Reabre o insumo atual, se ele já estava conferido.
+   *
+   * Chamada só por quem MUDA alguma coisa — escanear ou desmarcar. Antes isso
+   * acontecia no próprio clique de navegação, então quem tocava num insumo
+   * conferido só para olhar o desfazia sem querer: o verde sumia e o contador
+   * de conferidos caía. Olhar tem de ser inofensivo.
+   */
+  async function reabrirSeConferido() {
+    const item = itens[currentIdx]
+    if (!item || item.status !== 'finalizado') return
+    // Contagem aplicada nao se reabre: o estoque ja foi ajustado por ela.
+    if (statusContagem === 'aplicada') return
+
+    await supabase.from('contagem_insumos').update({ status: 'em_contagem' }).eq('id', item.id)
+    setItens(prev => prev.map((it, i) =>
+      i === currentIdx ? { ...it, status: 'em_contagem' as const } : it
+    ))
+
+    // A contagem inteira volta a "em andamento": ela não pode seguir marcada
+    // como finalizada enquanto alguém mexe nela.
+    if (statusContagem === 'finalizada') {
+      await supabase.from('contagens')
+        .update({ status: 'em_andamento', finalizada_at: null })
+        .eq('id', id)
+      setStatusContagem('em_andamento')
     }
   }
 
@@ -158,6 +173,7 @@ export function NovaContagemEcPage() {
 
   /** Marcado por engano tem volta — antes não tinha. */
   async function desmarcarLote(loteId: string) {
+    await reabrirSeConferido()
     await supabase.from('contagem_ec_lotes').update({ encontrado: false }).eq('id', loteId)
     setLotes(prev => prev.map(l => (l.id === loteId ? { ...l, encontrado: false } : l)))
   }
@@ -219,7 +235,9 @@ export function NovaContagemEcPage() {
       return
     }
 
-    // Marca como encontrado
+    // Bipar num insumo já conferido reabre — aí sim houve mudança.
+    await reabrirSeConferido()
+
     await supabase
       .from('contagem_ec_lotes')
       .update({ encontrado: true })
@@ -321,7 +339,7 @@ export function NovaContagemEcPage() {
         itens={itens}
         atual={currentIdx}
         bloqueado={statusContagem === 'aplicada'}
-        onIr={idx => void irParaInsumo(idx)}
+        onIr={irParaInsumo}
       />
 
       {/* Insumo atual */}

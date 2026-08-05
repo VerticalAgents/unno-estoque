@@ -40,27 +40,31 @@ export function NovaContagemEpPage() {
   const [saving, setSaving] = useState(false)
   const [statusContagem, setStatusContagem] = useState('em_andamento')
 
-  /** Ver o comentário gêmeo em NovaContagemEcPage: reabrir devolve a contagem
-   *  para "em andamento", senão o resumo ofereceria aplicar número em edição. */
-  async function irParaInsumo(idx: number) {
-    const item = itens[idx]
-    if (!item || statusContagem === 'aplicada') return
+  /** Navegar é inofensivo: olhar um insumo conferido não o desfaz. */
+  function irParaInsumo(idx: number) {
+    if (!itens[idx]) return
     setScanError('')
     setActiveLocalId(null)
     setPesoBruto('')
     setCurrentIdx(idx)
+  }
 
-    if (item.status === 'finalizado') {
-      await supabase.from('contagem_insumos').update({ status: 'em_contagem' }).eq('id', item.id)
-      setItens(prev => prev.map((it, i) =>
-        i === idx ? { ...it, status: 'em_contagem' as const } : it
-      ))
-      if (statusContagem === 'finalizada') {
-        await supabase.from('contagens')
-          .update({ status: 'em_andamento', finalizada_at: null })
-          .eq('id', id)
-        setStatusContagem('em_andamento')
-      }
+  /** Ver o comentário gêmeo no EC: só quem muda dado é que reabre. */
+  async function reabrirSeConferido() {
+    const item = itens[currentIdx]
+    if (!item || item.status !== 'finalizado') return
+    // Contagem aplicada nao se reabre: o estoque ja foi ajustado por ela.
+    if (statusContagem === 'aplicada') return
+
+    await supabase.from('contagem_insumos').update({ status: 'em_contagem' }).eq('id', item.id)
+    setItens(prev => prev.map((it, i) =>
+      i === currentIdx ? { ...it, status: 'em_contagem' as const } : it
+    ))
+    if (statusContagem === 'finalizada') {
+      await supabase.from('contagens')
+        .update({ status: 'em_andamento', finalizada_at: null })
+        .eq('id', id)
+      setStatusContagem('em_andamento')
     }
   }
 
@@ -83,6 +87,7 @@ export function NovaContagemEpPage() {
 
   /** Recipiente conferido por engano volta a pendente. */
   async function desmarcarLocal(localItemId: string) {
+    await reabrirSeConferido()
     await supabase.from('contagem_ep_locais').update({
       escaneado: false,
       status_fisico: null,
@@ -219,7 +224,9 @@ export function NovaContagemEpPage() {
       return
     }
 
-    // Cheio ou vazio: salva direto
+    // Cheio ou vazio: salva direto. Reabre antes, se o insumo ja estava
+    // conferido — aqui houve mudanca de verdade.
+    await reabrirSeConferido()
     await supabase.from('contagem_ep_locais').update({
       status_fisico: status,
       escaneado: true,
@@ -248,6 +255,7 @@ export function NovaContagemEpPage() {
     const liquidoNaBalanca = Math.max(0, peso - tara)
     const liquido = daBancada(liquidoNaBalanca, b.fator)
 
+    await reabrirSeConferido()
     await supabase.from('contagem_ep_locais').update({
       status_fisico: 'usado',
       escaneado: true,
@@ -368,7 +376,7 @@ export function NovaContagemEpPage() {
         itens={itens}
         atual={currentIdx}
         bloqueado={statusContagem === 'aplicada'}
-        onIr={idx => void irParaInsumo(idx)}
+        onIr={irParaInsumo}
       />
 
       {/* Insumo atual */}
