@@ -33,6 +33,16 @@ function dadosDoLote(lote: LoteEtiqueta, empresa: Empresa | null) {
 
   const shelfLife = (lote.insumo as unknown as { shelf_life_dias_pos_abertura?: number })?.shelf_life_dias_pos_abertura
 
+  // A embalagem aberta da abertura de estoque tem menos produto que as
+  // fechadas, e sem um aviso na etiqueta não há como saber em qual fardo
+  // colá-la. O sinal vem da observação gravada pela abertura; a quantidade
+  // entra junto porque é ela que casa a etiqueta com o fardo certo.
+  const embalagemAberta = (lote.observacoes ?? '').toLowerCase().includes('embalagem aberta')
+  const qtd = Number(lote.quantidade_recebida)
+  const quantidade = Number.isFinite(qtd) && qtd > 0
+    ? `${qtd.toLocaleString('pt-BR', { maximumFractionDigits: 3 })} ${lote.insumo?.unidade_medida ?? ''}`.trim()
+    : ''
+
   return {
     marcaForn: marcaForn || '—',
     responsavel: (lote.recebido_usuario as unknown as { nome: string } | null)?.nome ?? '',
@@ -41,7 +51,21 @@ function dadosDoLote(lote: LoteEtiqueta, empresa: Empresa | null) {
     empresaNome: empresa?.nome ?? 'Unno',
     aposAbertura: shelfLife != null ? `${shelfLife} DIAS` : '—',
     qrContent: [lote.codigo, lote.data_recebimento, lote.numero_nf ?? ''].filter(Boolean).join('|'),
+    embalagemAberta,
+    quantidade,
   }
+}
+
+/**
+ * O código do lote na tarja preta, sempre em UMA linha: a tarja fica na faixa
+ * destacável, cuja altura é contada ao milímetro — uma segunda linha empurraria
+ * o conteúdo para baixo da picotada. Código curto ganha corpo grande; sublote
+ * comprido (INS028-0001.12/12) encolhe até caber.
+ */
+function corpoDoCodigo(codigo: string): string {
+  if (codigo.length <= 13) return '9.5pt'
+  if (codigo.length <= 18) return '7.5pt'
+  return '6.5pt'
 }
 
 export function EtiquetaLoteContent({ lote, empresa, dims }: Props) {
@@ -114,6 +138,19 @@ function LotePaisagem({ lote, empresa }: { lote: LoteEtiqueta; empresa: Empresa 
           <div style={{ fontSize: '7pt', alignSelf: 'flex-start', marginTop: '1.5mm' }}>
             <span style={{ fontWeight: 'bold' }}>NF: </span>{lote.numero_nf || '—'}
           </div>
+          {d.embalagemAberta && (
+            <div style={{
+              fontSize: '7pt',
+              fontWeight: 'bold',
+              background: '#000',
+              color: '#fff',
+              padding: '0.5mm 1.5mm',
+              marginTop: '1.5mm',
+              alignSelf: 'flex-start',
+            }}>
+              EMB. ABERTA{d.quantidade ? ` · ${d.quantidade}` : ''}
+            </div>
+          )}
           <div style={{ marginTop: '2mm', flex: 1, display: 'flex', alignItems: 'center' }}>
             <QRCodeSVG value={d.qrContent} size={90} level="M" includeMargin={false} />
           </div>
@@ -164,8 +201,9 @@ function Campo({ label, value, bold }: { label: string; value: string; bold?: bo
  * uma pilha e a ordem passa a ser a de quem lê no estoque: o que é o insumo,
  * até quando serve, e só depois a papelada.
  *
- * A validade vem em caixa invertida porque é o único campo que alguém
- * procura de longe, com o pote na mão.
+ * O código do lote vem em caixa invertida: é o que se procura de longe na
+ * prateleira na hora de casar etiqueta com fardo (decisão do usuário em
+ * 05/08/2026 — antes era a validade, que desceu para o bloco de baixo).
  */
 function LoteRetrato({ lote, empresa }: { lote: LoteEtiqueta; empresa: Empresa | null }) {
   const d = dadosDoLote(lote, empresa)
@@ -222,7 +260,8 @@ function LoteRetrato({ lote, empresa }: { lote: LoteEtiqueta; empresa: Empresa |
         {d.empresaNome}
       </div>
 
-      {/* Validade — o campo que se lê de longe */}
+      {/* Lote — o campo que se lê de longe. Uma linha sempre: a segunda
+          estouraria a faixa destacável (ver corpoDoCodigo). */}
       <div style={{
         marginTop: '0.8mm',
         background: '#000',
@@ -230,9 +269,20 @@ function LoteRetrato({ lote, empresa }: { lote: LoteEtiqueta; empresa: Empresa |
         padding: '0.7mm 1mm',
         flexShrink: 0,
       }}>
-        <div style={{ fontSize: '4.5pt', lineHeight: 1.1, letterSpacing: '0.3pt' }}>VALIDADE</div>
-        <div style={{ fontSize: '9.5pt', fontWeight: 'bold', lineHeight: 1.05 }}>
-          {formatDate(lote.validade_pos_abertura)}
+        <div style={{ fontSize: '4.5pt', lineHeight: 1.1, letterSpacing: '0.3pt' }}>LOTE</div>
+        <div style={{
+          fontSize: corpoDoCodigo(lote.codigo),
+          fontWeight: 'bold',
+          lineHeight: 1.05,
+          whiteSpace: 'nowrap',
+          overflow: 'hidden',
+          // Altura fixa na medida do corpo maior: o código menor não encolhe a
+          // tarja, senão etiquetas da mesma linha do rolo sairiam desalinhadas.
+          height: '3.6mm',
+          display: 'flex',
+          alignItems: 'center',
+        }}>
+          {lote.codigo}
         </div>
       </div>
       {/* ── fim da faixa destacável (≈16,8mm de 18,5mm) ── */}
@@ -246,31 +296,35 @@ function LoteRetrato({ lote, empresa }: { lote: LoteEtiqueta; empresa: Empresa |
         <CampoRetrato label="MARCA/FORN." value={d.marcaForn} />
       </div>
 
-      {/* Lote e NF */}
+      {/* Validade e NF */}
       <div style={{
         marginTop: '1mm',
         paddingTop: '0.8mm',
         borderTop: '1pt solid #000',
         flexShrink: 0,
       }}>
-        {/* O código do lote é a chave da rastreabilidade: em vez de cortar
-            com reticências, quebra em duas linhas. Sublote longo
-            (INS028-0001.12/12) passa de uma linha em etiqueta estreita. */}
-        <div style={{
-          fontSize: '6.5pt',
-          fontWeight: 'bold',
-          lineHeight: 1.15,
-          wordBreak: 'break-all',
-          display: '-webkit-box',
-          WebkitLineClamp: 2,
-          WebkitBoxOrient: 'vertical',
-          overflow: 'hidden',
-        }}>
-          LOTE: {lote.codigo}
+        <div style={{ fontSize: '6.5pt', fontWeight: 'bold', lineHeight: 1.15, whiteSpace: 'nowrap', overflow: 'hidden' }}>
+          VALIDADE: {formatDate(lote.validade_pos_abertura)}
         </div>
-        <div style={{ fontSize: '5.8pt', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-          NF: {lote.numero_nf || '—'}
-        </div>
+        {/* A embalagem aberta ocupa a linha da NF — os lotes da abertura de
+            estoque nunca têm nota, e é só neles que a marcação existe. */}
+        {d.embalagemAberta ? (
+          <div style={{
+            fontSize: '5.8pt',
+            fontWeight: 'bold',
+            background: '#000',
+            color: '#fff',
+            padding: '0.3mm 0.8mm',
+            marginTop: '0.3mm',
+            display: 'inline-block',
+          }}>
+            EMB. ABERTA{d.quantidade ? ` · ${d.quantidade}` : ''}
+          </div>
+        ) : (
+          <div style={{ fontSize: '5.8pt', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+            NF: {lote.numero_nf || '—'}
+          </div>
+        )}
       </div>
 
       {/* QR — ocupa o que sobrar, centralizado. O tamanho deixa folga na
