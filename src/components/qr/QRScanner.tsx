@@ -185,8 +185,15 @@ export function QRScanner({ onScan, onError, label = 'Aponte a câmera para o QR
 
   if (lendo) {
     return (
-      <div className="fixed inset-0 z-50 bg-black flex flex-col">
-        <div id={containerId.current} className="flex-1 min-h-0 [&_video]:h-full [&_video]:object-cover" />
+      <div className="fixed inset-0 z-50 bg-black flex flex-col items-center justify-center">
+        {/* O tamanho do vídeo é da biblioteca, não nosso.
+            Esticar com `h-full`/`object-cover` para "preencher a tela" quebrou
+            a leitura: a html5-qrcode recorta a região que decodifica a partir
+            do tamanho do elemento, e um vídeo 4:3 (640x480) espremido num
+            retângulo de 390x844 faz o recorte cair fora de onde o QR está.
+            A câmera continuava rodando e nada era lido — medido em 05/08/2026
+            com câmera falsa: 12s sem leitura aqui, 1s com o vídeo natural. */}
+        <div id={containerId.current} className="w-full max-w-md" />
 
         <div className="absolute top-0 inset-x-0 p-4 flex items-start justify-between gap-3
                         bg-gradient-to-b from-black/70 to-transparent">
