@@ -64,6 +64,23 @@ export function NovaContagemEpPage() {
     }
   }
 
+  /** Ver o comentário gêmeo no EC: encerrar no meio é o caso normal. */
+  async function encerrarContagem() {
+    const faltam = itens.filter(i => i.status !== 'finalizado').length
+    const certeza = window.confirm(
+      faltam > 0
+        ? `Encerrar a contagem com ${faltam} insumo${faltam > 1 ? 's' : ''} sem conferir? `
+          + 'O que não foi conferido não será alterado no estoque.'
+        : 'Encerrar a contagem?',
+    )
+    if (!certeza) return
+    await supabase.from('contagens').update({
+      status: 'finalizada',
+      finalizada_at: new Date().toISOString(),
+    }).eq('id', id)
+    navigate(`/contagem/resumo/${id}`)
+  }
+
   /** Recipiente conferido por engano volta a pendente. */
   async function desmarcarLocal(localItemId: string) {
     await supabase.from('contagem_ep_locais').update({
@@ -578,6 +595,18 @@ export function NovaContagemEpPage() {
           : `Finalizar insumo (${totalLocais - escaneados} pendente${totalLocais - escaneados > 1 ? 's' : ''})`
         }
       </Button>
+
+      <div className="mt-6 pt-4 border-t border-gray-200 text-center">
+        <button
+          onClick={() => void encerrarContagem()}
+          className="text-xs font-medium text-gray-600 hover:underline"
+        >
+          Encerrar contagem e ver resumo
+        </button>
+        <p className="text-xs text-gray-400 mt-1">
+          Insumo não conferido fica como está.
+        </p>
+      </div>
     </div>
   )
 }

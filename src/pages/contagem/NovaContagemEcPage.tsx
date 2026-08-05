@@ -21,13 +21,28 @@ type InsumoJoined = ContagemInsumo & {
  * já transferiu parte dele — três situações bem diferentes.
  */
 type LoteEsperado = ContagemEcLote & {
-  lote?: { quantidade_recebida: number } | null
+  lote?: { quantidade_recebida: number; quantidade_disponivel: number } | null
 }
 
-/** Fardo aberto: já saiu produto dele para o estoque produtivo. */
+/**
+ * Fardo aberto: já saiu produto dele para o estoque produtivo.
+ *
+ * Compara com o saldo ATUAL do lote, e não com `qtd_lote` (a fotografia do
+ * início da contagem): estar aberto é uma característica da embalagem física,
+ * verdadeira mesmo que a transferência tenha acontecido depois que a contagem
+ * começou.
+ */
 function foiAberto(l: LoteEsperado): boolean {
   const recebido = Number(l.lote?.quantidade_recebida ?? 0)
-  return recebido > 0 && Number(l.qtd_lote) < recebido - 0.0005
+  const atual = Number(l.lote?.quantidade_disponivel ?? recebido)
+  return recebido > 0 && atual < recebido - 0.0005
+}
+
+/** Quanto já saiu do fardo. */
+function quantoSaiu(l: LoteEsperado): number {
+  const recebido = Number(l.lote?.quantidade_recebida ?? 0)
+  const atual = Number(l.lote?.quantidade_disponivel ?? recebido)
+  return Number((recebido - atual).toFixed(3))
 }
 
 export function NovaContagemEcPage() {
@@ -94,6 +109,29 @@ export function NovaContagemEcPage() {
     }
   }
 
+  /**
+   * Encerra a sessão sem passar por todos os insumos.
+   *
+   * Ninguém conta 20 insumos de uma vez: interrompe, vai produzir, volta
+   * amanhã. Antes só havia saída conferindo tudo. O que não foi conferido fica
+   * como está — a migration 071 garante que aplicar não encoste nesses.
+   */
+  async function encerrarContagem() {
+    const faltam = itens.filter(i => i.status !== 'finalizado').length
+    const certeza = window.confirm(
+      faltam > 0
+        ? `Encerrar a contagem com ${faltam} insumo${faltam > 1 ? 's' : ''} sem conferir? `
+          + 'O que não foi conferido não será alterado no estoque.'
+        : 'Encerrar a contagem?',
+    )
+    if (!certeza) return
+    await supabase.from('contagens').update({
+      status: 'finalizada',
+      finalizada_at: new Date().toISOString(),
+    }).eq('id', id)
+    navigate(`/contagem/resumo/${id}`)
+  }
+
   /** Marcado por engano tem volta — antes não tinha. */
   async function desmarcarLote(loteId: string) {
     await supabase.from('contagem_ec_lotes').update({ encontrado: false }).eq('id', loteId)
@@ -107,7 +145,7 @@ export function NovaContagemEcPage() {
     if (!currentItem) return
     supabase
       .from('contagem_ec_lotes')
-      .select('*, lote:lotes(quantidade_recebida)')
+      .select('*, lote:lotes(quantidade_recebida, quantidade_disponivel)')
       .eq('contagem_insumo_id', currentItem.id)
       .then(({ data }) => {
         // Ordem natural: no banco, "INS002-0001.10/12" vem antes de ".2/12".
@@ -294,9 +332,8 @@ export function NovaContagemEcPage() {
                   quem conta vê "15 kg" num fardo de 25 e desconfia de falta. */}
               {foiAberto(lote) && (
                 <span className="block text-xs font-semibold text-amber-700 mt-0.5">
-                  ABERTO · já saíram{' '}
-                  {Number((Number(lote.lote?.quantidade_recebida ?? 0) - Number(lote.qtd_lote)).toFixed(3))}{' '}
-                  de {lote.lote?.quantidade_recebida} {currentItem.insumo.unidade_medida}
+                  ABERTO · já saíram {quantoSaiu(lote)} de {lote.lote?.quantidade_recebida}{' '}
+                  {currentItem.insumo.unidade_medida}
                 </span>
               )}
             </div>
@@ -377,6 +414,20 @@ export function NovaContagemEcPage() {
           : `Finalizar insumo (${totalLotes - encontrados} faltante${totalLotes - encontrados > 1 ? 's' : ''})`
         }
       </Button>
+
+      {/* Sair no meio é o caso normal: ninguém confere 20 insumos numa sentada.
+          Discreto e separado, para não ser clicado no lugar do de cima. */}
+      <div className="mt-6 pt-4 border-t border-gray-200 text-center">
+        <button
+          onClick={() => void encerrarContagem()}
+          className="text-xs font-medium text-gray-600 hover:underline"
+        >
+          Encerrar contagem e ver resumo
+        </button>
+        <p className="text-xs text-gray-400 mt-1">
+          Insumo não conferido fica como está.
+        </p>
+      </div>
     </div>
   )
 }
