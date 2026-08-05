@@ -11,13 +11,31 @@ type InsumoJoined = ContagemInsumo & {
   insumo: { nome: string; codigo: string; unidade_medida: string }
 }
 
+/**
+ * O lote esperado, com o quanto a embalagem trouxe de fábrica.
+ *
+ * `qtd_lote` é o saldo no momento em que a contagem começou; comparado com o
+ * recebido, diz se o fardo já foi aberto. Sem isso, quem conta vê "15 kg" num
+ * fardo de 25 e não sabe se é um fardo menor, se falta produto, ou se alguém
+ * já transferiu parte dele — três situações bem diferentes.
+ */
+type LoteEsperado = ContagemEcLote & {
+  lote?: { quantidade_recebida: number } | null
+}
+
+/** Fardo aberto: já saiu produto dele para o estoque produtivo. */
+function foiAberto(l: LoteEsperado): boolean {
+  const recebido = Number(l.lote?.quantidade_recebida ?? 0)
+  return recebido > 0 && Number(l.qtd_lote) < recebido - 0.0005
+}
+
 export function NovaContagemEcPage() {
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
 
   const [itens, setItens] = useState<InsumoJoined[]>([])
   const [currentIdx, setCurrentIdx] = useState(0)
-  const [lotes, setLotes] = useState<ContagemEcLote[]>([])
+  const [lotes, setLotes] = useState<LoteEsperado[]>([])
   const [loading, setLoading] = useState(true)
   const [scanError, setScanError] = useState('')
   const [saving, setSaving] = useState(false)
@@ -85,11 +103,11 @@ export function NovaContagemEcPage() {
     if (!currentItem) return
     supabase
       .from('contagem_ec_lotes')
-      .select('*')
+      .select('*, lote:lotes(quantidade_recebida)')
       .eq('contagem_insumo_id', currentItem.id)
       .order('lote_codigo')
       .then(({ data }) => {
-        setLotes((data ?? []) as ContagemEcLote[])
+        setLotes((data ?? []) as unknown as LoteEsperado[])
       })
 
     // Marca como em_contagem se ainda pendente
@@ -260,13 +278,22 @@ export function NovaContagemEcPage() {
                 : 'bg-gray-50 border-gray-200',
             ].join(' ')}
           >
-            <div>
+            <div className="min-w-0">
               <span className={lote.encontrado ? 'text-emerald-800 font-medium' : 'text-gray-600'}>
                 {lote.lote_codigo}
               </span>
               <span className="text-xs text-gray-400 ml-2">
                 {lote.qtd_lote} {currentItem.insumo.unidade_medida}
               </span>
+              {/* Fardo aberto tem menos do que a embalagem diz. Sem este aviso,
+                  quem conta vê "15 kg" num fardo de 25 e desconfia de falta. */}
+              {foiAberto(lote) && (
+                <span className="block text-xs font-semibold text-amber-700 mt-0.5">
+                  ABERTO · já saíram{' '}
+                  {Number((Number(lote.lote?.quantidade_recebida ?? 0) - Number(lote.qtd_lote)).toFixed(3))}{' '}
+                  de {lote.lote?.quantidade_recebida} {currentItem.insumo.unidade_medida}
+                </span>
+              )}
             </div>
             {lote.encontrado ? (
               <button
@@ -310,6 +337,11 @@ export function NovaContagemEcPage() {
                   <div key={lote.id} className="flex items-center justify-between gap-2 text-xs">
                     <span className={lote.encontrado ? 'text-emerald-700 font-semibold' : 'text-gray-600'}>
                       {lote.encontrado ? '✓ ' : '○ '}{lote.lote_codigo}
+                      {foiAberto(lote) && (
+                        <span className="ml-1.5 rounded bg-amber-100 px-1 py-0.5 font-semibold text-amber-800">
+                          ABERTO
+                        </span>
+                      )}
                     </span>
                     <span className="text-gray-400 shrink-0">
                       {lote.qtd_lote} {currentItem.insumo.unidade_medida}
