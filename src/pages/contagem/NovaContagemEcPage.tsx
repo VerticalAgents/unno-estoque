@@ -9,7 +9,7 @@ import { ordemNatural } from '../../lib/utils'
 import type { ContagemInsumo, ContagemEcLote } from '../../types/contagem'
 
 type InsumoJoined = ContagemInsumo & {
-  insumo: { nome: string; codigo: string; unidade_medida: string }
+  insumo: { nome: string; codigo: string; unidade_medida: string; tamanho_embalagem: number | null }
 }
 
 /**
@@ -41,32 +41,41 @@ function saldoAtual(l: LoteEsperado): number {
 }
 
 /**
- * Fardo aberto — por dois caminhos diferentes, ambos verdadeiros:
+ * Quanto cabe na embalagem cheia.
  *
- *   1. Já saiu produto dele pelo sistema (transferência para o EP).
- *   2. Nasceu aberto: é a embalagem que já estava começada quando o estoque
- *      foi cadastrado, e a abertura marcou isso na observação (migration 069).
+ * O tamanho vem do cadastro do insumo. Quando o lote nasceu de uma embalagem
+ * já começada, ele foi registrado com o que SOBROU (20 kg), e não com o que o
+ * saco comporta (25) — por isso o maior dos dois é que descreve a embalagem.
  *
- * Só o primeiro caso era detectado, e por isso o selo aparecia no fardo errado:
- * o que ESTAVA aberto de verdade (20 kg de farinha, sobra de um saco começado)
- * passava batido, porque nunca saiu nada dele pelo sistema.
+ * Sem tamanho cadastrado sobra o próprio recebido, e aí só dá para dizer que
+ * está aberto, não quanto saiu.
  */
-function foiAberto(l: LoteEsperado): boolean {
-  return nasceuAberto(l) || parcialmenteRetirado(l)
+function pacoteCheio(l: LoteEsperado, tamanhoEmbalagem?: number | null): number {
+  return Math.max(Number(tamanhoEmbalagem ?? 0), Number(l.lote?.quantidade_recebida ?? 0))
+}
+
+/**
+ * Fardo aberto: tem menos do que a embalagem cheia comporta.
+ *
+ * Uma regra só cobre os dois caminhos — o fardo do qual já se transferiu, e a
+ * embalagem que já estava começada quando o estoque foi cadastrado. A segunda
+ * cai aqui naturalmente: registrada com 20 kg num saco de 25, ela já nasce
+ * abaixo do cheio.
+ *
+ * A observação da abertura (migration 069) fica como rede de segurança, para
+ * o insumo cujo tamanho de embalagem ninguém cadastrou.
+ */
+function foiAberto(l: LoteEsperado, tamanhoEmbalagem?: number | null): boolean {
+  return nasceuAberto(l) || quantoSaiu(l, tamanhoEmbalagem) > 0.0005
 }
 
 function nasceuAberto(l: LoteEsperado): boolean {
   return (l.lote?.observacoes ?? '').toLowerCase().includes('embalagem aberta')
 }
 
-function parcialmenteRetirado(l: LoteEsperado): boolean {
-  const recebido = Number(l.lote?.quantidade_recebida ?? 0)
-  return recebido > 0 && saldoAtual(l) < recebido - 0.0005
-}
-
-/** Quanto já saiu do fardo pelo sistema. */
-function quantoSaiu(l: LoteEsperado): number {
-  return Number((Number(l.lote?.quantidade_recebida ?? 0) - saldoAtual(l)).toFixed(3))
+/** Quanto falta para a embalagem estar cheia. */
+function quantoSaiu(l: LoteEsperado, tamanhoEmbalagem?: number | null): number {
+  return Number((pacoteCheio(l, tamanhoEmbalagem) - saldoAtual(l)).toFixed(3))
 }
 
 export function NovaContagemEcPage() {
@@ -87,7 +96,7 @@ export function NovaContagemEcPage() {
     Promise.all([
       supabase
         .from('contagem_insumos')
-        .select('*, insumo:insumos(nome, codigo, unidade_medida)')
+        .select('*, insumo:insumos(nome, codigo, unidade_medida, tamanho_embalagem)')
         .eq('contagem_id', id)
         .order('created_at'),
       supabase.from('contagens').select('status').eq('id', id).single(),
@@ -307,6 +316,8 @@ export function NovaContagemEcPage() {
     )
   }
 
+  // O tamanho da embalagem cheia do insumo atual, usado pelo selo de aberto.
+  const tamEmb = currentItem.insumo.tamanho_embalagem
   const encontrados = lotes.filter(l => l.encontrado).length
   const totalLotes = lotes.length
   const finalizados = itens.filter(i => i.status === 'finalizado').length
@@ -376,10 +387,10 @@ export function NovaContagemEcPage() {
               </span>
               {/* Fardo aberto tem menos do que a embalagem diz. Sem este aviso,
                   quem conta vê "15 kg" num fardo de 25 e desconfia de falta. */}
-              {foiAberto(lote) && (
+              {foiAberto(lote, tamEmb) && (
                 <span className="block text-xs font-semibold text-amber-700 mt-0.5">
-                  {parcialmenteRetirado(lote)
-                    ? `ABERTO · já saíram ${quantoSaiu(lote)} de ${lote.lote?.quantidade_recebida} ${currentItem.insumo.unidade_medida}`
+                  {quantoSaiu(lote, tamEmb) > 0.0005
+                    ? `ABERTO · já saíram ${quantoSaiu(lote, tamEmb)} de ${pacoteCheio(lote, tamEmb)} ${currentItem.insumo.unidade_medida}`
                     : 'ABERTO · embalagem começada'}
                 </span>
               )}
@@ -426,7 +437,7 @@ export function NovaContagemEcPage() {
                   <div key={lote.id} className="flex items-center justify-between gap-2 text-xs">
                     <span className={lote.encontrado ? 'text-emerald-700 font-semibold' : 'text-gray-600'}>
                       {lote.encontrado ? '✓ ' : '○ '}{lote.lote_codigo}
-                      {foiAberto(lote) && (
+                      {foiAberto(lote, tamEmb) && (
                         <span className="ml-1.5 rounded bg-amber-100 px-1 py-0.5 font-semibold text-amber-800">
                           ABERTO
                         </span>
