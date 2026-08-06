@@ -52,14 +52,21 @@ export function NavegadorInsumos({
               className={[
                 'shrink-0 whitespace-nowrap rounded-full px-3 py-2 text-xs font-medium transition-colors',
                 'disabled:opacity-40 disabled:cursor-not-allowed',
-                eAtual
-                  ? 'bg-brand-600 text-white'
-                  : feito
-                    ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                // A COR diz se está conferido; o ANEL diz onde você está. Antes
+                // "ser o atual" ganhava de "estar conferido": parar em cima de
+                // um insumo já feito apagava o verde e o ✓, e parecia que a
+                // contagem tinha se desfeito — só que o dado seguia gravado.
+                feito
+                  ? eAtual
+                    ? 'bg-emerald-600 text-white'
+                    : 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                  : eAtual
+                    ? 'bg-brand-600 text-white'
                     : 'bg-gray-100 text-gray-600 border border-gray-200',
+                eAtual ? 'ring-2 ring-offset-1 ring-gray-400' : '',
               ].join(' ')}
             >
-              {feito && !eAtual ? '✓ ' : ''}{item.insumo.codigo}
+              {feito ? '✓ ' : ''}{item.insumo.codigo}
             </button>
           )
         })}
