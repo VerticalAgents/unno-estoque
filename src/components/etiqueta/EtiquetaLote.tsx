@@ -1,7 +1,7 @@
 import { QRCodeSVG } from 'qrcode.react'
 import type { Lote, Empresa } from '../../types/database.types'
 import { formatDate, formatDateTime } from '../../lib/utils'
-import { LAYOUT_BASE, layoutDaEtiqueta, type EtiquetaDims } from '../../lib/etiquetas'
+import { LAYOUT_BASE, baseDoLayout, layoutDaEtiqueta, type EtiquetaDims } from '../../lib/etiquetas'
 
 /**
  * O conteúdo da etiqueta de lote/sublote, nos dois desenhos possíveis.
@@ -71,14 +71,13 @@ function corpoDoCodigo(codigo: string): string {
 export function EtiquetaLoteContent({ lote, empresa, dims }: Props) {
   return layoutDaEtiqueta(dims) === 'retrato'
     ? <LoteRetrato lote={lote} empresa={empresa} />
-    : <LotePaisagem lote={lote} empresa={empresa} />
+    : <LotePaisagem lote={lote} empresa={empresa} base={baseDoLayout(dims)} />
 }
 
-// ── Deitada (base 100x75mm) ───────────────────────────────────
+// ── Deitada (100mm de largura, altura na proporção do papel) ──
 
-function LotePaisagem({ lote, empresa }: { lote: LoteEtiqueta; empresa: Empresa | null }) {
+function LotePaisagem({ lote, empresa, base }: { lote: LoteEtiqueta; empresa: Empresa | null; base: EtiquetaDims }) {
   const d = dadosDoLote(lote, empresa)
-  const base = LAYOUT_BASE.paisagem
 
   return (
     <div style={{

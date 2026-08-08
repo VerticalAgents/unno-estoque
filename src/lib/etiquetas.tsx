@@ -39,6 +39,35 @@ export function layoutDaEtiqueta(dims: EtiquetaDims): EtiquetaLayout {
   return dims.largura >= dims.altura ? 'paisagem' : 'retrato'
 }
 
+/** Formatos deitados que o desenho aceita, medidos em altura para 100mm de largura. */
+const PAISAGEM_ALTURA_MIN = 35
+const PAISAGEM_ALTURA_MAX = 100
+
+/**
+ * O tamanho em que o desenho é feito, para este papel.
+ *
+ * O desenho em pé é fixo: ele foi medido contra a picotada do rolo, e mexer na
+ * altura moveria a faixa destacável.
+ *
+ * O deitado não tem essa amarra, então a altura acompanha a proporção do papel
+ * em vez de ficar presa em 75mm. Antes não acompanhava: uma etiqueta 100x50
+ * recebia o desenho de 100x75 encolhido a 67%, o que sobrava 17mm de papel
+ * branco em CADA lado e deixava a letra menor do que precisava ser. Como a
+ * largura do desenho é sempre 100, a escala vira largura_do_papel/100 e não
+ * sobra nada.
+ *
+ * A faixa aceita vai do quadrado ao bem achatado; fora dela o desenho voltaria
+ * a ser irreconhecível, e aí é melhor sobrar papel do que espremer.
+ */
+export function baseDoLayout(dims: EtiquetaDims): EtiquetaDims {
+  if (layoutDaEtiqueta(dims) === 'retrato') return LAYOUT_BASE.retrato
+  const proporcional = (100 * dims.altura) / dims.largura
+  return {
+    largura: 100,
+    altura: Math.min(PAISAGEM_ALTURA_MAX, Math.max(PAISAGEM_ALTURA_MIN, proporcional)),
+  }
+}
+
 export const ETIQUETA_MIN_MM = 10
 export const ETIQUETA_MAX_MM = 400
 export const ETIQUETA_MAX_COLUNAS = 10
@@ -186,13 +215,13 @@ export function useEtiquetaConfig(tipo: EtiquetaTipo): { config: EtiquetaConfig;
 
 /** Quanto o desenho-base precisa encolher/crescer para caber no papel. */
 export function escalaEtiqueta(dims: EtiquetaDims): number {
-  const base = LAYOUT_BASE[layoutDaEtiqueta(dims)]
+  const base = baseDoLayout(dims)
   return Math.min(dims.largura / base.largura, dims.altura / base.altura)
 }
 
 /** Quanto do papel sobra em branco, de 0 a 1, por diferença de formato. */
 export function sobraEtiqueta(dims: EtiquetaDims): number {
-  const base = LAYOUT_BASE[layoutDaEtiqueta(dims)]
+  const base = baseDoLayout(dims)
   const escala = escalaEtiqueta(dims)
   const usado = base.largura * escala * base.altura * escala
   return 1 - usado / (dims.largura * dims.altura)
@@ -284,7 +313,7 @@ export function EtiquetaFolhaImpressao({ children }: { children: ReactNode }) {
  * garante que a pré-visualização e o papel mostrem a mesma coisa.
  */
 export function EtiquetaCanvas({ dims, children }: { dims: EtiquetaDims; children: ReactNode }) {
-  const base = LAYOUT_BASE[layoutDaEtiqueta(dims)]
+  const base = baseDoLayout(dims)
   const escala = escalaEtiqueta(dims)
   const sobraX = (dims.largura - base.largura * escala) / 2
   const sobraY = (dims.altura - base.altura * escala) / 2

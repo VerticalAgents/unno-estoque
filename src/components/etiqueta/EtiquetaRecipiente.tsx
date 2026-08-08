@@ -1,12 +1,12 @@
 import { QRCodeSVG } from 'qrcode.react'
 import type { Local, Insumo } from '../../types/database.types'
 import { formatDate } from '../../lib/utils'
-import { LAYOUT_BASE, layoutDaEtiqueta, type EtiquetaDims } from '../../lib/etiquetas'
+import { LAYOUT_BASE, baseDoLayout, layoutDaEtiqueta, type EtiquetaDims } from '../../lib/etiquetas'
 
 /**
  * O conteúdo da etiqueta de recipiente, nos dois desenhos possíveis —
- * mesma ideia da etiqueta de lote: `paisagem` (100x75mm) e `retrato`
- * (34x65mm), escolhidos pelo formato do papel configurado.
+ * mesma ideia da etiqueta de lote: `paisagem` (100mm de largura, altura na
+ * proporção do papel) e `retrato` (34x65mm), escolhidos pelo formato do papel.
  *
  * O que não pode faltar em nenhum dos dois: o QR fixo (é o que a produção
  * escaneia), o nome do recipiente e o aviso de que isto NÃO é etiqueta de
@@ -31,88 +31,155 @@ type Props = { recipiente: RecipienteEtiqueta; dims: EtiquetaDims }
 export function EtiquetaRecipienteContent({ recipiente, dims }: Props) {
   return layoutDaEtiqueta(dims) === 'retrato'
     ? <RecipienteRetrato recipiente={recipiente} />
-    : <RecipientePaisagem recipiente={recipiente} />
+    : <RecipientePaisagem recipiente={recipiente} base={baseDoLayout(dims)} />
 }
 
 function subtipoDe(recipiente: RecipienteEtiqueta): string {
   return SUBTIPO_LABELS[recipiente.subtipo ?? ''] ?? recipiente.subtipo ?? '—'
 }
 
-// ── Deitada (base 100x75mm) ───────────────────────────────────
+// ── Deitada (100mm de largura, altura na proporção do papel) ──
 
-function RecipientePaisagem({ recipiente }: { recipiente: RecipienteEtiqueta }) {
+/** Um milímetro em pixels de CSS — o QR só aceita tamanho em px. */
+const PX_POR_MM = 96 / 25.4
+
+/**
+ * O desenho deitado, refeito em 08/08/2026 junto com a etiqueta de lote.
+ *
+ * Duas coisas estavam erradas. O desenho era preso em 100x75mm, então numa
+ * etiqueta 100x50 ele entrava encolhido a 67% e sobravam 17mm de papel branco
+ * de cada lado — foi o "mal enquadrada" que o usuário viu. E ele ainda usava a
+ * linguagem antiga (caixinha com borda fina, dados soltos), de antes da
+ * etiqueta de lote ganhar a tarja preta.
+ *
+ * Agora a altura vem do papel (`baseDoLayout`) e o arranjo é o mesmo da
+ * etiqueta de lote: tarja preta com o que se lê de longe — aqui o NOME do
+ * recipiente, que é o que a pessoa procura na bancada —, campos à esquerda e
+ * QR à direita, com o aviso de "não é etiqueta de lote" no rodapé.
+ */
+function RecipientePaisagem({ recipiente, base }: { recipiente: RecipienteEtiqueta; base: EtiquetaDims }) {
   const qr = recipiente.qr_code_fixo ?? recipiente.id
-  const base = LAYOUT_BASE.paisagem
+
+  // O QR cresce com o papel, mas para de crescer antes de empurrar os campos:
+  // em 203dpi, 22mm já dão folga de sobra para a leitura.
+  const qrMm = Math.max(18, Math.min(30, base.altura * 0.5))
 
   return (
-    <div
-      className="font-sans text-[9pt]"
-      style={{
-        width: `${base.largura}mm`,
-        height: `${base.altura}mm`,
-        padding: '3mm',
-        boxSizing: 'border-box',
-        overflow: 'hidden',
-      }}
-    >
-      {/* Badge de identificação — diferencia visualmente da etiqueta de lote */}
-      <div className="flex items-center justify-between mb-2">
-        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded font-bold uppercase tracking-widest text-[7pt] border border-gray-800">
-          <svg className="w-2.5 h-2.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
-            <path strokeLinecap="round" strokeLinejoin="round" d="M20.25 6.375c0 2.278-3.694 4.125-8.25 4.125S3.75 8.653 3.75 6.375m16.5 0c0-2.278-3.694-4.125-8.25-4.125S3.75 4.097 3.75 6.375m16.5 0v11.25c0 2.278-3.694 4.125-8.25 4.125s-8.25-1.847-8.25-4.125V6.375m16.5 0v3.75m-16.5-3.75v3.75m16.5 0v3.75C20.25 16.153 16.556 18 12 18s-8.25-1.847-8.25-4.125v-3.75m16.5 0c0 2.278-3.694 4.125-8.25 4.125s-8.25-1.847-8.25-4.125" />
-          </svg>
-          Recipiente EP
-        </span>
-        <span className="font-mono text-gray-400" style={{ fontSize: '7pt' }}>
-          Unno
-        </span>
-      </div>
+    <div style={{
+      width: `${base.largura}mm`,
+      height: `${base.altura}mm`,
+      fontFamily: 'sans-serif',
+      display: 'flex',
+      flexDirection: 'column',
+      overflow: 'hidden',
+      boxSizing: 'border-box',
+      padding: '2.5mm',
+    }}>
 
-      {/* Nome do recipiente */}
-      <div className="mb-2 pb-1.5 border-b-2 border-gray-800">
-        <p className="font-extrabold leading-tight text-[14pt]">{recipiente.nome}</p>
-        <p className="text-gray-500 text-[8pt]">{subtipoDe(recipiente)}</p>
-      </div>
-
-      {/* QR + dados */}
-      <div className="flex gap-4 items-start">
-        <div className="shrink-0 flex flex-col items-center">
-          <QRCodeSVG value={qr} size={90} level="M" includeMargin={false} />
-          <p className="font-mono text-center mt-1 text-gray-600" style={{ fontSize: '6.5pt' }}>
-            {qr}
-          </p>
+      {/* ── Tarja preta: o nome, que é o que se lê de longe ── */}
+      <div style={{
+        background: '#000',
+        color: '#fff',
+        padding: '1mm 2mm',
+        flexShrink: 0,
+      }}>
+        <div style={{
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'baseline',
+          fontSize: '5.5pt',
+          letterSpacing: '0.5pt',
+          fontWeight: 'bold',
+        }}>
+          <span>RECIPIENTE EP</span>
+          <span style={{ opacity: 0.75 }}>{subtipoDe(recipiente).toUpperCase()}</span>
         </div>
+        <div style={{
+          fontSize: '15pt',
+          fontWeight: 'bold',
+          lineHeight: 1.1,
+          whiteSpace: 'nowrap',
+          overflow: 'hidden',
+          textOverflow: 'ellipsis',
+        }}>
+          {recipiente.nome}
+        </div>
+      </div>
 
-        <div className="flex-1 space-y-1.5">
-          {recipiente.insumo && (
-            <InfoRow label="Insumo" value={recipiente.insumo.nome} highlight />
-          )}
+      {/* ── Corpo: campos à esquerda, QR à direita ── */}
+      <div style={{ flex: 1, minHeight: 0, display: 'flex', gap: '3mm', paddingTop: '2mm' }}>
+        <div style={{
+          flex: 1,
+          minWidth: 0,
+          display: 'flex',
+          flexDirection: 'column',
+          justifyContent: 'center',
+          gap: '1.2mm',
+        }}>
+          {recipiente.insumo && <InfoRow label="INSUMO" value={recipiente.insumo.nome} destaque />}
           {recipiente.capacidade_max != null && (
             <InfoRow
-              label="Capacidade"
-              value={`${recipiente.capacidade_max} ${recipiente.unidade_capacidade ?? ''}`}
+              label="CAPACIDADE"
+              value={`${recipiente.capacidade_max} ${recipiente.unidade_capacidade ?? ''}`.trim()}
             />
           )}
-          <InfoRow label="Cadastrado" value={formatDate(recipiente.created_at)} />
-          {recipiente.observacoes && <InfoRow label="Obs" value={recipiente.observacoes} />}
-          <div className="pt-1">
-            <span className="inline-block px-1.5 py-0.5 bg-gray-100 border border-gray-300 rounded text-gray-500 font-mono text-[6.5pt]">
-              USO INTERNO · NÃO É ETIQUETA DE LOTE
-            </span>
+          <InfoRow label="CADASTRO" value={formatDate(recipiente.created_at)} />
+          {recipiente.observacoes && <InfoRow label="OBS" value={recipiente.observacoes} />}
+        </div>
+
+        <div style={{
+          flexShrink: 0,
+          display: 'flex',
+          flexDirection: 'column',
+          alignItems: 'center',
+          justifyContent: 'center',
+        }}>
+          <QRCodeSVG value={qr} size={qrMm * PX_POR_MM} level="M" includeMargin={false} />
+          <div style={{
+            fontFamily: 'monospace',
+            fontSize: '5pt',
+            color: '#4b5563',
+            marginTop: '0.8mm',
+            maxWidth: `${qrMm + 6}mm`,
+            whiteSpace: 'nowrap',
+            overflow: 'hidden',
+            textOverflow: 'ellipsis',
+          }}>
+            {qr}
           </div>
         </div>
+      </div>
+
+      {/* ── Rodapé: as duas etiquetas circulam pela mesma bancada ── */}
+      <div style={{
+        flexShrink: 0,
+        marginTop: '1.5mm',
+        borderTop: '1pt solid #000',
+        paddingTop: '1mm',
+        display: 'flex',
+        justifyContent: 'space-between',
+        fontSize: '6pt',
+        fontWeight: 'bold',
+        letterSpacing: '0.3pt',
+      }}>
+        <span>USO INTERNO · NÃO É ETIQUETA DE LOTE</span>
+        <span style={{ color: '#6b7280', fontWeight: 'normal' }}>Unno</span>
       </div>
     </div>
   )
 }
 
-function InfoRow({ label, value, highlight }: { label: string; value: string; highlight?: boolean }) {
+function InfoRow({ label, value, destaque }: { label: string; value: string; destaque?: boolean }) {
   return (
-    <div>
-      <span className="uppercase tracking-wide text-gray-400 text-[7pt]">{label}: </span>
-      <span className={`font-medium text-[9pt] ${highlight ? 'text-gray-900 font-bold' : 'text-gray-700'}`}>
-        {value}
-      </span>
+    <div style={{
+      fontSize: destaque ? '9pt' : '8pt',
+      lineHeight: 1.2,
+      whiteSpace: 'nowrap',
+      overflow: 'hidden',
+      textOverflow: 'ellipsis',
+    }}>
+      <span style={{ fontSize: '6pt', color: '#6b7280', letterSpacing: '0.3pt' }}>{label}: </span>
+      <span style={{ fontWeight: destaque ? 'bold' : 500 }}>{value}</span>
     </div>
   )
 }

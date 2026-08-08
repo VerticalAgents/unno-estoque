@@ -11,7 +11,7 @@ import {
   ETIQUETA_MAX_MM,
   ETIQUETA_MIN_MM,
   ETIQUETA_PRESETS,
-  LAYOUT_BASE,
+  baseDoLayout,
   colunasEtiqueta,
   configDaLinha,
   dimsLinha,
@@ -574,7 +574,7 @@ function PreviewLinha({ config }: { config: EtiquetaConfig }) {
   const ALTURA_MAX = 110 // px
   const px = Math.min(LARGURA_MAX / linha.largura, ALTURA_MAX / linha.altura)
 
-  const base = LAYOUT_BASE[layoutDaEtiqueta(config)]
+  const base = baseDoLayout(config)
   const escala = escalaEtiqueta(config)
   const conteudo = {
     largura: base.largura * escala * px,
