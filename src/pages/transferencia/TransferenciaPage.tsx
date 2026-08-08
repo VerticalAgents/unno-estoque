@@ -58,6 +58,23 @@ export function TransferenciaPage() {
 
   // ── Helpers ───────────────────────────────────────────────
 
+  /**
+   * O QR lido é a etiqueta fixa de um recipiente?
+   *
+   * As duas etiquetas circulam pela mesma bancada e são bipadas em etapas
+   * diferentes da mesma tela. Sem esta pergunta, bipar o pote na etapa do lote
+   * caía num "QR não reconhecido" — tecnicamente verdade (o código do pote não
+   * existe em `lotes`), mas que não dizia o que tinha acontecido.
+   */
+  async function recipienteDoQr(qr: string) {
+    const { data } = await supabase
+      .from('locais')
+      .select('id, nome, ativo')
+      .eq('qr_code_fixo', qr)
+      .maybeSingle()
+    return data as { id: string; nome: string; ativo: boolean } | null
+  }
+
   async function erroLoteInativo(qr: string): Promise<string> {
     const codigoParseado = parseQRLoteCodigo(qr)
     const { data } = await supabase
@@ -111,6 +128,24 @@ export function TransferenciaPage() {
       .single()
 
     if (!loteData) {
+      // Bipou a etiqueta do pote aqui. Se já há lote na mão, é só a próxima
+      // etapa antes da hora — então segue para ela em vez de acusar erro.
+      const recipiente = await recipienteDoQr(qr)
+      if (recipiente) {
+        if (!recipiente.ativo) {
+          setScanError(`O recipiente "${recipiente.nome}" está inativo.`)
+          return
+        }
+        if (lotes.length === 0) {
+          setScanError(
+            `Isto é a etiqueta do recipiente "${recipiente.nome}". `
+            + 'Escaneie primeiro a etiqueta do lote que vai entrar nele.',
+          )
+          return
+        }
+        await handleScanLocal(qr)
+        return
+      }
       setScanError(await erroLoteInativo(qr))
       return
     }
@@ -194,7 +229,18 @@ export function TransferenciaPage() {
       .single()
 
     if (!localData) {
-      setScanError(`Recipiente não encontrado: ${qr}`)
+      // O contrário do caso acima: etiqueta de lote bipada na etapa do pote.
+      const { data: loteQr } = await supabase
+        .from('lotes')
+        .select('codigo')
+        .eq('codigo', parseQRLoteCodigo(qr))
+        .maybeSingle()
+      setScanError(
+        loteQr
+          ? `Isto é a etiqueta do lote ${loteQr.codigo}, não a de um recipiente. `
+            + 'Bipe a etiqueta colada no pote.'
+          : `Recipiente não encontrado: ${qr}`,
+      )
       return
     }
 
