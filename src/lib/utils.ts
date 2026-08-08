@@ -102,23 +102,12 @@ export function isFifoWarning(selectedDate: string, oldestDate: string): boolean
   return new Date(selectedDate) > new Date(oldestDate)
 }
 
-// ── Reembalagem helpers ──────────────────────────────────────
-
-export const INSUMOS_COM_REEMBALAGEM = {
-  NUTELLA: 'INS027',
-  DDL: 'INS014',
-  STIKADINHO: 'INS023',
-}
-
-export function precisaReembalagem(codigoInsumo: string): boolean {
-  return Object.values(INSUMOS_COM_REEMBALAGEM).includes(codigoInsumo)
-}
-
-export function precisaDestinoMultiplo(codigoInsumo: string): boolean {
-  return codigoInsumo === INSUMOS_COM_REEMBALAGEM.DDL
-}
-
-// ── Calculates number of sacos from kg ───────────────────────
+// ── Porcionamento ────────────────────────────────────────────
+//
+// Aqui havia uma lista de códigos de insumo — INS027, INS014, INS023 — que
+// decidia quais passavam por reembalagem. Cadastrar o quarto insumo porcionado
+// exigia editar o código. Agora quem decide é `modo_ep` no cadastro do insumo
+// (migration 073).
 
 export function calcSacos(kgTotal: number, tamanhoGramas: number): { qtd: number; sobra: number } {
   const totalGramas = kgTotal * 1000

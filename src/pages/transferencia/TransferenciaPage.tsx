@@ -6,21 +6,25 @@ import { QRScanner } from '../../components/qr/QRScanner'
 import { Button } from '../../components/ui/Button'
 import { Card } from '../../components/ui/Card'
 import { ConfirmModal } from '../../components/ui/ConfirmModal'
-import { formatDate, formatQty, precisaReembalagem, precisaDestinoMultiplo } from '../../lib/utils'
+import { formatDate, formatQty } from '../../lib/utils'
 import { parseQRLoteCodigo, qrDaEmbalagem } from '../../lib/qr'
-import { ReembalagemNutella } from './components/ReembalagemNutella'
-import { ReembalagemStikadinho } from './components/ReembalagemStikadinho'
-import { ReembalagemDDL } from './components/ReembalagemDDL'
+import { Reembalagem, type ConfigReembalagem } from './components/Reembalagem'
 
 type Step = 'scan_lote' | 'scan_mais' | 'scan_local' | 'confirmar' | 'reembalagem'
   | 'mover_embalagem' | 'sucesso'
 
 type ModoEp = 'recipiente' | 'embalagem_fornecedor' | 'porcionado' | 'escolher'
 
+type ConfigArmazenamento = ConfigReembalagem & {
+  passa_reembalagem?: boolean
+  destino_multiplo?: boolean
+  modo_ep?: ModoEp
+}
+
 type LoteWithInsumo = Lote & {
   insumo: {
     nome: string; codigo: string; shelf_life_dias_pos_abertura: number | null
-    armazenamento_config?: { passa_reembalagem: boolean; destino_multiplo: boolean; modo_ep?: ModoEp }
+    armazenamento_config?: ConfigArmazenamento
   }
   marca?: { nome: string } | null
 }
@@ -33,14 +37,23 @@ type LoteWithInsumo = Lote & {
  * O `insumos_armazenamento_config` pode vir como objeto ou como lista de um
  * elemento, dependendo de como o PostgREST resolve o embed.
  */
-function modoEp(lote: LoteWithInsumo): ModoEp {
+function configArmazenamento(lote: LoteWithInsumo): ConfigArmazenamento {
   const bruto = lote.insumo?.armazenamento_config as unknown
   const config = Array.isArray(bruto) ? bruto[0] : bruto
-  return (config as { modo_ep?: ModoEp } | undefined)?.modo_ep ?? 'recipiente'
+  return (config ?? {}) as ConfigArmazenamento
+}
+
+function modoEp(lote: LoteWithInsumo): ModoEp {
+  return configArmazenamento(lote).modo_ep ?? 'recipiente'
 }
 
 function ehEmbalagemDoFornecedor(lote: LoteWithInsumo): boolean {
   return modoEp(lote) === 'embalagem_fornecedor'
+}
+
+/** Insumo que é aberto e porcionado antes de ir para a caixa. */
+function ehPorcionado(lote: LoteWithInsumo): boolean {
+  return modoEp(lote) === 'porcionado'
 }
 type LocalWithInsumo = Local & {
   insumo?: { nome: string; codigo: string }
@@ -231,7 +244,7 @@ export function TransferenciaPage() {
     // pontos de consumo), mas nunca passa pela etapa de escanear recipiente.
     if (ehEmbalagemDoFornecedor(novo)) {
       setStep('scan_mais')
-    } else if (lotes.length === 0 && precisaReembalagem(novo.insumo.codigo)) {
+    } else if (lotes.length === 0 && ehPorcionado(novo)) {
       setStep('scan_local')
     } else if (lotes.length === 0) {
       setStep('scan_mais')
@@ -297,7 +310,7 @@ export function TransferenciaPage() {
 
     setLocal({ ...loc, estado_atual: estado as LocalWithInsumo['estado_atual'] })
 
-    if (lote && precisaReembalagem(lote.insumo.codigo)) {
+    if (lote && ehPorcionado(lote)) {
       setStep('reembalagem')
     } else {
       setStep('confirmar')
@@ -720,7 +733,7 @@ export function TransferenciaPage() {
 
           <Card className="p-5">
             <h2 className="text-base font-semibold text-gray-900 mb-1">
-              Passo {lotes.length > 1 || !precisaReembalagem(lote.insumo.codigo) ? '3' : '2'}: Escanear recipiente (EP)
+              Passo {lotes.length > 1 || !ehPorcionado(lote) ? '3' : '2'}: Escanear recipiente (EP)
             </h2>
             <p className="text-sm text-gray-500 mb-4">Aponte para o QR Code fixo no balde, caixa ou garrafa</p>
             <QRScanner
@@ -939,19 +952,18 @@ export function TransferenciaPage() {
         </div>
       )}
 
-      {/* ── Reembalagem steps ── */}
+      {/* ── Porcionamento ──
+          Um componente só, dirigido pelo cadastro. Antes eram três, um por
+          insumo, com a porção escrita no código — e as duas porções chumbadas
+          estavam erradas quando o usuário conferiu (migration 074). */}
       {step === 'reembalagem' && lote && local && (
-        <>
-          {precisaDestinoMultiplo(lote.insumo.codigo) && (
-            <ReembalagemDDL lote={lote} local={local} onSuccess={handleReset} onCancel={handleReset} />
-          )}
-          {lote.insumo.codigo === 'INS027' && (
-            <ReembalagemNutella lote={lote} local={local} onSuccess={handleReset} onCancel={handleReset} />
-          )}
-          {lote.insumo.codigo === 'INS023' && (
-            <ReembalagemStikadinho lote={lote} local={local} onSuccess={handleReset} onCancel={handleReset} />
-          )}
-        </>
+        <Reembalagem
+          lote={lote}
+          local={local}
+          config={configArmazenamento(lote)}
+          onSuccess={handleReset}
+          onCancel={handleReset}
+        />
       )}
 
       {/* ── Success ── */}
