@@ -95,7 +95,7 @@ function LotePaisagem({ lote, empresa, base }: { lote: LoteEtiqueta; empresa: Em
         <div style={{ fontSize: '14pt', fontWeight: 'bold', lineHeight: 1.2 }}>
           {lote.insumo.nome}
         </div>
-        <div style={{ fontSize: '8pt', color: '#6b7280', marginTop: '1mm' }}>
+        <div style={{ fontSize: '8pt', marginTop: '1mm' }}>
           {d.empresaNome}
         </div>
       </div>
@@ -176,7 +176,7 @@ function LotePaisagem({ lote, empresa, base }: { lote: LoteEtiqueta; empresa: Em
             <span style={{ fontWeight: 'bold' }}>END.: </span>{d.endereco}
           </div>
         </div>
-        <div style={{ fontSize: '6pt', color: '#6b7280', whiteSpace: 'nowrap' }}>
+        <div style={{ fontSize: '6pt', whiteSpace: 'nowrap' }}>
           #{lote.codigo}
         </div>
       </div>

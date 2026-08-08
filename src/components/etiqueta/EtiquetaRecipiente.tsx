@@ -92,7 +92,7 @@ function RecipientePaisagem({ recipiente, base }: { recipiente: RecipienteEtique
           fontWeight: 'bold',
         }}>
           <span>RECIPIENTE EP</span>
-          <span style={{ opacity: 0.75 }}>{subtipoDe(recipiente).toUpperCase()}</span>
+          <span>{subtipoDe(recipiente).toUpperCase()}</span>
         </div>
         <div style={{
           fontSize: '15pt',
@@ -138,7 +138,7 @@ function RecipientePaisagem({ recipiente, base }: { recipiente: RecipienteEtique
           <div style={{
             fontFamily: 'monospace',
             fontSize: '5pt',
-            color: '#4b5563',
+            color: '#000',
             marginTop: '0.8mm',
             maxWidth: `${qrMm + 6}mm`,
             whiteSpace: 'nowrap',
@@ -163,12 +163,21 @@ function RecipientePaisagem({ recipiente, base }: { recipiente: RecipienteEtique
         letterSpacing: '0.3pt',
       }}>
         <span>USO INTERNO · NÃO É ETIQUETA DE LOTE</span>
-        <span style={{ color: '#6b7280', fontWeight: 'normal' }}>Unno</span>
+        <span style={{ fontWeight: 'normal' }}>Unno</span>
       </div>
     </div>
   )
 }
 
+/**
+ * Rótulo e valor de um campo.
+ *
+ * Nada de cinza aqui: impressora térmica é preto ou nada. Ela não tem tom
+ * intermediário, então cinza vira pontilhado — e a 6pt o pontilhado quase
+ * some, que foi o "ficaram muito fracos" do usuário em 08/08/2026. A
+ * hierarquia entre rótulo e valor é feita por TAMANHO, que a térmica
+ * reproduz, e não por cor, que ela não reproduz.
+ */
 function InfoRow({ label, value, destaque }: { label: string; value: string; destaque?: boolean }) {
   return (
     <div style={{
@@ -178,8 +187,8 @@ function InfoRow({ label, value, destaque }: { label: string; value: string; des
       overflow: 'hidden',
       textOverflow: 'ellipsis',
     }}>
-      <span style={{ fontSize: '6pt', color: '#6b7280', letterSpacing: '0.3pt' }}>{label}: </span>
-      <span style={{ fontWeight: destaque ? 'bold' : 500 }}>{value}</span>
+      <span style={{ fontSize: '6pt', fontWeight: 'bold', letterSpacing: '0.3pt' }}>{label}: </span>
+      <span style={{ fontWeight: destaque ? 'bold' : 'normal' }}>{value}</span>
     </div>
   )
 }
@@ -233,7 +242,7 @@ function RecipienteRetrato({ recipiente }: { recipiente: RecipienteEtiqueta }) {
       </div>
       <div style={{
         fontSize: '5pt',
-        color: '#6b7280',
+        color: '#000',
         paddingBottom: '0.8mm',
         borderBottom: '1pt solid #000',
         whiteSpace: 'nowrap',
@@ -258,7 +267,7 @@ function RecipienteRetrato({ recipiente }: { recipiente: RecipienteEtiqueta }) {
         <p style={{
           fontFamily: 'monospace',
           fontSize: '4.5pt',
-          color: '#4b5563',
+          color: '#000',
           maxWidth: '30mm',
           overflow: 'hidden',
           whiteSpace: 'nowrap',
@@ -284,10 +293,10 @@ function RecipienteRetrato({ recipiente }: { recipiente: RecipienteEtiqueta }) {
 
       <div style={{
         marginTop: '0.8mm',
-        border: '0.5pt solid #9ca3af',
+        border: '0.5pt solid #000',
         borderRadius: '0.5mm',
         fontSize: '4pt',
-        color: '#4b5563',
+        color: '#000',
         textAlign: 'center',
         padding: '0.4mm 0',
         flexShrink: 0,
@@ -307,7 +316,7 @@ function CampoRetrato({ label, value, bold }: { label: string; value: string; bo
       overflow: 'hidden',
       textOverflow: 'ellipsis',
     }}>
-      <span style={{ color: '#6b7280' }}>{label}: </span>
+      <span>{label}: </span>
       <span style={{ fontWeight: bold ? 'bold' : 'normal' }}>{value}</span>
     </div>
   )
