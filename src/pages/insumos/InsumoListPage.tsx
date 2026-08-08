@@ -19,6 +19,66 @@ const SUBTIPOS_RECIPIENTE = [
   { value: 'prateleira',         label: 'Prateleira' },
 ]
 
+/**
+ * Como o insumo ocupa o estoque produtivo (migration 073).
+ *
+ * Isto era configurável só por SQL — o comportamento da transferência dependia
+ * de uma tabela sem tela nenhuma. Num módulo de SaaS o cliente precisa poder
+ * responder isso sozinho, então a pergunta virou parte do cadastro do insumo.
+ */
+const MODOS_EP = [
+  {
+    value: 'recipiente',
+    titulo: 'Vai para um pote da cozinha',
+    ajuda: 'O caso comum. Na transferência o operador bipa o lote e depois o pote de destino.',
+  },
+  {
+    value: 'embalagem_fornecedor',
+    titulo: 'Fica na embalagem do fornecedor',
+    ajuda: 'O balde ou garrafa do fornecedor é o próprio ponto de consumo. Um bipe só, '
+         + 'com a etiqueta que já vem colada — e ele some da lista quando esvazia.',
+  },
+  {
+    value: 'porcionado',
+    titulo: 'É porcionado em sacos',
+    ajuda: 'O pacote é esvaziado em porções que ficam numa caixa. O operador bipa o lote, '
+         + 'bipa a caixa e informa quantos sacos encheu.',
+  },
+  {
+    value: 'escolher',
+    titulo: 'Depende do pacote',
+    ajuda: 'Faz as duas coisas, e quem transfere decide a cada pacote: usar direto ou porcionar.',
+  },
+] as const
+
+type ModoEp = typeof MODOS_EP[number]['value']
+
+/** Modos em que o insumo é porcionado, e a porção passa a ser obrigatória. */
+function exigePorcao(modo: ModoEp): boolean {
+  return modo === 'porcionado' || modo === 'escolher'
+}
+
+const FORMATOS_PORCAO = [
+  { value: 'saco_confeitar', label: 'Saco de confeitar' },
+  { value: 'porcionamento', label: 'Porção avulsa' },
+]
+
+/** Selo curto do modo, para dar para ver a configuração sem abrir cada insumo. */
+function SeloModoEp({ modo }: { modo: ModoEp }) {
+  const estilo: Record<ModoEp, { texto: string; classe: string }> = {
+    recipiente:           { texto: 'Pote',        classe: 'bg-gray-100 text-gray-600' },
+    embalagem_fornecedor: { texto: 'Embalagem',   classe: 'bg-blue-50 text-blue-700' },
+    porcionado:           { texto: 'Porcionado',  classe: 'bg-purple-50 text-purple-700' },
+    escolher:             { texto: 'Os dois',     classe: 'bg-amber-50 text-amber-700' },
+  }
+  const { texto, classe } = estilo[modo]
+  return (
+    <span className={`inline-block px-2 py-0.5 rounded-full text-xs font-medium ${classe}`}>
+      {texto}
+    </span>
+  )
+}
+
 type FormState = {
   nome: string
   categoria_id: string
@@ -35,6 +95,10 @@ type FormState = {
   recipiente_subtipo: string
   recipiente_capacidade_max: string
   recipiente_unidade_cap: UnidadeMedida
+  modo_ep: ModoEp
+  porcao_tamanho: string
+  porcao_unidade: UnidadeMedida
+  porcao_formato: string
 }
 
 const emptyForm = (): FormState => ({
@@ -53,6 +117,10 @@ const emptyForm = (): FormState => ({
   recipiente_subtipo: '',
   recipiente_capacidade_max: '',
   recipiente_unidade_cap: 'kg',
+  modo_ep: 'recipiente',
+  porcao_tamanho: '',
+  porcao_unidade: 'g',
+  porcao_formato: 'saco_confeitar',
 })
 
 export function InsumoListPage() {
@@ -61,6 +129,8 @@ export function InsumoListPage() {
   const [categorias, setCategorias] = useState<CategoriaInsumo[]>([])
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
+  // Modo de armazenamento por insumo, para o selo da lista.
+  const [modos, setModos] = useState<Record<string, ModoEp>>({})
 
   const [modalOpen, setModalOpen] = useState(false)
   const [editing, setEditing] = useState<Insumo | null>(null)
@@ -123,7 +193,7 @@ export function InsumoListPage() {
 
   async function load() {
     if (!profile) return
-    const [{ data: ins }, { data: cats }] = await Promise.all([
+    const [{ data: ins }, { data: cats }, { data: configs }] = await Promise.all([
       supabase
         .from('insumos')
         .select('*, categoria:categorias_insumo(*)')
@@ -134,13 +204,111 @@ export function InsumoListPage() {
         .select('*')
         .eq('empresa_id', profile.empresa_id)
         .order('nome'),
+      supabase
+        .from('insumos_armazenamento_config')
+        .select('insumo_id, modo_ep'),
     ])
     setInsumos((ins ?? []) as (Insumo & { categoria?: CategoriaInsumo })[])
     setCategorias((cats ?? []) as CategoriaInsumo[])
+    setModos(Object.fromEntries(
+      ((configs ?? []) as { insumo_id: string; modo_ep: ModoEp }[])
+        .map(c => [c.insumo_id, c.modo_ep]),
+    ))
     setLoading(false)
   }
 
   useEffect(() => { load() }, [profile])
+
+  // ── Armazenamento no EP ───────────────────────────────────
+
+  /** Quantas caixas de porção existem para o insumo aberto no modal. */
+  const [caixasDoInsumo, setCaixasDoInsumo] = useState<number | null>(null)
+  const [criandoCaixa, setCriandoCaixa] = useState(false)
+
+  async function loadArmazenamento(insumoId: string) {
+    setCaixasDoInsumo(null)
+    const [{ data: config }, { count }] = await Promise.all([
+      supabase
+        .from('insumos_armazenamento_config')
+        .select('modo_ep, reembalagem_tamanho_porcao, reembalagem_unidade, reembalagem_formato')
+        .eq('insumo_id', insumoId)
+        .maybeSingle(),
+      supabase
+        .from('locais')
+        .select('id', { count: 'exact', head: true })
+        .eq('insumo_id', insumoId)
+        .eq('subtipo', 'saco_confeitar')
+        .eq('ativo', true),
+    ])
+
+    setCaixasDoInsumo(count ?? 0)
+    if (!config) return
+
+    const c = config as {
+      modo_ep?: ModoEp; reembalagem_tamanho_porcao?: number | null
+      reembalagem_unidade?: string | null; reembalagem_formato?: string | null
+    }
+    setForm(prev => ({
+      ...prev,
+      modo_ep: c.modo_ep ?? 'recipiente',
+      porcao_tamanho: c.reembalagem_tamanho_porcao?.toString() ?? '',
+      porcao_unidade: (c.reembalagem_unidade as UnidadeMedida) ?? 'g',
+      porcao_formato: c.reembalagem_formato ?? 'saco_confeitar',
+    }))
+  }
+
+  /**
+   * Grava o comportamento do insumo no EP.
+   *
+   * Os booleanos antigos (`passa_reembalagem`, `destino_multiplo`) continuam
+   * sendo escritos, derivados do modo: o CHECK `chk_reembalagem` do banco exige
+   * que quem porciona tenha formato, porção e unidade — e é justamente o
+   * invariante que esta tela precisa manter.
+   */
+  async function salvarArmazenamento(insumoId: string) {
+    const porciona = exigePorcao(form.modo_ep)
+    const { error: err } = await supabase
+      .from('insumos_armazenamento_config')
+      .upsert({
+        insumo_id: insumoId,
+        modo_ep: form.modo_ep,
+        passa_reembalagem: porciona,
+        destino_multiplo: form.modo_ep === 'escolher',
+        reembalagem_formato: porciona ? form.porcao_formato : null,
+        reembalagem_tamanho_porcao: porciona ? parseFloat(form.porcao_tamanho) : null,
+        reembalagem_unidade: porciona ? form.porcao_unidade : null,
+      }, { onConflict: 'insumo_id' })
+    return err
+  }
+
+  /**
+   * Cria a caixa onde os sacos cheios ficam.
+   *
+   * Sem ela, marcar o insumo como porcionado configura um fluxo que trava no
+   * primeiro uso: o operador bipa o lote e não tem o que bipar depois. A
+   * capacidade nasce do tamanho da embalagem — um pacote porcionado de cada vez
+   * — e é editável na tela de Recipientes.
+   */
+  async function criarCaixaDeSacos() {
+    if (!editing || !profile) return
+    setCriandoCaixa(true)
+    const qr = `QR-EP-${crypto.randomUUID().replace(/-/g, '').slice(0, 12).toUpperCase()}`
+    const { error: err } = await supabase.from('locais').insert({
+      empresa_id: profile.empresa_id,
+      nome: `Caixa de sacos · ${form.nome.trim()}`,
+      tipo: 'estoque_produtivo',
+      subtipo: 'saco_confeitar',
+      insumo_id: editing.id,
+      capacidade_max: form.tamanho_embalagem ? parseFloat(form.tamanho_embalagem) : null,
+      unidade_capacidade: form.tamanho_embalagem ? form.unidade_medida : null,
+      qr_code_fixo: qr,
+      ativo: true,
+      observacoes: 'Caixa onde ficam as porções cheias. O saco é descartável e não se cadastra.',
+    })
+    setCriandoCaixa(false)
+    if (err) { setError(err.message); return }
+    setCaixasDoInsumo((caixasDoInsumo ?? 0) + 1)
+  }
 
   async function loadMarcasInsumo(insumoId: string) {
     const { data } = await supabase
@@ -190,7 +358,13 @@ export function InsumoListPage() {
       recipiente_subtipo: ins.recipiente_subtipo ?? '',
       recipiente_capacidade_max: ins.recipiente_capacidade_max?.toString() ?? '',
       recipiente_unidade_cap: (ins.recipiente_unidade_cap as UnidadeMedida) ?? 'kg',
+      // Preenchidos logo abaixo, quando a config chegar do banco.
+      modo_ep: 'recipiente',
+      porcao_tamanho: '',
+      porcao_unidade: 'g',
+      porcao_formato: 'saco_confeitar',
     })
+    loadArmazenamento(ins.id)
     setError('')
     setSelectedMarcaId('')
     setNovaMarcaNome('')
@@ -211,6 +385,12 @@ export function InsumoListPage() {
     if (!profile) return
     if (!form.nome.trim()) { setError('Nome é obrigatório.'); return }
     if (!editing && !form.recipiente_subtipo) { setError('Tipo de recipiente padrão é obrigatório.'); return }
+    // O banco exige (chk_reembalagem) e a transferência depende: sem a porção,
+    // a tela de porcionamento não teria por quantos dividir.
+    if (exigePorcao(form.modo_ep) && !(parseFloat(form.porcao_tamanho) > 0)) {
+      setError('Informe o tamanho da porção — é o que define quantos sacos saem de cada pacote.')
+      return
+    }
     setError('')
     setSaving(true)
 
@@ -238,6 +418,8 @@ export function InsumoListPage() {
     if (editing) {
       const { error: err } = await supabase.from('insumos').update(payload).eq('id', editing.id)
       if (err) { setError(err.message); setSaving(false); return }
+      const errArm = await salvarArmazenamento(editing.id)
+      if (errArm) { setError(errArm.message); setSaving(false); return }
     } else {
       const { data: existing } = await supabase
         .from('insumos')
@@ -251,8 +433,16 @@ export function InsumoListPage() {
         : 0
       const codigo = 'INS' + String(lastNum + 1).padStart(3, '0')
 
-      const { error: err } = await supabase.from('insumos').insert({ ...payload, codigo })
+      const { data: novo, error: err } = await supabase
+        .from('insumos')
+        .insert({ ...payload, codigo })
+        .select('id')
+        .single()
       if (err) { setError(err.message); setSaving(false); return }
+      // Insumo novo nasce com a config: não há trigger que a crie, e sem linha
+      // o insumo cairia no padrão sem nunca ter sido perguntado.
+      const errArm = await salvarArmazenamento((novo as { id: string }).id)
+      if (errArm) { setError(errArm.message); setSaving(false); return }
     }
 
     setModalOpen(false)
@@ -391,6 +581,7 @@ export function InsumoListPage() {
                   <th className="text-right px-4 py-3 font-medium text-gray-600">Estoque mín.</th>
                   <th className="text-right px-4 py-3 font-medium text-gray-600">Embalagem</th>
                   <th className="text-right px-4 py-3 font-medium text-gray-600">Shelf life</th>
+                  <th className="text-left px-4 py-3 font-medium text-gray-600">No EP</th>
                   <th className="text-center px-4 py-3 font-medium text-gray-600">Status</th>
                   <th className="px-4 py-3" />
                 </tr>
@@ -426,6 +617,9 @@ export function InsumoListPage() {
                       {ins.shelf_life_dias_pos_abertura != null
                         ? `${ins.shelf_life_dias_pos_abertura}d`
                         : <span className="text-gray-400">—</span>}
+                    </td>
+                    <td className="px-4 py-3">
+                      <SeloModoEp modo={modos[ins.id] ?? 'recipiente'} />
                     </td>
                     <td className="px-4 py-3 text-center">
                       <span className={`inline-block px-2 py-0.5 rounded-full text-xs font-medium ${
@@ -620,6 +814,111 @@ export function InsumoListPage() {
                     </Select>
                   </div>
                 </div>
+              </div>
+
+              {/* ── Armazenamento no estoque produtivo ──
+                  Esta pergunta decide o fluxo da transferência. Antes só
+                  existia como coluna no banco, e mudá-la exigia SQL. */}
+              <div className="rounded-lg border border-gray-200 p-3 space-y-3">
+                <div>
+                  <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">
+                    Armazenamento no estoque produtivo
+                  </p>
+                  <p className="text-xs text-gray-400 mt-0.5">
+                    Como este insumo fica na produção? É o que define quantos bipes
+                    a transferência vai pedir.
+                  </p>
+                </div>
+
+                <div className="space-y-2">
+                  {MODOS_EP.map(m => (
+                    <label
+                      key={m.value}
+                      className={`flex gap-2.5 p-2.5 rounded-lg border cursor-pointer transition-colors ${
+                        form.modo_ep === m.value
+                          ? 'border-brand-500 bg-brand-50'
+                          : 'border-gray-200 hover:border-gray-300'
+                      }`}
+                    >
+                      <input
+                        type="radio"
+                        name="modo_ep"
+                        checked={form.modo_ep === m.value}
+                        onChange={() => set('modo_ep', m.value)}
+                        className="mt-0.5 shrink-0"
+                      />
+                      <span className="min-w-0">
+                        <span className="block text-sm font-medium text-gray-900">{m.titulo}</span>
+                        <span className="block text-xs text-gray-500">{m.ajuda}</span>
+                      </span>
+                    </label>
+                  ))}
+                </div>
+
+                {exigePorcao(form.modo_ep) && (
+                  <div className="space-y-3 pt-1">
+                    <div className="grid grid-cols-2 gap-3">
+                      <div className="flex gap-2">
+                        <Input
+                          label="Tamanho da porção"
+                          type="number" inputMode="decimal" step="0.001" min="0"
+                          value={form.porcao_tamanho}
+                          onChange={e => set('porcao_tamanho', e.target.value)}
+                          placeholder="Ex: 200"
+                        />
+                        <Select
+                          label="Unid."
+                          value={form.porcao_unidade}
+                          onChange={e => set('porcao_unidade', e.target.value as UnidadeMedida)}
+                        >
+                          {UNIDADES.map(u => <option key={u} value={u}>{u}</option>)}
+                        </Select>
+                      </div>
+                      <Select
+                        label="Formato"
+                        value={form.porcao_formato}
+                        onChange={e => set('porcao_formato', e.target.value)}
+                      >
+                        {FORMATOS_PORCAO.map(f => (
+                          <option key={f.value} value={f.value}>{f.label}</option>
+                        ))}
+                      </Select>
+                    </div>
+
+                    {/* Sem caixa, o fluxo trava no primeiro uso: o operador bipa
+                        o lote e não tem o que bipar depois. */}
+                    {editing && caixasDoInsumo === 0 && (
+                      <div className="rounded-lg border border-amber-300 bg-amber-50 p-3">
+                        <p className="text-sm font-medium text-amber-900">
+                          Falta a caixa onde as porções ficam
+                        </p>
+                        <p className="text-xs text-amber-800 mt-0.5 mb-2">
+                          Sem ela não há o que escanear depois de porcionar. Ela leva
+                          uma etiqueta e fica onde os sacos cheios são guardados.
+                        </p>
+                        <Button
+                          type="button" size="sm" variant="secondary"
+                          loading={criandoCaixa}
+                          onClick={criarCaixaDeSacos}
+                        >
+                          Criar a caixa deste insumo
+                        </Button>
+                      </div>
+                    )}
+                    {editing && caixasDoInsumo != null && caixasDoInsumo > 0 && (
+                      <p className="text-xs text-gray-500">
+                        {caixasDoInsumo} caixa{caixasDoInsumo > 1 ? 's' : ''} cadastrada
+                        {caixasDoInsumo > 1 ? 's' : ''} para este insumo.
+                      </p>
+                    )}
+                    {!editing && (
+                      <p className="text-xs text-gray-500">
+                        Depois de salvar, abra o insumo de novo para criar a caixa
+                        onde as porções vão ficar.
+                      </p>
+                    )}
+                  </div>
+                )}
               </div>
 
               {/* ── Seção de Marcas (só ao editar) ── */}

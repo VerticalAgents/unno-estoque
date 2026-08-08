@@ -28,59 +28,12 @@
 --    conta na bancada.
 -- ============================================================
 
--- ── 1. As porções certas ────────────────────────────────────
-
-UPDATE insumos_armazenamento_config c
-   SET reembalagem_tamanho_porcao = 750, reembalagem_unidade = 'g'
-  FROM insumos i
- WHERE i.id = c.insumo_id AND i.codigo = 'INS027';
-
-UPDATE insumos_armazenamento_config c
-   SET reembalagem_tamanho_porcao = 200, reembalagem_unidade = 'g'
-  FROM insumos i
- WHERE i.id = c.insumo_id AND i.codigo = 'INS014';
-
--- ── 2. Uma caixa por insumo porcionado ──────────────────────
--- A capacidade é o que sai de UM pacote: o balde de Nutella (3 kg) vira 4 sacos
--- de 750 g; o de Doce de Leite (4,8 kg) vira 24 de 200 g. Se a caixa física
--- comportar mais de um balde, é só editar a capacidade na tela.
-
-INSERT INTO locais (
-  empresa_id, nome, tipo, subtipo, insumo_id,
-  capacidade_max, unidade_capacidade, qr_code_fixo, ativo, observacoes
-)
-SELECT i.empresa_id,
-       'Caixa de sacos · ' || i.nome,
-       'estoque_produtivo',
-       'saco_confeitar',
-       i.id,
-       v.capacidade,
-       i.unidade_medida,
-       'QR-EP-CAIXA-' || i.codigo,
-       true,
-       'Caixa onde ficam os sacos de confeitar cheios. O saco é descartável e '
-       || 'não se cadastra; quantos há dentro é o conteúdo dividido pela porção.'
-  FROM insumos i
-  JOIN (VALUES ('INS027', 3.000), ('INS014', 4.800)) AS v(codigo, capacidade)
-    ON v.codigo = i.codigo
- WHERE NOT EXISTS (
-   SELECT 1 FROM locais l
-    WHERE l.insumo_id = i.id AND l.qr_code_fixo = 'QR-EP-CAIXA-' || i.codigo
- );
-
--- Os 15 sacos avulsos saem de cena. Desativar e não excluir: histórico aponta.
-UPDATE locais l
-   SET ativo = false, updated_at = now(),
-       observacoes = COALESCE(l.observacoes || ' · ', '')
-                     || 'Desativado na migration 074: o saco de confeitar é '
-                     || 'descartável e deixou de ser cadastrado um a um.'
- WHERE l.tipo = 'estoque_produtivo'
-   AND l.subtipo = 'saco_confeitar'
-   AND l.ativo
-   AND l.qr_code_fixo NOT LIKE 'QR-EP-CAIXA-%'
-   AND NOT EXISTS (
-     SELECT 1 FROM locais_lotes ll WHERE ll.local_id = l.id AND ll.quantidade > 0
-   );
+-- Os dados desta empresa — as porções corrigidas, a criação das caixas e a
+-- desativação dos 15 sacos avulsos — saíram daqui para
+-- `076_dados_mischa_porcionamento.sql`, escopados por `empresa_id`. Estavam
+-- presos a códigos de insumo (INS027, INS014) e SEM filtro de empresa: como os
+-- códigos são gerados por empresa, outro cliente com um INS027 teria a porção
+-- reescrita. Estrutura fica em migration; dado de cliente, em arquivo próprio.
 
 -- ── 3. A reembalagem passa a depositar na caixa ─────────────
 
