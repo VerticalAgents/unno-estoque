@@ -10,8 +10,11 @@ import { formatDate, formatQty } from '../../lib/utils'
 import { parseQRLoteCodigo, qrDaEmbalagem } from '../../lib/qr'
 import { Reembalagem, type ConfigReembalagem } from './components/Reembalagem'
 
-type Step = 'scan_lote' | 'scan_mais' | 'scan_local' | 'confirmar' | 'reembalagem'
-  | 'mover_embalagem' | 'sucesso'
+type Step = 'scan_lote' | 'scan_mais' | 'escolher_destino' | 'scan_local' | 'confirmar'
+  | 'reembalagem' | 'mover_embalagem' | 'sucesso'
+
+/** Para quem tem dois destinos: o pacote inteiro, ou porcionado em sacos. */
+type Destino = 'direto' | 'porcionar'
 
 type ModoEp = 'recipiente' | 'embalagem_fornecedor' | 'porcionado' | 'escolher'
 
@@ -55,6 +58,18 @@ function ehEmbalagemDoFornecedor(lote: LoteWithInsumo): boolean {
 function ehPorcionado(lote: LoteWithInsumo): boolean {
   return modoEp(lote) === 'porcionado'
 }
+
+/**
+ * Insumo que faz as duas coisas, e o operador decide a cada pacote.
+ *
+ * É o caso do Doce de Leite: um balde vai inteiro para a bancada e é usado
+ * direto nas receitas; outro é porcionado em sacos de 200 g para o topping.
+ * Nunca os dois com o mesmo balde — por isso a pergunta é na transferência,
+ * quando o balde ainda está fechado, e não depois.
+ */
+function ehEscolher(lote: LoteWithInsumo): boolean {
+  return modoEp(lote) === 'escolher'
+}
 type LocalWithInsumo = Local & {
   insumo?: { nome: string; codigo: string }
   marca?: { nome: string } | null
@@ -89,6 +104,8 @@ export function TransferenciaPage() {
   const [loading, setLoading] = useState(false)
   const [scanError, setScanError] = useState('')
   const [sucesso, setSucesso] = useState<{ codigos: string[] } | null>(null)
+  // Só para insumo de dois destinos: o que a pessoa escolheu para ESTE pacote.
+  const [destino, setDestino] = useState<Destino | null>(null)
 
   // Alias for reembalagem compatibility
   const lote = lotes[0] ?? null
@@ -310,7 +327,9 @@ export function TransferenciaPage() {
 
     setLocal({ ...loc, estado_atual: estado as LocalWithInsumo['estado_atual'] })
 
-    if (lote && ehPorcionado(lote)) {
+    // Porcionado sempre passa pela tela de sacos; quem tem dois destinos, só
+    // quando escolheu porcionar.
+    if (lote && (ehPorcionado(lote) || destino === 'porcionar')) {
       setStep('reembalagem')
     } else {
       setStep('confirmar')
@@ -404,6 +423,7 @@ export function TransferenciaPage() {
     setTravaScan(null)
     setJustScan('')
     setSobras([])
+    setDestino(null)
   }
 
   /**
@@ -446,17 +466,29 @@ export function TransferenciaPage() {
   const unidade = lotes[0]?.unidade ?? ''
 
   /** Depois de juntar os lotes: bipar o recipiente, ou mover o pacote inteiro. */
-  const passoDepoisDosLotes: Step = lote && ehEmbalagemDoFornecedor(lote)
-    ? 'mover_embalagem'
+  const passoDepoisDosLotes: Step =
+    !lote ? 'scan_local'
+    : ehEmbalagemDoFornecedor(lote) ? 'mover_embalagem'
+    : ehEscolher(lote) && destino === null ? 'escolher_destino'
+    : destino === 'direto' ? 'mover_embalagem'
     : 'scan_local'
-  const rotuloDepoisDosLotes = passoDepoisDosLotes === 'mover_embalagem'
-    ? 'Mover para a produção'
+  const rotuloDepoisDosLotes =
+    passoDepoisDosLotes === 'mover_embalagem' ? 'Mover para a produção'
+    : passoDepoisDosLotes === 'escolher_destino' ? 'Escolher o destino'
     : 'Continuar para o recipiente'
 
   // ── Render ────────────────────────────────────────────────
 
   const STEPS_NORMAL: Step[] = ['scan_lote', 'scan_mais', 'scan_local', 'confirmar']
-  const stepIndex = STEPS_NORMAL.indexOf(step)
+  // Os caminhos alternativos ocupam a mesma posição na barra do que substituem:
+  // escolher o destino é a etapa do recipiente; mover o pacote e porcionar são
+  // a etapa de confirmar. Sem isso a barra apagava inteira nesses passos.
+  const EQUIVALENTE: Partial<Record<Step, Step>> = {
+    escolher_destino: 'scan_local',
+    mover_embalagem: 'confirmar',
+    reembalagem: 'confirmar',
+  }
+  const stepIndex = STEPS_NORMAL.indexOf(EQUIVALENTE[step] ?? step)
 
   const bloqueadoNoScan = travaScan?.modo === 'bloqueia'
   const faltaJustificarScan = !bloqueadoNoScan && justScan.trim().length < 5
@@ -880,6 +912,58 @@ export function TransferenciaPage() {
           </Button>
           <Button variant="ghost" size="lg" fullWidth onClick={handleReset}>
             ← Cancelar
+          </Button>
+        </div>
+      )}
+
+      {/* ── Escolher o destino ──
+          Só para insumo que faz as duas coisas. A pergunta é aqui, com o
+          pacote ainda fechado, porque a decisão é sobre o pacote inteiro: o
+          balde que vira topping não é usado direto, e vice-versa. */}
+      {step === 'escolher_destino' && lote && (
+        <div className="space-y-4">
+          <Card className="p-5">
+            <h2 className="text-base font-semibold text-gray-900 mb-1">
+              O que vai ser feito com este {lotes.length > 1 ? 'lote' : 'pacote'}?
+            </h2>
+            <p className="text-sm text-gray-500">
+              {lote.insumo.nome} tem dois usos, e a escolha vale para o pacote
+              inteiro — {formatQty(totalQty, unidade)}.
+            </p>
+          </Card>
+
+          <button
+            type="button"
+            onClick={() => { setDestino('direto'); setStep('mover_embalagem') }}
+            className="w-full text-left rounded-xl border-2 border-gray-200 hover:border-brand-500 bg-white p-5 transition-colors"
+          >
+            <span className="block text-base font-semibold text-gray-900">
+              Usar direto nas receitas
+            </span>
+            <span className="block text-sm text-gray-500 mt-1">
+              O pacote vai inteiro para a bancada e é consumido de lá, com a
+              etiqueta que já está colada. Sem porcionar.
+            </span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => { setDestino('porcionar'); setStep('scan_local') }}
+            className="w-full text-left rounded-xl border-2 border-gray-200 hover:border-brand-500 bg-white p-5 transition-colors"
+          >
+            <span className="block text-base font-semibold text-gray-900">
+              Porcionar em sacos de confeitar
+            </span>
+            <span className="block text-sm text-gray-500 mt-1">
+              {configArmazenamento(lote).reembalagem_tamanho_porcao
+                ? `Sacos de ${configArmazenamento(lote).reembalagem_tamanho_porcao} g, `
+                : ''}
+              guardados na caixa. Você vai bipar a caixa em seguida.
+            </span>
+          </button>
+
+          <Button variant="ghost" size="lg" fullWidth onClick={handleReset}>
+            ← Recomeçar
           </Button>
         </div>
       )}
