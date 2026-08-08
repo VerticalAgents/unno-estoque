@@ -55,6 +55,10 @@ export function ImpressaoRecipientesPage() {
       .select('*, insumo:insumos(id, nome, codigo, unidade_medida)')
       .eq('empresa_id', profile.empresa_id)
       .eq('tipo', 'estoque_produtivo')
+      // Embalagem do fornecedor fica de fora: ela já carrega a etiqueta do lote
+      // colada desde o recebimento, e imprimir outra criaria duas identidades
+      // para o mesmo balde (migration 073).
+      .eq('efemero', false)
       .then(({ data }) => {
         // Ordem natural: "Pote G #10" depois de "#2", e não antes.
         const lista = ((data ?? []) as unknown as Recipiente[])

@@ -9,6 +9,7 @@ import type { ContagemInsumo, ContagemEpLocal, StatusFisico } from '../../types/
 import { bancada, daBancada, emBancada, usaTara } from '../../lib/unidades'
 import { NavegadorInsumos } from './NavegadorInsumos'
 import { ordemNatural } from '../../lib/utils'
+import { resolverLocalPorQr } from '../../lib/qr'
 
 type InsumoJoined = ContagemInsumo & {
   insumo: { nome: string; codigo: string; unidade_medida: string }
@@ -162,12 +163,9 @@ export function NovaContagemEpPage() {
     setPesoBruto('')
     setShowTaraPrompt(false)
 
-    // Busca o local pelo QR code fixo
-    const { data: localData } = await supabase
-      .from('locais')
-      .select('id, qr_code_fixo')
-      .eq('qr_code_fixo', qrValue)
-      .single()
+    // O QR do pote da cozinha, ou o do lote colado na embalagem do fornecedor
+    // — nesse caso o pacote É o ponto de consumo (migration 073).
+    const localData = await resolverLocalPorQr<{ id: string }>(qrValue, 'id')
 
     if (!localData) {
       setScanError('QR code não reconhecido como recipiente.')

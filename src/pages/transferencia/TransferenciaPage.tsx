@@ -7,16 +7,40 @@ import { Button } from '../../components/ui/Button'
 import { Card } from '../../components/ui/Card'
 import { ConfirmModal } from '../../components/ui/ConfirmModal'
 import { formatDate, formatQty, precisaReembalagem, precisaDestinoMultiplo } from '../../lib/utils'
-import { parseQRLoteCodigo } from '../../lib/qr'
+import { parseQRLoteCodigo, qrDaEmbalagem } from '../../lib/qr'
 import { ReembalagemNutella } from './components/ReembalagemNutella'
 import { ReembalagemStikadinho } from './components/ReembalagemStikadinho'
 import { ReembalagemDDL } from './components/ReembalagemDDL'
 
-type Step = 'scan_lote' | 'scan_mais' | 'scan_local' | 'confirmar' | 'reembalagem' | 'sucesso'
+type Step = 'scan_lote' | 'scan_mais' | 'scan_local' | 'confirmar' | 'reembalagem'
+  | 'mover_embalagem' | 'sucesso'
+
+type ModoEp = 'recipiente' | 'embalagem_fornecedor' | 'porcionado' | 'escolher'
 
 type LoteWithInsumo = Lote & {
-  insumo: { nome: string; codigo: string; shelf_life_dias_pos_abertura: number | null; armazenamento_config?: { passa_reembalagem: boolean; destino_multiplo: boolean } }
+  insumo: {
+    nome: string; codigo: string; shelf_life_dias_pos_abertura: number | null
+    armazenamento_config?: { passa_reembalagem: boolean; destino_multiplo: boolean; modo_ep?: ModoEp }
+  }
   marca?: { nome: string } | null
+}
+
+/**
+ * O pacote do fornecedor É o ponto de consumo (migration 073).
+ *
+ * Nesses insumos não existe recipiente para escanear: o balde sai da prateleira
+ * e vai para a bancada inteiro, com a etiqueta de lote que já está colada nele.
+ * O `insumos_armazenamento_config` pode vir como objeto ou como lista de um
+ * elemento, dependendo de como o PostgREST resolve o embed.
+ */
+function modoEp(lote: LoteWithInsumo): ModoEp {
+  const bruto = lote.insumo?.armazenamento_config as unknown
+  const config = Array.isArray(bruto) ? bruto[0] : bruto
+  return (config as { modo_ep?: ModoEp } | undefined)?.modo_ep ?? 'recipiente'
+}
+
+function ehEmbalagemDoFornecedor(lote: LoteWithInsumo): boolean {
+  return modoEp(lote) === 'embalagem_fornecedor'
 }
 type LocalWithInsumo = Local & {
   insumo?: { nome: string; codigo: string }
@@ -105,7 +129,7 @@ export function TransferenciaPage() {
     marca:marcas(nome),
     insumo:insumos(
       nome, codigo, shelf_life_dias_pos_abertura,
-      armazenamento_config:insumos_armazenamento_config(passa_reembalagem, destino_multiplo)
+      armazenamento_config:insumos_armazenamento_config(passa_reembalagem, destino_multiplo, modo_ep)
     )
   `
 
@@ -202,8 +226,12 @@ export function TransferenciaPage() {
     })
     setLotes(prev => [...prev, novo])
 
-    // Insumos com reembalagem pulam o fluxo multi-lote
-    if (lotes.length === 0 && precisaReembalagem(novo.insumo.codigo)) {
+    // O pacote do fornecedor não tem recipiente de destino: ele É o destino.
+    // Continua aceitando mais sublotes (duas garrafas de baunilha viram dois
+    // pontos de consumo), mas nunca passa pela etapa de escanear recipiente.
+    if (ehEmbalagemDoFornecedor(novo)) {
+      setStep('scan_mais')
+    } else if (lotes.length === 0 && precisaReembalagem(novo.insumo.codigo)) {
       setStep('scan_local')
     } else if (lotes.length === 0) {
       setStep('scan_mais')
@@ -224,9 +252,13 @@ export function TransferenciaPage() {
         marca:marcas(nome),
         estado_atual:locais_estado_atual(quantidade, lote_id, unidade)
       `)
-      .eq('qr_code_fixo', qr)
+      // Duas etiquetas servem: o QR próprio do pote da cozinha e o QR derivado
+      // do lote, que é o que existe quando o ponto de consumo é a embalagem do
+      // fornecedor (migration 073).
+      .in('qr_code_fixo', [qr, qrDaEmbalagem(parseQRLoteCodigo(qr))])
       .eq('ativo', true)
-      .single()
+      .limit(1)
+      .maybeSingle()
 
     if (!localData) {
       // O contrário do caso acima: etiqueta de lote bipada na etapa do pote.
@@ -361,8 +393,52 @@ export function TransferenciaPage() {
     setSobras([])
   }
 
+  /**
+   * Move os pacotes do fornecedor inteiros para a produção.
+   *
+   * Um pacote vira um ponto de consumo, com o QR derivado do próprio lote — é
+   * a RPC que cria o local, não o operador. Cada sublote é independente: se um
+   * falhar, os outros já movidos continuam movidos, e a tela diz quais foram.
+   */
+  async function confirmarMoverEmbalagem() {
+    if (!profile || lotes.length === 0) return
+    setLoading(true)
+    setScanError('')
+
+    const movidos: string[] = []
+    for (const l of lotes) {
+      const { data, error } = await supabase.rpc('mover_embalagem_fornecedor', {
+        p_lote_id:        l.id,
+        p_responsavel_id: profile.id,
+        p_empresa_id:     profile.empresa_id,
+      })
+      const resp = data as { ok: boolean; erro?: string } | null
+      if (error || !resp?.ok) {
+        setLoading(false)
+        setScanError(
+          (movidos.length > 0 ? `${movidos.join(', ')} já foram movidos. ` : '')
+          + `Falhou em ${l.codigo}: ${resp?.erro ?? error?.message ?? 'erro desconhecido'}`,
+        )
+        return
+      }
+      movidos.push(l.codigo)
+    }
+
+    setLoading(false)
+    setSucesso({ codigos: movidos })
+    setStep('sucesso')
+  }
+
   const totalQty = lotes.reduce((acc, l) => acc + (l.quantidade_disponivel ?? 0), 0)
   const unidade = lotes[0]?.unidade ?? ''
+
+  /** Depois de juntar os lotes: bipar o recipiente, ou mover o pacote inteiro. */
+  const passoDepoisDosLotes: Step = lote && ehEmbalagemDoFornecedor(lote)
+    ? 'mover_embalagem'
+    : 'scan_local'
+  const rotuloDepoisDosLotes = passoDepoisDosLotes === 'mover_embalagem'
+    ? 'Mover para a produção'
+    : 'Continuar para o recipiente'
 
   // ── Render ────────────────────────────────────────────────
 
@@ -540,8 +616,8 @@ export function TransferenciaPage() {
                 titulo={lote.insumo.nome}
                 label={`${lotes.length} sublote${lotes.length === 1 ? '' : 's'} · ${formatQty(totalQty, unidade)}`}
                 acaoConcluir={{
-                  rotulo: 'Continuar para o recipiente',
-                  onClick: () => { setScanError(''); setStep('scan_local') },
+                  rotulo: rotuloDepoisDosLotes,
+                  onClick: () => { setScanError(''); setStep(passoDepoisDosLotes) },
                 }}
                 painel={
                   <div>
@@ -577,9 +653,11 @@ export function TransferenciaPage() {
             variant="primary"
             size="lg"
             fullWidth
-            onClick={() => { setScanError(''); setStep('scan_local') }}
+            onClick={() => { setScanError(''); setStep(passoDepoisDosLotes) }}
           >
-            Continuar → Escanear recipiente
+            Continuar → {passoDepoisDosLotes === 'mover_embalagem'
+              ? 'Mover para a produção'
+              : 'Escanear recipiente'}
           </Button>
           <Button variant="ghost" size="lg" fullWidth onClick={handleReset}>
             ← Recomeçar
@@ -786,6 +864,74 @@ export function TransferenciaPage() {
             onClick={() => setShowConfirm(true)}
           >
             CONFIRMAR TRANSFERÊNCIA
+          </Button>
+          <Button variant="ghost" size="lg" fullWidth onClick={handleReset}>
+            ← Cancelar
+          </Button>
+        </div>
+      )}
+
+      {/* ── Mover a embalagem do fornecedor inteira ──
+          Sem escolher recipiente: o pacote É o recipiente. A tela existe só
+          para a pessoa conferir o que vai sair da prateleira antes de confirmar. */}
+      {step === 'mover_embalagem' && lote && (
+        <div className="space-y-4">
+          <Card className="p-5">
+            <h2 className="text-base font-semibold text-gray-900 mb-1">
+              Mover para a produção
+            </h2>
+            <p className="text-sm text-gray-500 mb-4">
+              {lote.insumo.nome} fica na embalagem do fornecedor — ela mesma vira o
+              ponto de consumo, com a etiqueta que já está colada. Não há recipiente
+              para escanear.
+            </p>
+
+            <div className="text-sm">
+              <div className="py-2 border-b border-gray-100">
+                <span className="text-gray-500 block mb-1">
+                  {lotes.length === 1 ? 'Pacote' : `Pacotes (${lotes.length})`}
+                </span>
+                <div className="space-y-1">
+                  {lotes.map(l => (
+                    <div key={l.id} className="flex justify-between text-xs">
+                      <span className="font-mono text-gray-700">{l.codigo}</span>
+                      <span className="text-gray-600">
+                        {formatQty(l.quantidade_disponivel, l.unidade)}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+              <div className="flex justify-between py-2">
+                <span className="text-gray-500">Total</span>
+                <span className="font-bold text-brand-700">{formatQty(totalQty, unidade)}</span>
+              </div>
+            </div>
+
+            <div className="mt-4 p-3 bg-amber-50 border border-amber-200 rounded-lg text-xs text-amber-800 space-y-1">
+              <p>
+                Sai <strong>tudo</strong>: a embalagem vai inteira para a produção e
+                deixa de constar no estoque central.
+              </p>
+              <p>
+                Quando esvaziar, marque como esgotada na tela de Recipientes — ela
+                some sozinha da lista.
+              </p>
+              <p>Esta operação não pode ser desfeita.</p>
+            </div>
+          </Card>
+
+          {scanError && (
+            <div className="p-3 bg-red-50 border border-red-200 rounded-lg text-sm text-red-700">
+              {scanError}
+            </div>
+          )}
+
+          <Button
+            variant="danger" size="xl" fullWidth loading={loading}
+            onClick={confirmarMoverEmbalagem}
+          >
+            CONFIRMAR — {lotes.length === 1 ? 'MOVER PACOTE' : `MOVER ${lotes.length} PACOTES`}
           </Button>
           <Button variant="ghost" size="lg" fullWidth onClick={handleReset}>
             ← Cancelar
