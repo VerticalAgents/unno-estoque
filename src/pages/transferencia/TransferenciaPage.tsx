@@ -128,22 +128,22 @@ export function TransferenciaPage() {
       .single()
 
     if (!loteData) {
-      // Bipou a etiqueta do pote aqui. Se já há lote na mão, é só a próxima
-      // etapa antes da hora — então segue para ela em vez de acusar erro.
+      // Bipou a etiqueta do pote aqui. O aviso precisa dizer em que etapa a
+      // tela está — é o que estava faltando: sem isso, quem bipa fora de ordem
+      // fica procurando defeito na etiqueta.
+      //
+      // E não avança sozinho de propósito: numa transferência de vários lotes
+      // para o mesmo pote, um bipe fora de ordem encerraria a coleta antes da
+      // hora, e o operador só descobriria na confirmação.
       const recipiente = await recipienteDoQr(qr)
       if (recipiente) {
-        if (!recipiente.ativo) {
-          setScanError(`O recipiente "${recipiente.nome}" está inativo.`)
-          return
-        }
-        if (lotes.length === 0) {
-          setScanError(
-            `Isto é a etiqueta do recipiente "${recipiente.nome}". `
-            + 'Escaneie primeiro a etiqueta do lote que vai entrar nele.',
-          )
-          return
-        }
-        await handleScanLocal(qr)
+        setScanError(
+          `Esta é a etapa de escanear LOTES, e "${recipiente.nome}" é um recipiente. `
+          + (lotes.length === 0
+            ? 'Bipe primeiro a etiqueta do lote que vai entrar nele.'
+            : 'Termine de bipar os lotes e toque em "Continuar para o recipiente" — '
+              + 'aí sim bipe esta etiqueta.'),
+        )
         return
       }
       setScanError(await erroLoteInativo(qr))
@@ -237,8 +237,8 @@ export function TransferenciaPage() {
         .maybeSingle()
       setScanError(
         loteQr
-          ? `Isto é a etiqueta do lote ${loteQr.codigo}, não a de um recipiente. `
-            + 'Bipe a etiqueta colada no pote.'
+          ? `Esta é a etapa de escanear o RECIPIENTE, e ${loteQr.codigo} é um lote. `
+            + 'Bipe a etiqueta colada no pote que vai receber o insumo.'
           : `Recipiente não encontrado: ${qr}`,
       )
       return
