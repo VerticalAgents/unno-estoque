@@ -211,6 +211,64 @@ export function useEtiquetaConfig(tipo: EtiquetaTipo): { config: EtiquetaConfig;
   return { config, carregando }
 }
 
+// ── Cópias por tipo de recipiente ─────────────────────────────
+
+/**
+ * Quantas etiquetas cada TIPO de recipiente precisa (migration 072).
+ *
+ * Balde leva duas — corpo e tampa, senão ninguém sabe qual tampa é de qual
+ * balde depois de empilhar. Garrafa leva uma. É característica do tipo, não
+ * de cada recipiente, para que cadastrar o décimo balde não dependa de
+ * alguém lembrar de pedir duas.
+ */
+export type CopiasPorSubtipo = Record<string, number>
+
+export const COLUNA_COPIAS_RECIPIENTE = 'etiqueta_recipiente_copias'
+export const COPIAS_MIN = 1
+export const COPIAS_MAX = 10
+
+/** Tipo sem número gravado vale 1 — o caso comum não precisa de cadastro. */
+export function copiasDoSubtipo(copias: CopiasPorSubtipo, subtipo?: string | null): number {
+  const n = Math.round(Number(copias[subtipo ?? ''] ?? COPIAS_MIN))
+  if (!Number.isFinite(n)) return COPIAS_MIN
+  return Math.min(COPIAS_MAX, Math.max(COPIAS_MIN, n))
+}
+
+/** Descarta o que não for número na faixa, venha do banco ou da tela. */
+export function saneiaCopias(bruto: unknown): CopiasPorSubtipo {
+  if (!bruto || typeof bruto !== 'object') return {}
+  const saida: CopiasPorSubtipo = {}
+  for (const [chave, valor] of Object.entries(bruto as Record<string, unknown>)) {
+    const n = Math.round(Number(valor))
+    if (Number.isFinite(n) && n >= COPIAS_MIN && n <= COPIAS_MAX) saida[chave] = n
+  }
+  return saida
+}
+
+export function useCopiasRecipiente(): { copias: CopiasPorSubtipo; carregando: boolean } {
+  const { profile } = useAuth()
+  const [copias, setCopias] = useState<CopiasPorSubtipo>({})
+  const [carregando, setCarregando] = useState(true)
+
+  useEffect(() => {
+    if (!profile) return
+    let cancelado = false
+    supabase
+      .from('configuracoes_sistema')
+      .select(COLUNA_COPIAS_RECIPIENTE)
+      .eq('empresa_id', profile.empresa_id)
+      .maybeSingle()
+      .then(({ data }) => {
+        if (cancelado) return
+        setCopias(saneiaCopias((data as Record<string, unknown> | null)?.[COLUNA_COPIAS_RECIPIENTE]))
+        setCarregando(false)
+      })
+    return () => { cancelado = true }
+  }, [profile])
+
+  return { copias, carregando }
+}
+
 // ── Geometria ─────────────────────────────────────────────────
 
 /** Quanto o desenho-base precisa encolher/crescer para caber no papel. */

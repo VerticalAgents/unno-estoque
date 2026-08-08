@@ -34,6 +34,7 @@ import { ConfiguracoesPage } from './pages/configuracoes/ConfiguracoesPage'
 import { AberturaEstoquePage } from './pages/configuracoes/AberturaEstoquePage'
 import { RecipienteListPage } from './pages/recipientes/RecipienteListPage'
 import { EtiquetaRecipientePage } from './pages/recipientes/EtiquetaRecipientePage'
+import { ImpressaoRecipientesPage } from './pages/recipientes/ImpressaoRecipientesPage'
 import { ProdutosEstoquePage } from './pages/estoque/ProdutosEstoquePage'
 import { HistoricoProducaoPage } from './pages/estoque/HistoricoProducaoPage'
 import { ProdutoListPage } from './pages/produtos/ProdutoListPage'
@@ -83,6 +84,7 @@ export default function App() {
           <Route path="relatorios" element={<RelatoriosPage />} />
           <Route path="produtos" element={<ProdutoListPage />} />
           <Route path="recipientes" element={<RecipienteListPage />} />
+          <Route path="recipientes/etiquetas" element={<ImpressaoRecipientesPage />} />
           <Route path="recipientes/:id/etiqueta" element={<EtiquetaRecipientePage />} />
           <Route path="configuracoes" element={<ConfiguracoesPage />} />
           <Route path="configuracoes/abertura-estoque" element={<AberturaEstoquePage />} />

@@ -2,6 +2,7 @@ import { useEffect, useState, type ReactNode } from 'react'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../contexts/AuthContext'
 import { Card } from '../../components/ui/Card'
+import { SUBTIPO_LABELS } from '../../components/etiqueta/EtiquetaRecipiente'
 import { Button } from '../../components/ui/Button'
 import {
   ETIQUETA_CONFIG_PADRAO,
@@ -11,8 +12,14 @@ import {
   ETIQUETA_MAX_MM,
   ETIQUETA_MIN_MM,
   ETIQUETA_PRESETS,
+  COLUNA_COPIAS_RECIPIENTE,
+  COPIAS_MAX,
+  COPIAS_MIN,
   baseDoLayout,
   colunasEtiqueta,
+  copiasDoSubtipo,
+  saneiaCopias,
+  type CopiasPorSubtipo,
   configDaLinha,
   dimsLinha,
   escalaEtiqueta,
@@ -102,6 +109,7 @@ export function EtiquetasTab() {
     lote: paraCampos(ETIQUETA_CONFIG_PADRAO),
     recipiente: paraCampos(ETIQUETA_CONFIG_PADRAO),
   })
+  const [copias, setCopias] = useState<CopiasPorSubtipo>({})
   const [carregando, setCarregando] = useState(true)
   const [salvando, setSalvando] = useState(false)
   const [ok, setOk] = useState(false)
@@ -112,6 +120,7 @@ export function EtiquetasTab() {
     const cols = [
       ...Object.values(colunasEtiqueta('lote')),
       ...Object.values(colunasEtiqueta('recipiente')),
+      COLUNA_COPIAS_RECIPIENTE,
     ]
     supabase
       .from('configuracoes_sistema')
@@ -124,6 +133,7 @@ export function EtiquetasTab() {
           lote: paraCampos(configDaLinha('lote', row)),
           recipiente: paraCampos(configDaLinha('recipiente', row)),
         })
+        setCopias(saneiaCopias(row?.[COLUNA_COPIAS_RECIPIENTE]))
         setCarregando(false)
       })
   }, [profile])
@@ -155,7 +165,10 @@ export function EtiquetasTab() {
     }
 
     setSalvando(true)
-    const payload: Record<string, unknown> = { empresa_id: profile.empresa_id }
+    const payload: Record<string, unknown> = {
+      empresa_id: profile.empresa_id,
+      [COLUNA_COPIAS_RECIPIENTE]: copias,
+    }
     for (const t of TIPOS) {
       const cols = colunasEtiqueta(t.tipo)
       for (const campo of Object.keys(LIMITES) as (keyof EtiquetaConfig)[]) {
@@ -361,6 +374,10 @@ export function EtiquetasTab() {
                 {descreveSobra(config)}
               </p>
             </div>
+
+            {t.tipo === 'recipiente' && (
+              <CopiasPorTipo copias={copias} onChange={c => { setOk(false); setCopias(c) }} />
+            )}
           </Card>
         )
       })}
@@ -534,6 +551,51 @@ function descreveSobra(config: EtiquetaConfig): string {
   const pct = Math.round(sobraEtiqueta(config) * 100)
   if (pct <= 1) return 'a etiqueta ocupa o papel inteiro'
   return `cerca de ${pct}% do papel fica em branco nas bordas`
+}
+
+/**
+ * Quantas etiquetas cada tipo de recipiente leva na impressão em massa.
+ *
+ * O balde precisa de duas — uma no corpo e uma na tampa, senão não dá para
+ * saber qual tampa é de qual balde depois que empilham. A garrafa precisa de
+ * uma. Fica por TIPO e não por recipiente para que cadastrar o próximo balde
+ * não dependa de alguém lembrar disso.
+ */
+function CopiasPorTipo({ copias, onChange }: {
+  copias: CopiasPorSubtipo
+  onChange: (c: CopiasPorSubtipo) => void
+}) {
+  return (
+    <>
+      <p className="text-xs font-semibold uppercase tracking-wide text-gray-400 dark:text-unno-dim mt-6 mb-2">
+        Etiquetas por tipo de recipiente
+      </p>
+      <p className="text-xs text-gray-500 dark:text-unno-muted mb-3">
+        Quantas cópias sair de cada recipiente na impressão em massa
+        (Recipientes → Imprimir etiquetas). Balde costuma precisar de duas —
+        corpo e tampa — para dar match depois.
+      </p>
+      <div className="flex flex-wrap gap-3">
+        {Object.entries(SUBTIPO_LABELS).map(([valor, rotulo]) => (
+          <div key={valor} className="w-40">
+            <label className="text-xs text-gray-500 dark:text-unno-muted">{rotulo}</label>
+            <input
+              type="number" min={COPIAS_MIN} max={COPIAS_MAX} step="1" inputMode="numeric"
+              value={copiasDoSubtipo(copias, valor)}
+              onChange={e => {
+                const n = Math.round(Number(e.target.value))
+                if (!Number.isFinite(n)) return
+                const limitado = Math.min(COPIAS_MAX, Math.max(COPIAS_MIN, n))
+                onChange({ ...copias, [valor]: limitado })
+              }}
+              className="mt-1 w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-right
+                         focus:outline-none focus:border-brand-500 focus:ring-[3px] focus:ring-brand-500/10"
+            />
+          </div>
+        ))}
+      </div>
+    </>
+  )
 }
 
 function MedidaInput({ label, valor, erro, min, max, step, largo, onChange }: {
