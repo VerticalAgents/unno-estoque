@@ -327,6 +327,31 @@ export function PlanejadorRecipientesPage({
   // porque isso também aconteceria com quem já está coberto pelo recipiente.
   const semLote = useMemo(() => lotes.filter(l => l.lote_id === null), [lotes])
 
+  /**
+   * A folha impressa é uma lista de tarefas, não um relatório.
+   *
+   * Quem está com ela na mão quer os insumos que exigem trabalho primeiro, na
+   * ordem dos códigos — que é a ordem em que ele anda pela prateleira. Os que
+   * já estão cobertos não somem (serve conferir que não foram esquecidos), mas
+   * vão para o fim, também em ordem de código.
+   *
+   * Ter tarefa é ter pote para encher OU lote para pegar. As duas listas vêm de
+   * RPCs diferentes e nem sempre andam juntas: há insumo que precisa ser
+   * abastecido e não tem lote no estoque central — esse é o caso que mais
+   * precisa aparecer no topo.
+   */
+  const { comTarefa, cobertos, ordenadas } = useMemo(() => {
+    const temTarefa = (l: LinhaPlano) =>
+      abastecimento.some(a => a.insumo_id === l.insumo_id) ||
+      lotes.some(x => x.insumo_id === l.insumo_id)
+    const com = linhas.filter(temTarefa)
+    const sem = linhas.filter(l => !temTarefa(l))
+    return { comTarefa: com, cobertos: sem, ordenadas: [...com, ...sem] }
+  }, [linhas, abastecimento, lotes])
+
+  const potesParaEncher = abastecimento.length
+  const lotesParaPegar = lotes.filter(l => l.lote_id !== null).length
+
   const faltamTotal = linhas.reduce((s, l) => s + (l.faltam ?? 0), 0)
   const semRecipiente = linhas.filter(l => l.capacidade == null)
   const coberto = linhas.length > 0 && faltamTotal === 0
@@ -746,6 +771,38 @@ export function PlanejadorRecipientesPage({
             </p>
           </div>
 
+          {/* Resumo do serviço: o que precisa ser feito, antes da lista de como
+              fazer. Quem pega a folha decide primeiro se dá tempo hoje. */}
+          <div style={{ border: '1.5px solid #333', padding: '3mm 4mm', marginBottom: '6mm' }}>
+            <p style={{ fontSize: '9pt', margin: 0, textTransform: 'uppercase', letterSpacing: '1px' }}>
+              O que fazer
+            </p>
+            <p style={{ fontSize: '12pt', margin: '1.5mm 0 0', fontWeight: 700 }}>
+              {comTarefa.length} insumo{comTarefa.length === 1 ? '' : 's'} a reabastecer
+              {potesParaEncher > 0 &&
+                ` · ${potesParaEncher} recipiente${potesParaEncher === 1 ? '' : 's'} para encher`}
+              {lotesParaPegar > 0 &&
+                ` · ${lotesParaPegar} lote${lotesParaPegar === 1 ? '' : 's'} para pegar no estoque`}
+            </p>
+            {(semLote.length > 0 || faltamTotal > 0) && (
+              <p style={{ fontSize: '9.5pt', margin: '2mm 0 0', fontWeight: 600 }}>
+                Atenção:
+                {semLote.length > 0 &&
+                  ` ${semLote.length} insumo${semLote.length === 1 ? '' : 's'} sem lote no estoque central`}
+                {semLote.length > 0 && faltamTotal > 0 && ' ·'}
+                {faltamTotal > 0 &&
+                  ` faltam ${faltamTotal} recipiente${faltamTotal === 1 ? '' : 's'} para caber tudo`}
+              </p>
+            )}
+            {cobertos.length > 0 && (
+              <p style={{ fontSize: '8.5pt', margin: '2mm 0 0', fontStyle: 'italic' }}>
+                {cobertos.length} insumo{cobertos.length === 1 ? '' : 's'} já
+                {cobertos.length === 1 ? ' está coberto' : ' estão cobertos'} e
+                {cobertos.length === 1 ? ' aparece' : ' aparecem'} no fim da lista, só para conferência.
+              </p>
+            )}
+          </div>
+
           <table>
             {/* Larguras fixas: sem isso os números quebram em duas linhas e a
                 folha vira mingau. A coluna larga é a descrição, que absorve
@@ -769,12 +826,21 @@ export function PlanejadorRecipientesPage({
               </tr>
             </thead>
             <tbody>
-              {linhas.map(l => {
+              {ordenadas.map((l, i) => {
                 const seusLotes = lotes.filter(x => x.insumo_id === l.insumo_id)
                 const potesDoInsumo = abastecimento.filter(a => a.insumo_id === l.insumo_id)
                 const ab = potesDoInsumo[0]
                 return (
                   <Fragment key={l.insumo_id}>
+                    {/* Fronteira entre o que dá trabalho e o que só se confere */}
+                    {i === comTarefa.length && (
+                      <tr className="linha-grupo">
+                        <td />
+                        <td colSpan={5} style={{ paddingTop: '5mm' }}>
+                          Já cobertos — nada a fazer
+                        </td>
+                      </tr>
+                    )}
                     <tr className="linha-insumo">
                       <td>{l.codigo}</td>
                       <td>{l.nome}</td>
