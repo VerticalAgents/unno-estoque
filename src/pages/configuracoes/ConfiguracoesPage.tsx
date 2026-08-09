@@ -10,8 +10,9 @@ import { Badge } from '../../components/ui/Badge'
 import { ALL_ROUTES } from '../../lib/permissions'
 import { MotivosDescarteTab } from './MotivosDescarteTab'
 import { EtiquetasTab } from './EtiquetasTab'
+import { ArmazenamentoTab } from './ArmazenamentoTab'
 
-type Tab = 'perfil' | 'senha' | 'empresa' | 'funcionarios' | 'categorias' | 'producao' | 'etiquetas' | 'travas' | 'abertura'
+type Tab = 'perfil' | 'senha' | 'empresa' | 'funcionarios' | 'categorias' | 'producao' | 'etiquetas' | 'travas' | 'abertura' | 'armazenamento'
 
 /**
  * As regras que o sistema pode impor. Cada uma pode BLOQUEAR (recusa sempre)
@@ -81,6 +82,7 @@ export function ConfiguracoesPage() {
     { key: 'categorias', label: 'Categorias' },
     { key: 'producao', label: 'Produção' },
     { key: 'etiquetas', label: 'Etiquetas' },
+    { key: 'armazenamento', label: 'Armazenamento' },
     { key: 'travas', label: 'Travas', adminOnly: true },
     { key: 'abertura', label: 'Abertura de estoque', adminOnly: true },
   ]
@@ -112,6 +114,7 @@ export function ConfiguracoesPage() {
             </div>
           )}
           {activeTab === 'etiquetas' && <EtiquetasTab />}
+          {activeTab === 'armazenamento' && <ArmazenamentoTab />}
           {activeTab === 'travas' && isAdmin && <TravasTab />}
           {activeTab === 'abertura' && isAdmin && <AberturaTab />}
         </div>

@@ -5,6 +5,10 @@ import type { Insumo, CategoriaInsumo, Marca, InsumoMarca, InsumoNutrientes, Uni
 import { Input, Select, Textarea } from '../../components/ui/Input'
 import { Button } from '../../components/ui/Button'
 import { Card } from '../../components/ui/Card'
+import {
+  FORMATOS_PORCAO, MODOS_EP, SeloModoEp, exigePorcao, modoEp,
+  payloadArmazenamento, type ModoEp,
+} from '../../lib/armazenamento'
 
 const UNIDADES: UnidadeMedida[] = ['kg', 'g', 'L', 'ml', 'unid']
 
@@ -18,66 +22,6 @@ const SUBTIPOS_RECIPIENTE = [
   { value: 'lata',               label: 'Lata' },
   { value: 'prateleira',         label: 'Prateleira' },
 ]
-
-/**
- * Como o insumo ocupa o estoque produtivo (migration 073).
- *
- * Isto era configurável só por SQL — o comportamento da transferência dependia
- * de uma tabela sem tela nenhuma. Num módulo de SaaS o cliente precisa poder
- * responder isso sozinho, então a pergunta virou parte do cadastro do insumo.
- */
-const MODOS_EP = [
-  {
-    value: 'recipiente',
-    titulo: 'Vai para um pote da cozinha',
-    ajuda: 'O caso comum. Na transferência o operador bipa o lote e depois o pote de destino.',
-  },
-  {
-    value: 'embalagem_fornecedor',
-    titulo: 'Fica na embalagem do fornecedor',
-    ajuda: 'O balde ou garrafa do fornecedor é o próprio ponto de consumo. Um bipe só, '
-         + 'com a etiqueta que já vem colada — e ele some da lista quando esvazia.',
-  },
-  {
-    value: 'porcionado',
-    titulo: 'É porcionado em sacos',
-    ajuda: 'O pacote é esvaziado em porções que ficam numa caixa. O operador bipa o lote, '
-         + 'bipa a caixa e informa quantos sacos encheu.',
-  },
-  {
-    value: 'escolher',
-    titulo: 'Depende do pacote',
-    ajuda: 'Faz as duas coisas, e quem transfere decide a cada pacote: usar direto ou porcionar.',
-  },
-] as const
-
-type ModoEp = typeof MODOS_EP[number]['value']
-
-/** Modos em que o insumo é porcionado, e a porção passa a ser obrigatória. */
-function exigePorcao(modo: ModoEp): boolean {
-  return modo === 'porcionado' || modo === 'escolher'
-}
-
-const FORMATOS_PORCAO = [
-  { value: 'saco_confeitar', label: 'Saco de confeitar' },
-  { value: 'porcionamento', label: 'Porção avulsa' },
-]
-
-/** Selo curto do modo, para dar para ver a configuração sem abrir cada insumo. */
-function SeloModoEp({ modo }: { modo: ModoEp }) {
-  const estilo: Record<ModoEp, { texto: string; classe: string }> = {
-    recipiente:           { texto: 'Pote',        classe: 'bg-gray-100 text-gray-600' },
-    embalagem_fornecedor: { texto: 'Embalagem',   classe: 'bg-blue-50 text-blue-700' },
-    porcionado:           { texto: 'Porcionado',  classe: 'bg-purple-50 text-purple-700' },
-    escolher:             { texto: 'Os dois',     classe: 'bg-amber-50 text-amber-700' },
-  }
-  const { texto, classe } = estilo[modo]
-  return (
-    <span className={`inline-block px-2 py-0.5 rounded-full text-xs font-medium ${classe}`}>
-      {texto}
-    </span>
-  )
-}
 
 type FormState = {
   nome: string
@@ -250,7 +194,7 @@ export function InsumoListPage() {
     }
     setForm(prev => ({
       ...prev,
-      modo_ep: c.modo_ep ?? 'recipiente',
+      modo_ep: modoEp(c.modo_ep),
       porcao_tamanho: c.reembalagem_tamanho_porcao?.toString() ?? '',
       porcao_unidade: (c.reembalagem_unidade as UnidadeMedida) ?? 'g',
       porcao_formato: c.reembalagem_formato ?? 'saco_confeitar',
@@ -266,18 +210,16 @@ export function InsumoListPage() {
    * invariante que esta tela precisa manter.
    */
   async function salvarArmazenamento(insumoId: string) {
-    const porciona = exigePorcao(form.modo_ep)
     const { error: err } = await supabase
       .from('insumos_armazenamento_config')
-      .upsert({
-        insumo_id: insumoId,
-        modo_ep: form.modo_ep,
-        passa_reembalagem: porciona,
-        destino_multiplo: form.modo_ep === 'escolher',
-        reembalagem_formato: porciona ? form.porcao_formato : null,
-        reembalagem_tamanho_porcao: porciona ? parseFloat(form.porcao_tamanho) : null,
-        reembalagem_unidade: porciona ? form.porcao_unidade : null,
-      }, { onConflict: 'insumo_id' })
+      .upsert(
+        payloadArmazenamento(insumoId, form.modo_ep, {
+          tamanho: form.porcao_tamanho,
+          unidade: form.porcao_unidade,
+          formato: form.porcao_formato,
+        }),
+        { onConflict: 'insumo_id' },
+      )
     return err
   }
 
