@@ -5,6 +5,7 @@ import { useAuth } from '../../contexts/AuthContext'
 import { Button } from '../../components/ui/Button'
 import { Badge } from '../../components/ui/Badge'
 import type { Contagem } from '../../types/contagem'
+import { avisoCancelamento, cancelarContagem } from '../../lib/contagem'
 
 const statusVariants: Record<string, 'default' | 'warning' | 'info' | 'success' | 'danger'> = {
   em_andamento: 'warning',
@@ -18,6 +19,18 @@ const statusLabels: Record<string, string> = {
   finalizada: 'Finalizada',
   aplicada: 'Aplicada',
   cancelada: 'Cancelada',
+}
+
+/** Discreto e embaixo: cancelar não pode competir com "continuar". */
+function BotaoCancelar({ onClick }: { onClick: () => void }) {
+  return (
+    <button
+      onClick={onClick}
+      className="w-full mt-2 text-xs font-medium text-gray-400 hover:text-red-600"
+    >
+      Cancelar contagem
+    </button>
+  )
 }
 
 export function ContagemListPage() {
@@ -63,6 +76,26 @@ export function ContagemListPage() {
     navigate(`/contagem/${c.tipo}/${c.id}`)
   }
 
+  /**
+   * Cancelar a contagem em andamento.
+   *
+   * Enquanto uma existe, o botão de iniciar recusa criar outra — então uma
+   * contagem aberta por engano bloqueava a próxima sem oferecer saída.
+   */
+  async function cancelar(c: Contagem) {
+    const { count } = await supabase
+      .from('contagem_insumos')
+      .select('id', { count: 'exact', head: true })
+      .eq('contagem_id', c.id)
+      .eq('status', 'finalizado')
+
+    if (!window.confirm(avisoCancelamento(count ?? 0))) return
+
+    const erro = await cancelarContagem(c.id)
+    if (erro) { alert(erro); return }
+    setContagens(prev => prev.map(x => (x.id === c.id ? { ...x, status: 'cancelada' } : x)))
+  }
+
   function verResumo(c: Contagem) {
     navigate(`/contagem/resumo/${c.id}`)
   }
@@ -86,9 +119,12 @@ export function ContagemListPage() {
           <h3 className="font-semibold text-gray-900 text-sm mb-1">Estoque Central</h3>
           <p className="text-xs text-gray-500 mb-3">Escanear etiquetas dos lotes no EC</p>
           {emAndamentoEc ? (
-            <Button size="md" fullWidth onClick={() => continuar(emAndamentoEc)}>
-              Continuar contagem EC
-            </Button>
+            <>
+              <Button size="md" fullWidth onClick={() => continuar(emAndamentoEc)}>
+                Continuar contagem EC
+              </Button>
+              <BotaoCancelar onClick={() => void cancelar(emAndamentoEc)} />
+            </>
           ) : (
             <Button size="md" fullWidth onClick={() => iniciar('ec')}>
               Nova contagem EC
@@ -100,9 +136,12 @@ export function ContagemListPage() {
           <h3 className="font-semibold text-gray-900 text-sm mb-1">Estoque Produtivo</h3>
           <p className="text-xs text-gray-500 mb-3">Escanear recipientes no EP</p>
           {emAndamentoEp ? (
-            <Button size="md" fullWidth onClick={() => continuar(emAndamentoEp)}>
-              Continuar contagem EP
-            </Button>
+            <>
+              <Button size="md" fullWidth onClick={() => continuar(emAndamentoEp)}>
+                Continuar contagem EP
+              </Button>
+              <BotaoCancelar onClick={() => void cancelar(emAndamentoEp)} />
+            </>
           ) : (
             <Button size="md" fullWidth onClick={() => iniciar('ep')}>
               Nova contagem EP

@@ -6,6 +6,7 @@ import { Button } from '../../components/ui/Button'
 import { parseQRLoteCodigo } from '../../lib/qr'
 import { NavegadorInsumos } from './NavegadorInsumos'
 import { ordemNatural } from '../../lib/utils'
+import { avisoCancelamento, cancelarContagem } from '../../lib/contagem'
 import type { ContagemInsumo, ContagemEcLote } from '../../types/contagem'
 
 type InsumoJoined = ContagemInsumo & {
@@ -182,6 +183,15 @@ export function NovaContagemEcPage() {
       finalizada_at: new Date().toISOString(),
     }).eq('id', id)
     navigate(`/contagem/resumo/${id}`)
+  }
+
+  /** Cancelar: nada é aplicado ao estoque e a contagem sai do caminho. */
+  async function cancelar() {
+    const conferidos = itens.filter(i => i.status === 'finalizado').length
+    if (!window.confirm(avisoCancelamento(conferidos))) return
+    const erro = await cancelarContagem(id!)
+    if (erro) { alert(erro); return }
+    navigate('/contagem')
   }
 
   /** Marcado por engano tem volta — antes não tinha. */
@@ -494,6 +504,15 @@ export function NovaContagemEcPage() {
         </button>
         <p className="text-xs text-gray-400 mt-1">
           Insumo não conferido fica como está.
+        </p>
+        <button
+          onClick={() => void cancelar()}
+          className="text-xs font-medium text-gray-400 hover:text-red-600 mt-3"
+        >
+          Cancelar contagem
+        </button>
+        <p className="text-xs text-gray-400 mt-1">
+          Descarta o que foi conferido. O estoque não muda.
         </p>
       </div>
     </div>

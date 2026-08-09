@@ -10,6 +10,7 @@ import { bancada, daBancada, emBancada, usaTara } from '../../lib/unidades'
 import { NavegadorInsumos } from './NavegadorInsumos'
 import { ordemNatural } from '../../lib/utils'
 import { resolverLocalPorQr } from '../../lib/qr'
+import { avisoCancelamento, cancelarContagem } from '../../lib/contagem'
 
 type InsumoJoined = ContagemInsumo & {
   insumo: { nome: string; codigo: string; unidade_medida: string }
@@ -84,6 +85,15 @@ export function NovaContagemEpPage() {
       finalizada_at: new Date().toISOString(),
     }).eq('id', id)
     navigate(`/contagem/resumo/${id}`)
+  }
+
+  /** Cancelar: nada é aplicado ao estoque e a contagem sai do caminho. */
+  async function cancelar() {
+    const conferidos = itens.filter(i => i.status === 'finalizado').length
+    if (!window.confirm(avisoCancelamento(conferidos))) return
+    const erro = await cancelarContagem(id!)
+    if (erro) { alert(erro); return }
+    navigate('/contagem')
   }
 
   /** Recipiente conferido por engano volta a pendente. */
@@ -617,6 +627,15 @@ export function NovaContagemEpPage() {
         </button>
         <p className="text-xs text-gray-400 mt-1">
           Insumo não conferido fica como está.
+        </p>
+        <button
+          onClick={() => void cancelar()}
+          className="text-xs font-medium text-gray-400 hover:text-red-600 mt-3"
+        >
+          Cancelar contagem
+        </button>
+        <p className="text-xs text-gray-400 mt-1">
+          Descarta o que foi conferido. O estoque não muda.
         </p>
       </div>
     </div>
