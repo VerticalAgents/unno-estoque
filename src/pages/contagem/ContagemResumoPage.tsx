@@ -6,6 +6,8 @@ import { Button } from '../../components/ui/Button'
 import { Badge } from '../../components/ui/Badge'
 import type { Contagem, ContagemInsumo, ContagemEcLote, ContagemEpLocal } from '../../types/contagem'
 import { ordemNatural } from '../../lib/utils'
+import { avisoCancelamento, cancelarContagem } from '../../lib/contagem'
+import { ConfirmModal } from '../../components/ui/ConfirmModal'
 
 /**
  * Um dos quatro números da linha de contagem.
@@ -43,6 +45,7 @@ export function ContagemResumoPage() {
   const [detailsEp, setDetailsEp] = useState<ContagemEpLocal[]>([])
   const [loading, setLoading] = useState(true)
   const [applying, setApplying] = useState(false)
+  const [confirmandoCancelar, setConfirmandoCancelar] = useState(false)
 
   useEffect(() => {
     if (!id) return
@@ -115,14 +118,11 @@ export function ContagemResumoPage() {
    * para sempre "em andamento" na lista. Nada do estoque é tocado — cancelar é
    * jogar fora a conferência, não alterar saldo.
    */
-  async function cancelarContagem() {
+  async function confirmarCancelamento() {
     if (!id) return
-    const certeza = window.confirm(
-      'Cancelar esta contagem? Tudo que foi conferido nela será descartado. '
-      + 'O estoque não muda.',
-    )
-    if (!certeza) return
-    await supabase.from('contagens').update({ status: 'cancelada' }).eq('id', id)
+    const erro = await cancelarContagem(id)
+    setConfirmandoCancelar(false)
+    if (erro) { alert(erro); return }
     navigate('/contagem')
   }
 
@@ -351,7 +351,7 @@ export function ContagemResumoPage() {
       {(contagem.status === 'em_andamento' || contagem.status === 'finalizada') && (
         <div className="mt-6 pt-4 border-t border-gray-200 text-center">
           <button
-            onClick={() => void cancelarContagem()}
+            onClick={() => setConfirmandoCancelar(true)}
             className="text-xs text-red-600 hover:underline"
           >
             Cancelar esta contagem
@@ -374,6 +374,17 @@ export function ContagemResumoPage() {
           </Link>
         </div>
       )}
+
+      <ConfirmModal
+        open={confirmandoCancelar}
+        variant="danger"
+        title="Cancelar contagem?"
+        summary={avisoCancelamento(itens.filter(i => i.qtd_fisica != null).length)}
+        confirmLabel="Cancelar contagem"
+        cancelLabel="Voltar"
+        onConfirm={() => void confirmarCancelamento()}
+        onCancel={() => setConfirmandoCancelar(false)}
+      />
     </div>
   )
 }

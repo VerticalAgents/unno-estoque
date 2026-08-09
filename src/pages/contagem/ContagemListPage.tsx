@@ -6,6 +6,7 @@ import { Button } from '../../components/ui/Button'
 import { Badge } from '../../components/ui/Badge'
 import type { Contagem } from '../../types/contagem'
 import { avisoCancelamento, cancelarContagem } from '../../lib/contagem'
+import { ConfirmModal } from '../../components/ui/ConfirmModal'
 
 const statusVariants: Record<string, 'default' | 'warning' | 'info' | 'success' | 'danger'> = {
   em_andamento: 'warning',
@@ -38,6 +39,8 @@ export function ContagemListPage() {
   const navigate = useNavigate()
   const [contagens, setContagens] = useState<Contagem[]>([])
   const [loading, setLoading] = useState(true)
+  const [cancelando, setCancelando] = useState<{ contagem: Contagem; conferidos: number } | null>(null)
+  const [cancelandoLoading, setCancelandoLoading] = useState(false)
 
   useEffect(() => {
     if (!profile) return
@@ -81,19 +84,29 @@ export function ContagemListPage() {
    *
    * Enquanto uma existe, o botão de iniciar recusa criar outra — então uma
    * contagem aberta por engano bloqueava a próxima sem oferecer saída.
+   *
+   * Conta os já conferidos antes de perguntar: é o número que decide se vale a
+   * pena cancelar, e descobrir isso depois de confirmar não serve para nada.
    */
-  async function cancelar(c: Contagem) {
+  async function pedirCancelamento(c: Contagem) {
     const { count } = await supabase
       .from('contagem_insumos')
       .select('id', { count: 'exact', head: true })
       .eq('contagem_id', c.id)
       .eq('status', 'finalizado')
+    setCancelando({ contagem: c, conferidos: count ?? 0 })
+  }
 
-    if (!window.confirm(avisoCancelamento(count ?? 0))) return
-
-    const erro = await cancelarContagem(c.id)
-    if (erro) { alert(erro); return }
-    setContagens(prev => prev.map(x => (x.id === c.id ? { ...x, status: 'cancelada' } : x)))
+  async function confirmarCancelamento() {
+    if (!cancelando) return
+    setCancelandoLoading(true)
+    const erro = await cancelarContagem(cancelando.contagem.id)
+    setCancelandoLoading(false)
+    if (erro) { setCancelando(null); alert(erro); return }
+    setContagens(prev => prev.map(x =>
+      x.id === cancelando.contagem.id ? { ...x, status: 'cancelada' } : x,
+    ))
+    setCancelando(null)
   }
 
   function verResumo(c: Contagem) {
@@ -123,7 +136,7 @@ export function ContagemListPage() {
               <Button size="md" fullWidth onClick={() => continuar(emAndamentoEc)}>
                 Continuar contagem EC
               </Button>
-              <BotaoCancelar onClick={() => void cancelar(emAndamentoEc)} />
+              <BotaoCancelar onClick={() => void pedirCancelamento(emAndamentoEc)} />
             </>
           ) : (
             <Button size="md" fullWidth onClick={() => iniciar('ec')}>
@@ -140,7 +153,7 @@ export function ContagemListPage() {
               <Button size="md" fullWidth onClick={() => continuar(emAndamentoEp)}>
                 Continuar contagem EP
               </Button>
-              <BotaoCancelar onClick={() => void cancelar(emAndamentoEp)} />
+              <BotaoCancelar onClick={() => void pedirCancelamento(emAndamentoEp)} />
             </>
           ) : (
             <Button size="md" fullWidth onClick={() => iniciar('ep')}>
@@ -189,6 +202,19 @@ export function ContagemListPage() {
           <p className="text-sm text-gray-400">Nenhuma contagem realizada ainda.</p>
         </div>
       )}
+
+      <ConfirmModal
+        open={!!cancelando}
+        variant="danger"
+        title="Cancelar contagem?"
+        description={cancelando?.contagem.tipo === 'ec' ? 'Estoque Central' : 'Estoque Produtivo'}
+        summary={cancelando && avisoCancelamento(cancelando.conferidos)}
+        confirmLabel="Cancelar contagem"
+        cancelLabel="Voltar"
+        loading={cancelandoLoading}
+        onConfirm={() => void confirmarCancelamento()}
+        onCancel={() => setCancelando(null)}
+      />
     </div>
   )
 }

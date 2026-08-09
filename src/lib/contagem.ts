@@ -22,10 +22,16 @@ export async function cancelarContagem(id: string): Promise<string | null> {
   return error?.message ?? null
 }
 
-/** O texto do aviso, igual nas três telas que oferecem cancelar. */
+/**
+ * O texto do aviso, igual nas três telas que oferecem cancelar.
+ *
+ * Afirmação, não pergunta: a pergunta já está no título do modal, e repetir
+ * faz o usuário ler duas vezes a mesma coisa para achar a informação nova —
+ * que é o número de insumos que ele perde.
+ */
 export function avisoCancelamento(conferidos: number): string {
   return conferidos > 0
-    ? `Cancelar esta contagem? Os ${conferidos} insumo${conferidos > 1 ? 's' : ''} já `
-      + 'conferidos serão descartados e o estoque não muda.'
-    : 'Cancelar esta contagem? O estoque não muda.'
+    ? `Os ${conferidos} insumo${conferidos > 1 ? 's' : ''} já conferido${conferidos > 1 ? 's' : ''} `
+      + 'serão descartados, e o estoque continua como está.'
+    : 'Nada foi conferido ainda. O estoque continua como está.'
 }

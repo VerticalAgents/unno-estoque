@@ -11,6 +11,7 @@ import { NavegadorInsumos } from './NavegadorInsumos'
 import { ordemNatural } from '../../lib/utils'
 import { resolverLocalPorQr } from '../../lib/qr'
 import { avisoCancelamento, cancelarContagem } from '../../lib/contagem'
+import { ConfirmModal } from '../../components/ui/ConfirmModal'
 
 type InsumoJoined = ContagemInsumo & {
   insumo: { nome: string; codigo: string; unidade_medida: string }
@@ -36,6 +37,8 @@ export function NovaContagemEpPage() {
 
   const [itens, setItens] = useState<InsumoJoined[]>([])
   const [currentIdx, setCurrentIdx] = useState(0)
+  /** Qual saída está esperando confirmação — as duas usam o modal do sistema. */
+  const [confirmando, setConfirmando] = useState<'encerrar' | 'cancelar' | null>(null)
   const [locais, setLocais] = useState<ContagemEpLocal[]>([])
   const [loading, setLoading] = useState(true)
   const [scanError, setScanError] = useState('')
@@ -72,14 +75,7 @@ export function NovaContagemEpPage() {
 
   /** Ver o comentário gêmeo no EC: encerrar no meio é o caso normal. */
   async function encerrarContagem() {
-    const faltam = itens.filter(i => i.status !== 'finalizado').length
-    const certeza = window.confirm(
-      faltam > 0
-        ? `Encerrar a contagem com ${faltam} insumo${faltam > 1 ? 's' : ''} sem conferir? `
-          + 'O que não foi conferido não será alterado no estoque.'
-        : 'Encerrar a contagem?',
-    )
-    if (!certeza) return
+    setConfirmando(null)
     await supabase.from('contagens').update({
       status: 'finalizada',
       finalizada_at: new Date().toISOString(),
@@ -89,9 +85,8 @@ export function NovaContagemEpPage() {
 
   /** Cancelar: nada é aplicado ao estoque e a contagem sai do caminho. */
   async function cancelar() {
-    const conferidos = itens.filter(i => i.status === 'finalizado').length
-    if (!window.confirm(avisoCancelamento(conferidos))) return
     const erro = await cancelarContagem(id!)
+    setConfirmando(null)
     if (erro) { alert(erro); return }
     navigate('/contagem')
   }
@@ -355,6 +350,8 @@ export function NovaContagemEpPage() {
   const escaneados = locais.filter(l => l.escaneado).length
   const totalLocais = locais.length
   const finalizados = itens.filter(i => i.status === 'finalizado').length
+  const conferidos = finalizados
+  const faltamConferir = itens.length - finalizados
   const activeLocal = locais.find(l => l.id === activeLocalId)
 
   return (
@@ -620,7 +617,7 @@ export function NovaContagemEpPage() {
 
       <div className="mt-6 pt-4 border-t border-gray-200 text-center">
         <button
-          onClick={() => void encerrarContagem()}
+          onClick={() => setConfirmando('encerrar')}
           className="text-xs font-medium text-gray-600 hover:underline"
         >
           Encerrar contagem e ver resumo
@@ -629,7 +626,7 @@ export function NovaContagemEpPage() {
           Insumo não conferido fica como está.
         </p>
         <button
-          onClick={() => void cancelar()}
+          onClick={() => setConfirmando('cancelar')}
           className="text-xs font-medium text-gray-400 hover:text-red-600 mt-3"
         >
           Cancelar contagem
@@ -638,6 +635,30 @@ export function NovaContagemEpPage() {
           Descarta o que foi conferido. O estoque não muda.
         </p>
       </div>
+
+      <ConfirmModal
+        open={confirmando === 'encerrar'}
+        title="Encerrar contagem?"
+        summary={faltamConferir > 0
+          ? `${faltamConferir} insumo${faltamConferir > 1 ? 's' : ''} sem conferir. `
+            + 'O que não foi conferido não será alterado no estoque.'
+          : 'Todos os insumos foram conferidos.'}
+        confirmLabel="Encerrar e ver resumo"
+        cancelLabel="Voltar"
+        onConfirm={() => void encerrarContagem()}
+        onCancel={() => setConfirmando(null)}
+      />
+
+      <ConfirmModal
+        open={confirmando === 'cancelar'}
+        variant="danger"
+        title="Cancelar contagem?"
+        summary={avisoCancelamento(conferidos)}
+        confirmLabel="Cancelar contagem"
+        cancelLabel="Voltar"
+        onConfirm={() => void cancelar()}
+        onCancel={() => setConfirmando(null)}
+      />
     </div>
   )
 }
