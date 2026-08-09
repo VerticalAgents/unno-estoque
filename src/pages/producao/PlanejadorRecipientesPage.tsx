@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../contexts/AuthContext'
@@ -136,6 +136,16 @@ const printStyles = `
     .planejador-print-target thead { display: table-header-group; }  /* repete o cabeçalho a cada página */
     .planejador-print-target tr { page-break-inside: avoid; }
 
+    /* Cada insumo é um <tbody>, e o bloco inteiro anda junto: se não couber no
+       que resta da página, começa na próxima. Antes o "avoid" estava só no
+       <tr>, então o bloco partia entre ENCHER e PEGAR NO ESTOQUE — as duas
+       metades da mesma tarefa em páginas diferentes. Sobrar espaço no pé da
+       folha é mais barato que ler metade da tarefa e virar a página. */
+    .planejador-print-target tbody {
+      break-inside: avoid;
+      page-break-inside: avoid;
+    }
+
     /* Números nunca quebram linha — foi o que embolou a primeira versão */
     .planejador-print-target .num { white-space: nowrap; }
     .planejador-print-target .mono { font-family: 'Courier New', monospace; font-size: 8.5pt; }
@@ -170,8 +180,7 @@ const printStyles = `
       padding-top: 1px; padding-bottom: 1px;
       font-size: 9pt;
     }
-    /* a última linha do bloco fecha com o divisor */
-    .planejador-print-target .linha-item:has(+ .linha-insumo) td,
+    /* a última linha de cada bloco fecha com o divisor */
     .planejador-print-target tbody tr:last-child td { border-bottom: 1px solid #ccc; }
 
     /* insumo e cabeçalhos de grupo não ficam órfãos no fim da página */
@@ -825,13 +834,14 @@ export function PlanejadorRecipientesPage({
                 <th className="num">✓</th>
               </tr>
             </thead>
-            <tbody>
-              {ordenadas.map((l, i) => {
+            {/* Um <tbody> por insumo: é o que mantém o bloco inteiro na mesma
+                página (ver a regra de impressão lá em cima). */}
+            {ordenadas.map((l, i) => {
                 const seusLotes = lotes.filter(x => x.insumo_id === l.insumo_id)
                 const potesDoInsumo = abastecimento.filter(a => a.insumo_id === l.insumo_id)
                 const ab = potesDoInsumo[0]
                 return (
-                  <Fragment key={l.insumo_id}>
+                  <tbody key={l.insumo_id}>
                     {/* Fronteira entre o que dá trabalho e o que só se confere */}
                     {i === comTarefa.length && (
                       <tr className="linha-grupo">
@@ -928,10 +938,9 @@ export function PlanejadorRecipientesPage({
                         </tr>
                       ),
                     )}
-                  </Fragment>
+                  </tbody>
                 )
               })}
-            </tbody>
           </table>
 
           <p style={{ fontSize: '8pt', marginTop: '6mm' }}>
