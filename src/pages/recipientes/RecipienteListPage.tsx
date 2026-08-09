@@ -50,7 +50,12 @@ function gerarQrRecipiente(): string {
   return `QR-EP-${crypto.randomUUID().replace(/-/g, '').slice(0, 12).toUpperCase()}`
 }
 
-type LocalComMarca = Local & { marca?: Marca | null }
+type LocalComMarca = Local & {
+  marca?: Marca | null
+  /** Embalagem do fornecedor: nasce na transferência e some quando esvazia. */
+  efemero?: boolean
+  origem_lote_id?: string | null
+}
 
 /** Conteúdo atual do recipiente — view v_recipientes_composicao (migration 034) */
 interface Composicao {
@@ -179,6 +184,9 @@ export function RecipienteListPage() {
   // pedir de volta o cadastro que foi eliminado.
   const [semRecipientePorConfig, setSemRecipientePorConfig] = useState<Set<string>>(new Set())
   const [esgotando, setEsgotando] = useState<string | null>(null)
+  // Aposentados ficam escondidos, mas continuam alcançáveis: sem isso não
+  // haveria como reativar um pote pela interface.
+  const [mostrarInativos, setMostrarInativos] = useState(false)
 
   async function load() {
     if (!profile) return
@@ -441,9 +449,26 @@ export function RecipienteListPage() {
 
   const searchLow = search.toLowerCase()
 
+  const casaComBusca = (r: LocalComMarca) =>
+    nomeExibido(r).toLowerCase().includes(searchLow)
+    || (r.subtipo ?? '').toLowerCase().includes(searchLow)
+
+  /**
+   * Três populações diferentes, que a tela tratava como uma só:
+   *
+   * - os DURÁVEIS: potes e caixas da cozinha, que se cadastram uma vez;
+   * - os TEMPORÁRIOS: embalagens do fornecedor que estão no EP agora e somem
+   *   quando esvaziam (migration 073) — não se editam nem se excluem;
+   * - os INATIVOS: aposentados, que ficam por causa do histórico.
+   *
+   * Os inativos apareciam misturados aos ativos, sem nada indicando. Pior: o
+   * planejador já os ignorava, então a tela mostrava recipientes que a conta da
+   * produção não enxergava.
+   */
+  const efemeros = recipientes.filter(r => r.ativo && r.efemero && casaComBusca(r))
+  const inativos = recipientes.filter(r => !r.ativo && casaComBusca(r))
   const filteredRecipientes = recipientes.filter(r =>
-    nomeExibido(r).toLowerCase().includes(searchLow) ||
-    (r.subtipo ?? '').toLowerCase().includes(searchLow)
+    !r.efemero && (r.ativo || mostrarInativos) && casaComBusca(r),
   )
 
   // Recipientes com insumo, agrupados por insumo_id
@@ -591,6 +616,84 @@ export function RecipienteListPage() {
               onChange={e => setSearch(e.target.value)}
               className="block w-full max-w-sm rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
             />
+          )}
+
+          {/* Aposentados ficam fora por padrão: eles não contam para a produção
+              — o planejador já os ignora — e misturados davam a impressão de
+              que havia recipiente onde não há. */}
+          {inativos.length > 0 && (
+            <label className="flex items-center gap-2 text-xs text-gray-500 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={mostrarInativos}
+                onChange={e => setMostrarInativos(e.target.checked)}
+                className="rounded"
+              />
+              Mostrar {inativos.length} recipiente{inativos.length > 1 ? 's' : ''} desativado
+              {inativos.length > 1 ? 's' : ''}
+            </label>
+          )}
+
+          {/* ── No EP agora: embalagens do fornecedor ──
+              Não se editam nem se excluem: a identidade delas é o lote, e a
+              etiqueta é a que já está colada desde o recebimento. O que dá para
+              fazer é esgotar (o fim de vida) e reimprimir a etiqueta DO LOTE —
+              imprimir uma de recipiente criaria a segunda identidade que a
+              migration 073 eliminou. */}
+          {efemeros.length > 0 && (
+            <Card className="overflow-hidden">
+              <div className="px-4 py-3 border-b border-gray-100">
+                <p className="text-sm font-semibold text-gray-800">No EP agora</p>
+                <p className="text-xs text-gray-500 mt-0.5">
+                  {efemeros.length} embalagem{efemeros.length > 1 ? 'ns' : ''} do fornecedor
+                  em uso. Somem da lista sozinhas quando você marcar como esgotadas.
+                </p>
+              </div>
+              <ListaResponsiva
+                cartoes={efemeros.map(r => (
+                  <CartaoRecipiente
+                    key={r.id}
+                    r={r}
+                    conteudo={<ConteudoCell comp={composicao[r.id]} />}
+                    acoes={<AcoesTemporario r={r} esgotando={esgotando} esgotar={esgotar} navigate={navigate} />}
+                  />
+                ))}
+                tabela={
+                  <table className="w-full text-sm">
+                    <thead className="bg-gray-50">
+                      <tr>
+                        <th className="text-left px-4 py-2 text-xs font-medium text-gray-500">Pacote</th>
+                        <th className="text-left px-4 py-2 text-xs font-medium text-gray-500">Insumo</th>
+                        <th className="text-left px-4 py-2 text-xs font-medium text-gray-500">Capacidade</th>
+                        <th className="text-center px-4 py-2 text-xs font-medium text-gray-500">Conteúdo</th>
+                        <th className="px-4 py-2" />
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-gray-100">
+                      {efemeros.map(r => (
+                        <tr key={r.id} className="hover:bg-gray-50 transition-colors">
+                          <td className="px-4 py-2.5 font-medium text-gray-900">{r.nome}</td>
+                          <td className="px-4 py-2.5 text-gray-600 text-xs">
+                            {(r as LocalComMarca & { insumo?: { nome: string } }).insumo?.nome ?? '—'}
+                          </td>
+                          <td className="px-4 py-2.5 text-gray-600 text-xs">
+                            {r.capacidade_max != null
+                              ? `${r.capacidade_max} ${r.unidade_capacidade ?? ''}`
+                              : <span className="text-gray-400">—</span>}
+                          </td>
+                          <td className="px-4 py-2.5 text-center">
+                            <ConteudoCell comp={composicao[r.id]} />
+                          </td>
+                          <td className="px-4 py-2.5 text-right">
+                            <AcoesTemporario r={r} esgotando={esgotando} esgotar={esgotar} navigate={navigate} />
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                }
+              />
+            </Card>
           )}
 
           {/* ── Grupos por insumo ── */}
@@ -974,6 +1077,35 @@ export function RecipienteListPage() {
           </div>
         </div>
       )}
+    </div>
+  )
+}
+
+/**
+ * O que se pode fazer com uma embalagem do fornecedor que está no EP.
+ *
+ * Editar e excluir não entram: ela não é um bem cadastrado, é um lote que está
+ * na bancada — mexer no nome ou apagar a linha desencontraria do lote. E a
+ * etiqueta é a DO LOTE, que já foi impressa no recebimento; gerar uma de
+ * recipiente recriaria a segunda identidade que a migration 073 eliminou.
+ */
+function AcoesTemporario({ r, esgotando, esgotar, navigate }: {
+  r: LocalComMarca
+  esgotando: string | null
+  esgotar: (r: LocalComMarca) => void
+  navigate: (to: string) => void
+}) {
+  return (
+    <div className="flex items-center justify-end gap-3">
+      {r.origem_lote_id && (
+        <button
+          onClick={() => navigate(`/recebimento/imprimir/${r.origem_lote_id}`)}
+          className="text-gray-500 hover:text-gray-700 text-xs font-medium"
+        >
+          Etiqueta do lote
+        </button>
+      )}
+      <BotaoEsgotar r={r} esgotando={esgotando} esgotar={esgotar} />
     </div>
   )
 }
