@@ -1,4 +1,5 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../contexts/AuthContext'
 import type { Lote, Local } from '../../types/database.types'
@@ -80,6 +81,7 @@ export function TransferenciaPage() {
   const { profile } = useAuth()
 
   const [step, setStep] = useState<Step>('scan_lote')
+  const navigate = useNavigate()
   const [lotes, setLotes] = useState<LoteWithInsumo[]>([])
   const [local, setLocal] = useState<LocalWithInsumo | null>(null)
   const [ro003Error, setRo003Error] = useState('')
@@ -109,6 +111,27 @@ export function TransferenciaPage() {
 
   // Alias for reembalagem compatibility
   const lote = lotes[0] ?? null
+
+  /**
+   * Quantos recipientes existem para o insumo em mãos.
+   *
+   * Sem nenhum, o operador chega no passo de bipar o recipiente e não tem o
+   * que bipar — e a mensagem que aparecia ("Recipiente não encontrado") faz
+   * parecer defeito de leitura, não falta de cadastro. `null` = ainda contando.
+   */
+  const [recipientesDoInsumo, setRecipientesDoInsumo] = useState<number | null>(null)
+
+  useEffect(() => {
+    if (!lote) { setRecipientesDoInsumo(null); return }
+    supabase
+      .from('locais')
+      .select('id', { count: 'exact', head: true })
+      .eq('insumo_id', lote.insumo_id)
+      .eq('tipo', 'estoque_produtivo')
+      .eq('ativo', true)
+      .eq('efemero', false)
+      .then(({ count }) => setRecipientesDoInsumo(count ?? 0))
+  }, [lote?.insumo_id])
 
   // ── Helpers ───────────────────────────────────────────────
 
@@ -760,6 +783,28 @@ export function TransferenciaPage() {
           {ro003Error && (
             <div className="p-3 bg-red-50 border border-red-300 rounded-lg text-sm text-red-800">
               🚫 {ro003Error}
+            </div>
+          )}
+
+          {/* Nada para bipar: é falta de cadastro, não erro de leitura. */}
+          {recipientesDoInsumo === 0 && (
+            <div className="p-4 bg-amber-50 border border-amber-300 rounded-lg">
+              <p className="text-sm font-semibold text-amber-900">
+                {lote.insumo.nome} ainda não tem recipiente cadastrado
+              </p>
+              <p className="text-xs text-amber-800 mt-1">
+                Não há o que escanear aqui. Cadastre o recipiente, imprima a etiqueta,
+                cole no pote e volte para concluir esta transferência — o lote continua
+                no estoque central até lá.
+              </p>
+              <Button
+                variant="secondary"
+                size="sm"
+                className="mt-2"
+                onClick={() => navigate('/recipientes')}
+              >
+                Cadastrar recipiente
+              </Button>
             </div>
           )}
 

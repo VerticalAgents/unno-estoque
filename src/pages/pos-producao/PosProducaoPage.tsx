@@ -227,6 +227,16 @@ export function PosProducaoPage() {
               }
             />
             <CardBody className="space-y-5">
+              {/* Sem motivo cadastrado não há o que preencher, e a tela ficaria
+                  só com os títulos dos produtos — parecendo defeito. */}
+              {motivos.length === 0 && (
+                <div className="p-3 bg-amber-50 border border-amber-200 rounded-lg text-sm text-amber-800">
+                  Nenhum motivo de descarte cadastrado. Cadastre os motivos em{' '}
+                  <strong>Configurações → Motivos de descarte</strong> e volte aqui —
+                  são eles que viram as colunas desta tela.
+                </div>
+              )}
+
               {resumo.map(r => (
                 <div key={r.sku.id} className="space-y-2">
                   <div className="flex items-baseline justify-between gap-3 flex-wrap">
