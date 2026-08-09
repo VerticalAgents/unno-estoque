@@ -361,6 +361,16 @@ export function NovoLotePage() {
       </div>
 
       <form onSubmit={handleSubmit} className="space-y-4">
+        {/* O fornecedor se resolve aqui mesmo; o insumo não — o cadastro dele
+            tem decisões (recipiente, armazenamento no EP) que não cabem num
+            campo de nome. Melhor dizer onde é do que travar sem explicação. */}
+        {insumos.length === 0 && (
+          <div className="p-3 bg-amber-50 border border-amber-200 rounded-lg text-sm text-amber-800">
+            Você ainda não tem insumos cadastrados, e o recebimento é de um insumo.
+            Cadastre em <strong>Insumos</strong> e volte aqui.
+          </div>
+        )}
+
         {notas.map((nota, ni) => (
           <BlocoNota
             key={nota.key}
@@ -374,6 +384,11 @@ export function NovoLotePage() {
             onRemover={() => setNotas(prev => prev.filter(n => n.key !== nota.key))}
             onPatch={patch => patchNota(nota.key, patch)}
             onTrocarFornecedor={f => trocarFornecedor(nota.key, f)}
+            onNovoFornecedor={f => {
+              setFornecedores(prev => [...prev, f].sort((a, b) => a.nome.localeCompare(b.nome)))
+              // Quem acabou de cadastrar quer usar agora: já deixa escolhido.
+              trocarFornecedor(nota.key, f.id)
+            }}
             onPatchItem={(itemKey, patch) => patchItem(nota.key, itemKey, patch)}
             onAddItem={() => addItem(nota.key)}
             onRemoveItem={itemKey => removeItem(nota.key, itemKey)}
@@ -432,6 +447,7 @@ interface BlocoNotaProps {
   onRemover: () => void
   onPatch: (patch: Partial<Nota>) => void
   onTrocarFornecedor: (fornecedorId: string) => void
+  onNovoFornecedor: (f: Fornecedor) => void
   onPatchItem: (itemKey: string, patch: Partial<Item>) => void
   onAddItem: () => void
   onRemoveItem: (itemKey: string) => void
@@ -439,7 +455,8 @@ interface BlocoNotaProps {
 
 function BlocoNota({
   nota, indice, modo, insumos, fornecedores, vinculos,
-  podeRemover, onRemover, onPatch, onTrocarFornecedor, onPatchItem, onAddItem, onRemoveItem,
+  podeRemover, onRemover, onPatch, onTrocarFornecedor, onNovoFornecedor,
+  onPatchItem, onAddItem, onRemoveItem,
 }: BlocoNotaProps) {
   // Os insumos que este fornecedor comercializa sobem para o topo da lista.
   // Filtrar de vez esconderia os insumos ainda sem vínculo cadastrado — e há
@@ -463,15 +480,22 @@ function BlocoNota({
         </div>
       )}
 
-      <Select
-        label="Fornecedor"
-        required
-        value={nota.fornecedor_id}
-        onChange={e => onTrocarFornecedor(e.target.value)}
-      >
-        <option value="">Selecionar fornecedor...</option>
-        {fornecedores.map(f => <option key={f.id} value={f.id}>{f.nome}</option>)}
-      </Select>
+      {fornecedores.length > 0 && (
+        <Select
+          label="Fornecedor"
+          required
+          value={nota.fornecedor_id}
+          onChange={e => onTrocarFornecedor(e.target.value)}
+        >
+          <option value="">Selecionar fornecedor...</option>
+          {fornecedores.map(f => <option key={f.id} value={f.id}>{f.nome}</option>)}
+        </Select>
+      )}
+
+      <NovoFornecedor
+        primeiro={fornecedores.length === 0}
+        onCriado={onNovoFornecedor}
+      />
 
       <div className="grid grid-cols-2 gap-4">
         <Input
@@ -687,6 +711,82 @@ function BlocoItem({
           {item.erro}
         </p>
       )}
+    </div>
+  )
+}
+
+/**
+ * Cadastrar o fornecedor sem sair do recebimento.
+ *
+ * O fornecedor é obrigatório, e uma empresa que acabou de entrar no sistema
+ * não tem nenhum: sem isto, a primeira coisa que o cliente novo encontra é uma
+ * tela travada num select vazio. Mandar para a tela de fornecedores também
+ * resolveria, mas ele perderia tudo o que já digitou aqui.
+ *
+ * Só o nome, que é o único campo obrigatório do cadastro. O resto — CNPJ,
+ * contato, cidade — se completa depois, em Fornecedores, sem pressa e sem a
+ * mercadoria esperando na porta.
+ */
+function NovoFornecedor({ primeiro, onCriado }: { primeiro: boolean; onCriado: (f: Fornecedor) => void }) {
+  const { profile } = useAuth()
+  const [aberto, setAberto] = useState(primeiro)
+  const [nome, setNome] = useState('')
+  const [salvando, setSalvando] = useState(false)
+  const [erro, setErro] = useState('')
+
+  async function salvar() {
+    if (!profile || !nome.trim()) { setErro('Escreva o nome do fornecedor.'); return }
+    setSalvando(true)
+    setErro('')
+    const { data, error } = await supabase
+      .from('fornecedores')
+      .insert({ empresa_id: profile.empresa_id, nome: nome.trim(), ativo: true })
+      .select('*')
+      .single()
+    setSalvando(false)
+    if (error) { setErro(error.message); return }
+    onCriado(data as Fornecedor)
+    setNome('')
+    setAberto(false)
+  }
+
+  if (!aberto) {
+    return (
+      <button
+        type="button"
+        onClick={() => setAberto(true)}
+        className="text-xs font-medium text-gray-400 hover:text-brand-600"
+      >
+        + Cadastrar fornecedor
+      </button>
+    )
+  }
+
+  return (
+    <div className="rounded-lg border border-gray-200 bg-gray-50 p-3 space-y-2">
+      {primeiro && (
+        <p className="text-xs text-gray-600">
+          Você ainda não tem fornecedor cadastrado. Escreva o nome de quem entregou —
+          o resto do cadastro pode ser completado depois, em Fornecedores.
+        </p>
+      )}
+      <div className="flex gap-2">
+        <input
+          type="text"
+          value={nome}
+          onChange={e => setNome(e.target.value)}
+          onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); salvar() } }}
+          placeholder="Nome do fornecedor"
+          className="flex-1 rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:border-brand-500"
+        />
+        <Button type="button" size="md" loading={salvando} onClick={salvar}>Salvar</Button>
+        {!primeiro && (
+          <Button type="button" variant="ghost" size="md" onClick={() => { setAberto(false); setErro('') }}>
+            Cancelar
+          </Button>
+        )}
+      </div>
+      {erro && <p className="text-xs text-red-600">{erro}</p>}
     </div>
   )
 }
