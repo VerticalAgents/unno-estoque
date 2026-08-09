@@ -56,6 +56,31 @@ o que faria o consumo teórico sair 60× menor. Ao criar ficha nova, seguir a 02
 
 Nas fichas Odara, **1 fornada = 1 forma = 60 unidades** de ~67,5 g.
 
+**Esta convenção já se perdeu duas vezes**, sempre do mesmo jeito: alguém
+multiplica também pelo rendimento e a demanda sai 60× maior. Foi o que a 029
+consertou e o que a 074 refez sem querer (ver abaixo). Se o planejador pedir
+centenas de potes, é isto.
+
+---
+
+## ⚠️ Reescrever função: parta do banco, não da migration antiga (migration 081)
+
+A 074 recriou `planejar_recipientes` copiando o texto da **028**, que era a
+versão de dois passos atrás. Com isso desfez, em silêncio, a correção da **029**
+(demanda por forma) e a ordenação da **031** (por código do insumo). O defeito
+só apareceu meses depois, quando o Lucca planejou 44 formas e o sistema pediu
+1.445 recipientes.
+
+**Antes de `CREATE OR REPLACE` numa função que já existe**, obtenha a definição
+vigente e edite ela:
+
+```sql
+select pg_get_functiondef(oid) from pg_proc where proname = 'nome_da_funcao';
+```
+
+Migrations são camadas. O texto de uma migration antiga é o passado da função,
+não o presente dela.
+
 ---
 
 ## Planejamento (migrations 028-030)
