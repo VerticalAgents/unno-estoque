@@ -174,11 +174,15 @@ export function RecipienteListPage() {
   // Grupos expandidos
   const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set(['__genericos__']))
   const [composicao, setComposicao] = useState<Record<string, Composicao>>({})
+  // Insumos cujo ponto de consumo é a própria embalagem do fornecedor: eles não
+  // têm recipiente cadastrado de propósito (migration 073), e cobrar um seria
+  // pedir de volta o cadastro que foi eliminado.
+  const [semRecipientePorConfig, setSemRecipientePorConfig] = useState<Set<string>>(new Set())
   const [esgotando, setEsgotando] = useState<string | null>(null)
 
   async function load() {
     if (!profile) return
-    const [{ data: locais }, { data: ins }, { data: comp }] = await Promise.all([
+    const [{ data: locais }, { data: ins }, { data: comp }, { data: configs }] = await Promise.all([
       supabase
         .from('locais')
         .select('*, marca:marcas(id, nome, empresa_id, created_at)')
@@ -196,6 +200,10 @@ export function RecipienteListPage() {
         .from('v_recipientes_composicao')
         .select('local_id, qtd_lotes, quantidade_total, unidade_medida, validade_ep')
         .eq('empresa_id', profile.empresa_id),
+      supabase
+        .from('insumos_armazenamento_config')
+        .select('insumo_id, modo_ep')
+        .eq('modo_ep', 'embalagem_fornecedor'),
     ])
     setRecipientes((locais ?? []) as LocalComMarca[])
     setInsumos((ins ?? []) as Insumo[])
@@ -203,6 +211,9 @@ export function RecipienteListPage() {
       Object.fromEntries(
         ((comp ?? []) as Composicao[]).map(c => [c.local_id, c]),
       ),
+    )
+    setSemRecipientePorConfig(
+      new Set(((configs ?? []) as { insumo_id: string }[]).map(c => c.insumo_id)),
     )
     setLoading(false)
   }
@@ -442,9 +453,10 @@ export function RecipienteListPage() {
   // Insumos que têm ao menos 1 recipiente
   const insumoIdsComRecipiente = new Set(comInsumo.map(r => r.insumo_id))
 
-  // Insumos sem nenhum recipiente
+  // Insumos sem nenhum recipiente — fora os que não devem ter mesmo, porque
+  // ficam na embalagem do fornecedor.
   const insumosSemRecipiente = !search
-    ? insumos.filter(i => !insumoIdsComRecipiente.has(i.id))
+    ? insumos.filter(i => !insumoIdsComRecipiente.has(i.id) && !semRecipientePorConfig.has(i.id))
     : []
 
   // Todos os insumos sem modelo padrão definido (independente de ter recipiente)
@@ -635,6 +647,7 @@ export function RecipienteListPage() {
                               <BotaoEsgotar r={r} esgotando={esgotando} esgotar={esgotar} />
                             )}
                             <RowActions
+                              efemero={(r as Local & { efemero?: boolean }).efemero}
                               onEtiqueta={() => navigate(`/recipientes/${r.id}/etiqueta`)}
                               onEditar={() => openEdit(r)}
                               onDuplicar={() => openDuplicate(r)}
@@ -683,6 +696,7 @@ export function RecipienteListPage() {
                                 </button>
                               )}
                               <RowActions
+                                efemero={(r as Local & { efemero?: boolean }).efemero}
                                 onEtiqueta={() => navigate(`/recipientes/${r.id}/etiqueta`)}
                                 onEditar={() => openEdit(r)}
                                 onDuplicar={() => openDuplicate(r)}
@@ -737,6 +751,7 @@ export function RecipienteListPage() {
                         rotuloConteudo="Status"
                         acoes={
                           <RowActions
+                            efemero={(r as Local & { efemero?: boolean }).efemero}
                             onEtiqueta={() => navigate(`/recipientes/${r.id}/etiqueta`)}
                             onEditar={() => openEdit(r)}
                             onDuplicar={() => openDuplicate(r)}
@@ -775,6 +790,7 @@ export function RecipienteListPage() {
                           </td>
                           <td className="px-4 py-2.5 text-right">
                             <RowActions
+                              efemero={(r as Local & { efemero?: boolean }).efemero}
                               onEtiqueta={() => navigate(`/recipientes/${r.id}/etiqueta`)}
                               onEditar={() => openEdit(r)}
                               onDuplicar={() => openDuplicate(r)}
@@ -969,17 +985,24 @@ function RowActions({
   onEditar,
   onDuplicar,
   onExcluir,
+  efemero,
 }: {
   onEtiqueta: () => void
   onEditar: () => void
   onDuplicar: () => void
   onExcluir: () => void
+  /** Embalagem do fornecedor: já tem a etiqueta do lote colada. */
+  efemero?: boolean
 }) {
   return (
     <div className="flex items-center justify-end gap-3">
-      <button onClick={onEtiqueta} className="text-gray-500 hover:text-gray-700 text-xs font-medium">
-        Etiqueta
-      </button>
+      {/* Imprimir etiqueta para a embalagem do fornecedor criaria uma segunda
+          identidade para o mesmo balde — o defeito que a migration 073 tirou. */}
+      {!efemero && (
+        <button onClick={onEtiqueta} className="text-gray-500 hover:text-gray-700 text-xs font-medium">
+          Etiqueta
+        </button>
+      )}
       <button onClick={onEditar} className="text-brand-600 hover:text-brand-800 text-xs font-medium">
         Editar
       </button>
