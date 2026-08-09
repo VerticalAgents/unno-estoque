@@ -7,6 +7,7 @@ import { Input, Select, Textarea } from '../../components/ui/Input'
 import { Button } from '../../components/ui/Button'
 import { Card } from '../../components/ui/Card'
 import { today } from '../../lib/utils'
+import { criarFornecedor, criarMarca } from '../../lib/cadastroRapido'
 
 /**
  * Recebimento de uma carga inteira, e não de um insumo por vez.
@@ -755,17 +756,13 @@ function NovoFornecedor({ primeiro, onCriado }: { primeiro: boolean; onCriado: (
   const [erro, setErro] = useState('')
 
   async function salvar() {
-    if (!profile || !nome.trim()) { setErro('Escreva o nome do fornecedor.'); return }
+    if (!profile) return
     setSalvando(true)
     setErro('')
-    const { data, error } = await supabase
-      .from('fornecedores')
-      .insert({ empresa_id: profile.empresa_id, nome: nome.trim(), ativo: true })
-      .select('*')
-      .single()
+    const { dado, erro } = await criarFornecedor(profile.empresa_id, nome)
     setSalvando(false)
-    if (error) { setErro(error.message); return }
-    onCriado(data as Fornecedor)
+    if (erro || !dado) { setErro(erro ?? 'Erro ao criar o fornecedor.'); return }
+    onCriado(dado)
     setNome('')
     setAberto(false)
   }
@@ -838,37 +835,13 @@ function NovaMarca({ insumoId, fornecedorId, primeira, onCriada }: {
   const [erro, setErro] = useState('')
 
   async function salvar() {
-    if (!profile || !nome.trim()) { setErro('Escreva o nome da marca.'); return }
+    if (!profile) return
     setSalvando(true)
     setErro('')
-
-    // A marca pode já existir para outro insumo: aproveita em vez de falhar no
-    // UNIQUE(empresa_id, nome).
-    const { data: marca, error: errMarca } = await supabase
-      .from('marcas')
-      .upsert({ empresa_id: profile.empresa_id, nome: nome.trim() }, { onConflict: 'empresa_id,nome' })
-      .select('*')
-      .single()
-
-    if (errMarca || !marca) {
-      setSalvando(false)
-      setErro(errMarca?.message ?? 'Erro ao criar a marca.')
-      return
-    }
-
-    await supabase.from('insumos_marcas').upsert(
-      { insumo_id: insumoId, marca_id: (marca as Marca).id },
-      { onConflict: 'insumo_id,marca_id', ignoreDuplicates: true },
-    )
-    if (fornecedorId) {
-      await supabase.from('fornecedores_insumos_marcas').upsert(
-        { fornecedor_id: fornecedorId, insumo_id: insumoId, marca_id: (marca as Marca).id },
-        { onConflict: 'fornecedor_id,insumo_id,marca_id', ignoreDuplicates: true },
-      )
-    }
-
+    const { dado, erro } = await criarMarca(profile.empresa_id, insumoId, nome, fornecedorId || undefined)
     setSalvando(false)
-    onCriada(marca as Marca)
+    if (erro || !dado) { setErro(erro ?? 'Erro ao criar a marca.'); return }
+    onCriada(dado)
     setNome('')
     setAberto(false)
   }

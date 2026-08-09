@@ -5,6 +5,11 @@ import { useAuth } from '../../contexts/AuthContext'
 import { Button } from '../../components/ui/Button'
 import { Card } from '../../components/ui/Card'
 import { bancada, daBancada, emBancada, usaTara } from '../../lib/unidades'
+import {
+  criarFornecedor as criarFornecedorRapido,
+  criarMarca as criarMarcaRapida,
+  vincularFornecedorMarca,
+} from '../../lib/cadastroRapido'
 
 /**
  * ABERTURA DE ESTOQUE — o primeiro dia de quem migra a operação para cá.
@@ -240,82 +245,34 @@ export function AberturaEstoquePage() {
   // digitado — e no onboarding é justamente quando se descobre que falta
   // cadastro. Cada função grava no banco na hora e devolve o item para a tela.
 
+  // As regras de fato moram em `lib/cadastroRapido` — o Recebimento faz o
+  // mesmo, e duas cópias já tinham divergido. Aqui fica só o que é desta tela:
+  // mostrar o erro e atualizar as listas.
+
   async function criarFornecedor(nome: string): Promise<Fornecedor | null> {
-    if (!profile || !nome.trim()) return null
-    const { data, error } = await supabase
-      .from('fornecedores')
-      .insert({ empresa_id: profile.empresa_id, nome: nome.trim() })
-      .select('id, nome')
-      .single()
-    if (error) {
-      setErro(`Não foi possível criar o fornecedor: ${error.message}`)
-      return null
-    }
-    setFornecedores(prev => [...prev, data as Fornecedor].sort((a, b) => a.nome.localeCompare(b.nome)))
-    return data as Fornecedor
+    if (!profile) return null
+    const { dado, erro } = await criarFornecedorRapido(profile.empresa_id, nome)
+    if (erro || !dado) { setErro(erro ?? 'Erro ao criar o fornecedor.'); return null }
+    setFornecedores(prev => prev.some(f => f.id === dado.id)
+      ? prev
+      : [...prev, dado].sort((a, b) => a.nome.localeCompare(b.nome)))
+    return dado
   }
 
-  /**
-   * Cria a marca e a amarra ao insumo. Se houver fornecedor escolhido, amarra
-   * também o trio (fornecedor, insumo, marca) — é esse vínculo que faz o
-   * Recebimento oferecer a marca certa depois de escolher o fornecedor.
-   */
   async function criarMarca(
     insumoId: string,
     nome: string,
     fornecedorId?: string,
   ): Promise<Marca | null> {
-    if (!profile || !nome.trim()) return null
-
-    // Marca repetida não é erro do usuário: a mesma marca serve a vários
-    // insumos, e o banco tem UNIQUE(empresa, nome). Reaproveita a existente.
-    const { data: existente } = await supabase
-      .from('marcas')
-      .select('id, nome')
-      .eq('empresa_id', profile.empresa_id)
-      .ilike('nome', nome.trim())
-      .maybeSingle()
-
-    let marca = existente as Marca | null
-    if (!marca) {
-      const { data, error } = await supabase
-        .from('marcas')
-        .insert({ empresa_id: profile.empresa_id, nome: nome.trim() })
-        .select('id, nome')
-        .single()
-      if (error) {
-        setErro(`Não foi possível criar a marca: ${error.message}`)
-        return null
-      }
-      marca = data as Marca
-    }
-
-    await supabase
-      .from('insumos_marcas')
-      .upsert({ insumo_id: insumoId, marca_id: marca.id }, { onConflict: 'insumo_id,marca_id' })
-
-    if (fornecedorId) {
-      await supabase.from('fornecedores_insumos_marcas').upsert(
-        { fornecedor_id: fornecedorId, insumo_id: insumoId, marca_id: marca.id },
-        { onConflict: 'fornecedor_id,insumo_id,marca_id' },
-      )
-    }
-
+    if (!profile) return null
+    const { dado, erro } = await criarMarcaRapida(profile.empresa_id, insumoId, nome, fornecedorId)
+    if (erro || !dado) { setErro(erro ?? 'Erro ao criar a marca.'); return null }
     setMarcasPorInsumo(prev => {
       const atual = prev[insumoId] ?? []
-      if (atual.some(m => m.id === marca!.id)) return prev
-      return { ...prev, [insumoId]: [...atual, marca!] }
+      if (atual.some(m => m.id === dado.id)) return prev
+      return { ...prev, [insumoId]: [...atual, dado] }
     })
-    return marca
-  }
-
-  /** Liga uma marca que já existe ao fornecedor escolhido, sem duplicar nada. */
-  async function vincularFornecedorMarca(insumoId: string, marcaId: string, fornecedorId: string) {
-    if (!marcaId || !fornecedorId) return
-    await supabase.from('fornecedores_insumos_marcas').upsert(
-      { fornecedor_id: fornecedorId, insumo_id: insumoId, marca_id: marcaId },
-      { onConflict: 'fornecedor_id,insumo_id,marca_id' },
-    )
+    return dado
   }
 
   async function criarRecipiente(
