@@ -33,12 +33,10 @@ export function NavegadorInsumos({
 
   return (
     <div className="mb-4">
-      <div className="flex items-baseline justify-between mb-1.5">
-        <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">Insumos</p>
-        <p className="text-xs text-gray-400">
-          {itens.filter(i => i.status === 'finalizado').length} de {itens.length} conferidos
-        </p>
-      </div>
+      {/* Sem contador aqui: a barra de progresso, logo acima, já diz quantos
+          foram conferidos. Dois números do mesmo fato, um em cada lugar,
+          confundiam mais do que informavam. */}
+      <p className="text-xs font-semibold uppercase tracking-wide text-gray-500 mb-1.5">Insumos</p>
       <div className="flex gap-1.5 overflow-x-auto -mx-4 px-4 pb-1">
         {itens.map((item, idx) => {
           const feito = item.status === 'finalizado'

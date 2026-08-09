@@ -366,7 +366,13 @@ export function NovaContagemEpPage() {
               style={{ width: `${((finalizados) / itens.length) * 100}%` }}
             />
           </div>
-          <span className="text-xs text-gray-500 whitespace-nowrap">{finalizados + 1} de {itens.length}</span>
+          {/* O mesmo fato da barra, em número. Antes dizia `finalizados + 1`,
+              que não era nem quantos foram conferidos nem em qual a pessoa
+              estava — e não batia com o preenchimento da barra ao lado: com 7
+              conferidos, a barra mostrava 7/20 e o texto "8 de 20". */}
+          <span className="text-xs text-gray-500 whitespace-nowrap">
+            {finalizados} de {itens.length} conferidos
+          </span>
         </div>
       </div>
 
