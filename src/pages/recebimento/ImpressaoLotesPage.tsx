@@ -76,7 +76,12 @@ export function ImpressaoLotesPage() {
             {lotes.length} etiqueta{lotes.length > 1 ? 's' : ''} gerada{lotes.length > 1 ? 's' : ''}
           </h1>
           <p className="text-sm text-gray-500 mt-0.5">
-            {lotes[0]?.insumo.nome} · etiqueta {config.largura}×{config.altura}mm
+            {/* Um recebimento pode trazer vários insumos na mesma nota. */}
+            {(() => {
+              const nomes = [...new Set(lotes.map(l => l.insumo.nome))]
+              return nomes.length === 1 ? nomes[0] : `${nomes.length} insumos`
+            })()}
+            {' · '}etiqueta {config.largura}×{config.altura}mm
             {config.colunas > 1 && ` · ${linhas.length} linha${linhas.length > 1 ? 's' : ''} do rolo`}
           </p>
         </div>
