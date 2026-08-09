@@ -290,6 +290,13 @@ export function NovaExpedicaoPage() {
       </div>
 
       <form onSubmit={handleSubmit}>
+        {produtos.length === 0 && (
+          <div className="mb-4 p-3 bg-amber-50 border border-amber-200 rounded-lg text-sm text-amber-800">
+            Nenhum produto acabado cadastrado. Cadastre em <strong>Produtos</strong> —
+            é o que a expedição tira do estoque.
+          </div>
+        )}
+
         {/* Header fields */}
         <Card className="p-5 space-y-4 mb-4">
           <div className="grid grid-cols-2 gap-4">

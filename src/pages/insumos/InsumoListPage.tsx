@@ -335,7 +335,15 @@ export function InsumoListPage() {
     e.preventDefault()
     if (!profile) return
     if (!form.nome.trim()) { setError('Nome é obrigatório.'); return }
-    if (!editing && !form.recipiente_subtipo) { setError('Tipo de recipiente padrão é obrigatório.'); return }
+    // Só faz sentido exigir modelo de recipiente de quem vai usar recipiente.
+    // Quem fica na embalagem do fornecedor não tem pote nenhum, e quem porciona
+    // guarda numa caixa que se cadastra ali embaixo — obrigar os dois a escolher
+    // um modelo é pedir uma resposta inventada, que depois vira o padrão errado
+    // de um recipiente que ninguém quis criar.
+    if (!editing && !form.recipiente_subtipo && form.modo_ep === 'recipiente') {
+      setError('Escolha o tipo de recipiente — é o modelo usado para criar os potes deste insumo.')
+      return
+    }
     // O banco exige (chk_reembalagem) e a transferência depende: sem a porção,
     // a tela de porcionamento não teria por quantos dividir.
     if (exigePorcao(form.modo_ep) && !(parseFloat(form.porcao_tamanho) > 0)) {
@@ -795,12 +803,23 @@ export function InsumoListPage() {
               )}
 
               {/* ── Modelo de recipiente padrão ── */}
-              <div className={`rounded-lg border p-3 space-y-3 ${!editing && !form.recipiente_subtipo ? 'border-amber-300 bg-amber-50' : 'border-gray-200'}`}>
+              <div className={`rounded-lg border p-3 space-y-3 ${
+                !editing && !form.recipiente_subtipo && form.modo_ep === 'recipiente'
+                  ? 'border-amber-300 bg-amber-50'
+                  : 'border-gray-200'
+              }`}>
                 <div className="flex items-center gap-1.5">
                   <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Modelo de recipiente padrão</p>
-                  {!editing && <span className="text-xs text-red-500 font-medium">*obrigatório</span>}
+                  {!editing && form.modo_ep === 'recipiente' && (
+                    <span className="text-xs text-red-500 font-medium">*obrigatório</span>
+                  )}
                 </div>
-                <p className="text-xs text-gray-400">Usado para pré-preencher o cadastro de novos recipientes para este insumo.</p>
+                <p className="text-xs text-gray-400">
+                  {form.modo_ep === 'recipiente'
+                    ? 'Usado para pré-preencher o cadastro de novos recipientes para este insumo.'
+                    : 'Opcional aqui: este insumo não vai para um recipiente da cozinha. '
+                      + 'Preencha só se um dia ele passar a ir.'}
+                </p>
                 <div className="grid grid-cols-2 gap-3">
                   <Select
                     label="Tipo de recipiente"

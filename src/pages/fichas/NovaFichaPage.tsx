@@ -157,6 +157,15 @@ export function NovaFichaPage() {
       </div>
 
       <form onSubmit={handleSubmit} className="space-y-4">
+        {/* Uma receita sem ingredientes para escolher deixa os selects vazios,
+            e select vazio parece defeito da tela, não falta de cadastro. */}
+        {insumos.length === 0 && (
+          <div className="p-3 bg-amber-50 border border-amber-200 rounded-lg text-sm text-amber-800">
+            Você ainda não tem insumos cadastrados, e uma ficha é feita de ingredientes.
+            Cadastre em <strong>Insumos</strong> e volte aqui.
+          </div>
+        )}
+
         {/* Tipo */}
         <Card className="p-5 space-y-4">
           <h2 className="text-sm font-semibold text-gray-700 uppercase tracking-wide">Tipo de Ficha</h2>
