@@ -389,6 +389,10 @@ export function NovoLotePage() {
               // Quem acabou de cadastrar quer usar agora: já deixa escolhido.
               trocarFornecedor(nota.key, f.id)
             }}
+            onNovaMarca={(marca, itemKey, insumoId) => {
+              setVinculos(prev => [...prev, { fornecedor_id: nota.fornecedor_id, insumo_id: insumoId, marca }])
+              patchItem(nota.key, itemKey, { marca_id: marca.id })
+            }}
             onPatchItem={(itemKey, patch) => patchItem(nota.key, itemKey, patch)}
             onAddItem={() => addItem(nota.key)}
             onRemoveItem={itemKey => removeItem(nota.key, itemKey)}
@@ -448,6 +452,7 @@ interface BlocoNotaProps {
   onPatch: (patch: Partial<Nota>) => void
   onTrocarFornecedor: (fornecedorId: string) => void
   onNovoFornecedor: (f: Fornecedor) => void
+  onNovaMarca: (marca: Marca, itemKey: string, insumoId: string) => void
   onPatchItem: (itemKey: string, patch: Partial<Item>) => void
   onAddItem: () => void
   onRemoveItem: (itemKey: string) => void
@@ -455,7 +460,7 @@ interface BlocoNotaProps {
 
 function BlocoNota({
   nota, indice, modo, insumos, fornecedores, vinculos,
-  podeRemover, onRemover, onPatch, onTrocarFornecedor, onNovoFornecedor,
+  podeRemover, onRemover, onPatch, onTrocarFornecedor, onNovoFornecedor, onNovaMarca,
   onPatchItem, onAddItem, onRemoveItem,
 }: BlocoNotaProps) {
   // Os insumos que este fornecedor comercializa sobem para o topo da lista.
@@ -530,8 +535,10 @@ function BlocoNota({
                 .filter((m, i, arr) => arr.findIndex(x => x.id === m.id) === i)
             }
             podeRemover={nota.itens.length > 1}
+            fornecedorId={nota.fornecedor_id}
             onRemover={() => onRemoveItem(item.key)}
             onPatch={patch => onPatchItem(item.key, patch)}
+            onNovaMarca={marca => onNovaMarca(marca, item.key, item.insumo_id)}
           />
         ))}
 
@@ -552,6 +559,7 @@ function BlocoNota({
 interface BlocoItemProps {
   item: Item
   indice: number
+  fornecedorId: string
   insumosDoFornecedor: Insumo[]
   insumosDemais: Insumo[]
   insumos: Insumo[]
@@ -559,10 +567,12 @@ interface BlocoItemProps {
   podeRemover: boolean
   onRemover: () => void
   onPatch: (patch: Partial<Item>) => void
+  onNovaMarca: (marca: Marca) => void
 }
 
 function BlocoItem({
-  item, indice, insumosDoFornecedor, insumosDemais, insumos, marcas, podeRemover, onRemover, onPatch,
+  item, indice, fornecedorId, insumosDoFornecedor, insumosDemais, insumos, marcas,
+  podeRemover, onRemover, onPatch, onNovaMarca,
 }: BlocoItemProps) {
   const insumo = insumos.find(i => i.id === item.insumo_id)
   const tamanhoEmbalagem = insumo?.tamanho_embalagem
@@ -619,11 +629,21 @@ function BlocoItem({
         ) : opcoes(insumosDemais)}
       </Select>
 
-      {marcas.length > 0 && (
-        <Select label="Marca" value={item.marca_id} onChange={e => onPatch({ marca_id: e.target.value })}>
-          <option value="">Sem marca</option>
-          {marcas.map(m => <option key={m.id} value={m.id}>{m.nome}</option>)}
-        </Select>
+      {item.insumo_id && (
+        <div className="space-y-2">
+          {marcas.length > 0 && (
+            <Select label="Marca" value={item.marca_id} onChange={e => onPatch({ marca_id: e.target.value })}>
+              <option value="">Sem marca</option>
+              {marcas.map(m => <option key={m.id} value={m.id}>{m.nome}</option>)}
+            </Select>
+          )}
+          <NovaMarca
+            insumoId={item.insumo_id}
+            fornecedorId={fornecedorId}
+            primeira={marcas.length === 0}
+            onCriada={onNovaMarca}
+          />
+        </div>
       )}
 
       <div className="grid grid-cols-2 gap-3">
@@ -785,6 +805,101 @@ function NovoFornecedor({ primeiro, onCriado }: { primeiro: boolean; onCriado: (
             Cancelar
           </Button>
         )}
+      </div>
+      {erro && <p className="text-xs text-red-600">{erro}</p>}
+    </div>
+  )
+}
+
+/**
+ * Cadastrar a marca sem sair do recebimento.
+ *
+ * Marca é opcional, então não trava ninguém — mas a alternativa era pior do que
+ * parece: quem não achava a marca na lista deixava "sem marca" e seguia. O
+ * cadastro nunca acontecia depois, e o dado se perdia justamente onde ele
+ * importa, que é no lote que acabou de chegar.
+ *
+ * Escreve nos três lugares, senão a marca vira fantasma: existe no lote e some
+ * das telas de cadastro.
+ *   - `marcas`: a marca em si (única por empresa+nome, então reaproveita)
+ *   - `insumos_marcas`: aparece na tela do insumo
+ *   - `fornecedores_insumos_marcas`: aparece aqui no próximo recebimento
+ */
+function NovaMarca({ insumoId, fornecedorId, primeira, onCriada }: {
+  insumoId: string
+  fornecedorId: string
+  primeira: boolean
+  onCriada: (marca: Marca) => void
+}) {
+  const { profile } = useAuth()
+  const [aberto, setAberto] = useState(false)
+  const [nome, setNome] = useState('')
+  const [salvando, setSalvando] = useState(false)
+  const [erro, setErro] = useState('')
+
+  async function salvar() {
+    if (!profile || !nome.trim()) { setErro('Escreva o nome da marca.'); return }
+    setSalvando(true)
+    setErro('')
+
+    // A marca pode já existir para outro insumo: aproveita em vez de falhar no
+    // UNIQUE(empresa_id, nome).
+    const { data: marca, error: errMarca } = await supabase
+      .from('marcas')
+      .upsert({ empresa_id: profile.empresa_id, nome: nome.trim() }, { onConflict: 'empresa_id,nome' })
+      .select('*')
+      .single()
+
+    if (errMarca || !marca) {
+      setSalvando(false)
+      setErro(errMarca?.message ?? 'Erro ao criar a marca.')
+      return
+    }
+
+    await supabase.from('insumos_marcas').upsert(
+      { insumo_id: insumoId, marca_id: (marca as Marca).id },
+      { onConflict: 'insumo_id,marca_id', ignoreDuplicates: true },
+    )
+    if (fornecedorId) {
+      await supabase.from('fornecedores_insumos_marcas').upsert(
+        { fornecedor_id: fornecedorId, insumo_id: insumoId, marca_id: (marca as Marca).id },
+        { onConflict: 'fornecedor_id,insumo_id,marca_id', ignoreDuplicates: true },
+      )
+    }
+
+    setSalvando(false)
+    onCriada(marca as Marca)
+    setNome('')
+    setAberto(false)
+  }
+
+  if (!aberto) {
+    return (
+      <button
+        type="button"
+        onClick={() => setAberto(true)}
+        className="text-xs font-medium text-gray-400 hover:text-brand-600"
+      >
+        {primeira ? '+ Cadastrar a marca deste insumo' : '+ Cadastrar outra marca'}
+      </button>
+    )
+  }
+
+  return (
+    <div className="rounded-lg border border-gray-200 bg-gray-50 p-3 space-y-2">
+      <div className="flex gap-2">
+        <input
+          type="text"
+          value={nome}
+          onChange={e => setNome(e.target.value)}
+          onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); salvar() } }}
+          placeholder="Nome da marca"
+          className="flex-1 rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:border-brand-500"
+        />
+        <Button type="button" size="md" loading={salvando} onClick={salvar}>Salvar</Button>
+        <Button type="button" variant="ghost" size="md" onClick={() => { setAberto(false); setErro('') }}>
+          Cancelar
+        </Button>
       </div>
       {erro && <p className="text-xs text-red-600">{erro}</p>}
     </div>
