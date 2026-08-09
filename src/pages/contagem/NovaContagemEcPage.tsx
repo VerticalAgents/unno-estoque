@@ -25,6 +25,7 @@ type LoteEsperado = ContagemEcLote & {
     quantidade_recebida: number
     quantidade_disponivel: number
     observacoes: string | null
+    embalagem_aberta?: boolean
   } | null
 }
 
@@ -70,7 +71,10 @@ function foiAberto(l: LoteEsperado, tamanhoEmbalagem?: number | null): boolean {
 }
 
 function nasceuAberto(l: LoteEsperado): boolean {
-  return (l.lote?.observacoes ?? '').toLowerCase().includes('embalagem aberta')
+  // Coluna desde a migration 077; a observação fica como reserva para os lotes
+  // gravados antes dela.
+  return l.lote?.embalagem_aberta === true
+    || (l.lote?.observacoes ?? '').toLowerCase().includes('embalagem aberta')
 }
 
 /** Quanto falta para a embalagem estar cheia. */
@@ -194,7 +198,7 @@ export function NovaContagemEcPage() {
     if (!currentItem) return
     supabase
       .from('contagem_ec_lotes')
-      .select('*, lote:lotes(quantidade_recebida, quantidade_disponivel, observacoes)')
+      .select('*, lote:lotes(quantidade_recebida, quantidade_disponivel, observacoes, embalagem_aberta)')
       .eq('contagem_insumo_id', currentItem.id)
       .then(({ data }) => {
         // Ordem natural: no banco, "INS002-0001.10/12" vem antes de ".2/12".

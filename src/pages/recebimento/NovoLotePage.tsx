@@ -94,6 +94,8 @@ export function NovoLotePage() {
   const quantidade = parseFloat(form.quantidade_recebida) || 0
 
   // Auto-calcula num_etiquetas quando muda a quantidade ou o insumo
+  // Com tamanho de embalagem, o número de etiquetas é consequência da divisão
+  // física, não uma escolha: são os fardos cheios mais o aberto, se sobrar.
   useEffect(() => {
     if (tamanhoEmbalagem && quantidade > 0) {
       setNumEtiquetas(Math.ceil(quantidade / tamanhoEmbalagem))
@@ -102,16 +104,32 @@ export function NovoLotePage() {
     }
   }, [form.insumo_id, form.quantidade_recebida, tamanhoEmbalagem])
 
-  // Preview da distribuição de etiquetas
-  function calcDistribuicao() {
-    if (!numEtiquetas || numEtiquetas < 1 || quantidade <= 0) return null
+  /**
+   * Como a quantidade se reparte entre as etiquetas.
+   *
+   * Com tamanho de embalagem cadastrado, a divisão é a FÍSICA — fardos cheios
+   * mais um aberto com o resto —, a mesma que `registrar_entrada_lote` faz no
+   * banco (migration 077). Antes esta tela dividia igualmente e prometia, para
+   * 30 kg de farinha, "2× 15 kg": embalagem que não existe.
+   */
+  function calcDistribuicao(): string | null {
+    if (quantidade <= 0) return null
+    const un = selectedInsumo?.unidade_medida ?? ''
+
+    if (tamanhoEmbalagem && tamanhoEmbalagem > 0) {
+      const fechadas = Math.floor(quantidade / tamanhoEmbalagem)
+      const resto = Math.round((quantidade - fechadas * tamanhoEmbalagem) * 1000) / 1000
+      const partes: string[] = []
+      if (fechadas > 0) partes.push(`${fechadas}× ${tamanhoEmbalagem} ${un}`)
+      if (resto > 0) partes.push(`1× ${resto} ${un} (embalagem aberta)`)
+      return partes.join(' + ')
+    }
+
+    if (numEtiquetas === 1) return `1 etiqueta de ${quantidade} ${un}`
     const qtdPorEtiqueta = Math.floor((quantidade / numEtiquetas) * 1000) / 1000
     const qtdUltima = Math.round((quantidade - qtdPorEtiqueta * (numEtiquetas - 1)) * 1000) / 1000
-    if (numEtiquetas === 1) return `1 etiqueta de ${quantidade} ${selectedInsumo?.unidade_medida ?? ''}`
-    if (qtdPorEtiqueta === qtdUltima) {
-      return `${numEtiquetas}× ${qtdPorEtiqueta} ${selectedInsumo?.unidade_medida ?? ''}`
-    }
-    return `${numEtiquetas - 1}× ${qtdPorEtiqueta} ${selectedInsumo?.unidade_medida ?? ''} + 1× ${qtdUltima} ${selectedInsumo?.unidade_medida ?? ''}`
+    if (qtdPorEtiqueta === qtdUltima) return `${numEtiquetas}× ${qtdPorEtiqueta} ${un}`
+    return `${numEtiquetas - 1}× ${qtdPorEtiqueta} ${un} + 1× ${qtdUltima} ${un}`
   }
 
   function set(field: string, value: string) {
@@ -276,12 +294,14 @@ export function NovoLotePage() {
                   min="1"
                   step="1"
                   value={numEtiquetas}
+                  disabled={!!tamanhoEmbalagem}
                   onChange={e => setNumEtiquetas(Math.max(1, parseInt(e.target.value) || 1))}
-                  className="w-20 rounded-lg border border-blue-300 px-3 py-1.5 text-sm font-semibold text-blue-900 bg-white focus:outline-none focus:ring-2 focus:ring-blue-400"
+                  className="w-20 rounded-lg border border-blue-300 px-3 py-1.5 text-sm font-semibold text-blue-900 bg-white focus:outline-none focus:ring-2 focus:ring-blue-400 disabled:bg-blue-100 disabled:text-blue-700"
                 />
                 {tamanhoEmbalagem && (
                   <span className="text-xs text-blue-600">
-                    (auto: embalagem de {tamanhoEmbalagem} {selectedInsumo?.unidade_medida})
+                    embalagem de {tamanhoEmbalagem} {selectedInsumo?.unidade_medida} — o
+                    sistema separa os fardos cheios do que sobrar
                   </span>
                 )}
               </div>

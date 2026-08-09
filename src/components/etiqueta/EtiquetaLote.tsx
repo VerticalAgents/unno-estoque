@@ -16,6 +16,7 @@ import { LAYOUT_BASE, baseDoLayout, layoutDaEtiqueta, type EtiquetaDims } from '
  */
 
 export type LoteEtiqueta = Lote & {
+  embalagem_aberta?: boolean
   insumo: { nome: string; codigo: string; unidade_medida: string; shelf_life_dias_pos_abertura?: number }
   fornecedor?: { nome: string }
   marca?: { nome: string }
@@ -33,11 +34,14 @@ function dadosDoLote(lote: LoteEtiqueta, empresa: Empresa | null) {
 
   const shelfLife = (lote.insumo as unknown as { shelf_life_dias_pos_abertura?: number })?.shelf_life_dias_pos_abertura
 
-  // A embalagem aberta da abertura de estoque tem menos produto que as
-  // fechadas, e sem um aviso na etiqueta não há como saber em qual fardo
-  // colá-la. O sinal vem da observação gravada pela abertura; a quantidade
-  // entra junto porque é ela que casa a etiqueta com o fardo certo.
-  const embalagemAberta = (lote.observacoes ?? '').toLowerCase().includes('embalagem aberta')
+  // A embalagem aberta tem menos produto que as fechadas, e sem um aviso na
+  // etiqueta não há como saber em qual fardo colá-la. A quantidade entra junto
+  // porque é ela que casa a etiqueta com o fardo certo.
+  //
+  // O sinal virou coluna na migration 077; a leitura da observação fica como
+  // reserva para os lotes gravados antes dela.
+  const embalagemAberta = lote.embalagem_aberta === true
+    || (lote.observacoes ?? '').toLowerCase().includes('embalagem aberta')
   const qtd = Number(lote.quantidade_recebida)
   const quantidade = Number.isFinite(qtd) && qtd > 0
     ? `${qtd.toLocaleString('pt-BR', { maximumFractionDigits: 3 })} ${lote.insumo?.unidade_medida ?? ''}`.trim()
