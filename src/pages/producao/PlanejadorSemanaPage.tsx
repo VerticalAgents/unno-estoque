@@ -108,6 +108,106 @@ function diaCurto(iso: string): string {
   return `${DIAS_LABEL[d.getDay()]} ${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')}`
 }
 
+// ── Aviso de abastecimento ───────────────────────────────────
+
+type ModoEp = 'recipiente' | 'embalagem_fornecedor' | 'porcionado' | 'escolher'
+
+type Armazenamento = {
+  modo: ModoEp
+  /** Tamanho da porção, já na unidade do insumo (o cadastro guarda em g/ml). */
+  porcao: number | null
+  /** Tamanho da embalagem do fornecedor, na unidade do insumo. */
+  embalagem: number | null
+}
+
+type Aviso = { nome: string; titulo: string; detalhe: string }
+
+/**
+ * "Vai precisar de mais de uma rodada de abastecimento" só faz sentido para um
+ * dos modos, e a tela dizia isso para todos.
+ *
+ * A ideia de RODADA pressupõe um conjunto fixo de potes por onde tudo passa: o
+ * pote enche, esvazia e alguém reabastece. Isso é verdade no modo `recipiente`.
+ *
+ * Não é verdade para a embalagem do fornecedor — ali não há reabastecer, há
+ * levar mais um balde da prateleira, e o limite não é a capacidade dos potes e
+ * sim quantos pacotes existem no estoque. Nem para o porcionado, onde a unidade
+ * que se conta é o SACO, não a caixa.
+ *
+ * E para quem decide na hora (o doce de leite) a resposta depende de uma
+ * escolha que ainda não foi feita quando se planeja a semana — então a tela
+ * mostra as duas, em vez de fingir que sabe.
+ */
+function avisoDeAbastecimento(
+  qtd: number,
+  cap: { nome: string; unidade: string; capacidade: number } | undefined,
+  arm: Armazenamento | undefined,
+): Aviso | null {
+  if (!cap) return null
+  const modo = arm?.modo ?? 'recipiente'
+  const un = cap.unidade
+
+  const emSacos = () => {
+    if (!arm?.porcao || arm.porcao <= 0) return null
+    const sacos = Math.ceil(qtd / arm.porcao)
+    const porCaixa = cap.capacidade > 0 ? Math.floor(cap.capacidade / arm.porcao) : 0
+    const enchimentos = porCaixa > 0 ? Math.ceil(sacos / porCaixa) : 0
+    return { sacos, porCaixa, enchimentos }
+  }
+
+  const emPacotes = () => {
+    const tam = arm?.embalagem && arm.embalagem > 0 ? arm.embalagem : cap.capacidade
+    if (!tam || tam <= 0) return null
+    return { pacotes: Math.ceil(qtd / tam), tam }
+  }
+
+  if (modo === 'embalagem_fornecedor') {
+    const p = emPacotes()
+    if (!p || p.pacotes <= 1) return null
+    return {
+      nome: cap.nome,
+      titulo: 'Vai precisar de mais de um pacote',
+      detalhe: `${cap.nome}: o dia pede ${fmt(qtd, 2)} ${un} = ${p.pacotes} pacotes `
+             + `de ${fmt(p.tam, 2)} ${un}. Confira se há esse tanto no estoque central.`,
+    }
+  }
+
+  if (modo === 'porcionado') {
+    const s = emSacos()
+    if (!s || s.enchimentos <= 1) return null
+    return {
+      nome: cap.nome,
+      titulo: 'A caixa não comporta o dia inteiro',
+      detalhe: `${cap.nome}: o dia pede ${fmt(qtd, 2)} ${un} = ${s.sacos} sacos, `
+             + `e na caixa cabem ${s.porCaixa} — ${s.enchimentos} enchimentos.`,
+    }
+  }
+
+  if (modo === 'escolher') {
+    const s = emSacos()
+    const p = emPacotes()
+    const partes: string[] = []
+    if (p && p.pacotes > 1) partes.push(`direto, ${p.pacotes} pacotes de ${fmt(p.tam, 2)} ${un}`)
+    if (s && s.enchimentos > 1) partes.push(`porcionado, ${s.sacos} sacos = ${s.enchimentos} enchimentos da caixa`)
+    if (partes.length === 0) return null
+    return {
+      nome: cap.nome,
+      titulo: 'Depende do destino escolhido',
+      detalhe: `${cap.nome}: o dia pede ${fmt(qtd, 2)} ${un} — ${partes.join('; ')}.`,
+    }
+  }
+
+  if (cap.capacidade <= 0) return null
+  const rodadas = Math.ceil(qtd / cap.capacidade)
+  if (rodadas <= 1) return null
+  return {
+    nome: cap.nome,
+    titulo: 'Vai precisar de mais de uma rodada de abastecimento',
+    detalhe: `${cap.nome}: o dia pede ${fmt(qtd, 2)} ${un} e os recipientes `
+           + `comportam ${fmt(cap.capacidade, 2)} — ${rodadas} rodadas.`,
+  }
+}
+
 function fmt(n: number, casas = 0) {
   return n.toLocaleString('pt-BR', { minimumFractionDigits: 0, maximumFractionDigits: casas })
 }
@@ -223,6 +323,7 @@ export function PlanejadorSemanaPage({
   // Capacidade dos recipientes e receitas: buscadas uma vez, usadas em toda
   // edição sem ida ao banco
   const [capacidade, setCapacidade] = useState<Record<string, { nome: string; unidade: string; capacidade: number }>>({})
+  const [armazenamento, setArmazenamento] = useState<Record<string, Armazenamento>>({})
   const [receitas, setReceitas] = useState<Record<string, { insumo_id: string; quantidade: number }[]>>({})
 
   const [realizado, setRealizado] = useState<Record<string, Realizado>>({})
@@ -260,7 +361,7 @@ export function PlanejadorSemanaPage({
     if (!profile) return
 
     async function carregar() {
-      const [fichasRes, capRes, empRes] = await Promise.all([
+      const [fichasRes, capRes, empRes, modoRes] = await Promise.all([
         supabase.from('fichas_tecnicas')
           .select('id, codigo, nome, versoes:fichas_tecnicas_versoes!inner(id, rendimento_fornada, ativa)')
           .eq('empresa_id', profile!.empresa_id)
@@ -269,6 +370,10 @@ export function PlanejadorSemanaPage({
           .select('insumo_id, insumo_nome, unidade_medida, capacidade_max')
           .eq('empresa_id', profile!.empresa_id),
         supabase.from('empresas').select('nome').eq('id', profile!.empresa_id).maybeSingle(),
+        // Como cada insumo ocupa o EP: a conta de "quantas rodadas" só vale
+        // para quem passa por pote da cozinha (ver ARMAZENAMENTO abaixo).
+        supabase.from('insumos_armazenamento_config')
+          .select('insumo_id, modo_ep, reembalagem_tamanho_porcao, insumo:insumos(unidade_medida, tamanho_embalagem)'),
       ])
 
       const rows = (fichasRes.data ?? []) as unknown as {
@@ -292,6 +397,23 @@ export function PlanejadorSemanaPage({
         cap[r.insumo_id] = atual
       }
       setCapacidade(cap)
+
+      const modos: Record<string, Armazenamento> = {}
+      for (const r of (modoRes.data ?? []) as unknown as {
+        insumo_id: string; modo_ep: ModoEp; reembalagem_tamanho_porcao: number | null
+        insumo?: { unidade_medida?: string; tamanho_embalagem?: number | null }
+          | { unidade_medida?: string; tamanho_embalagem?: number | null }[]
+      }[]) {
+        const ins = Array.isArray(r.insumo) ? r.insumo[0] : r.insumo
+        // A porção é cadastrada em g/ml e o insumo pode ser medido em kg/L.
+        const divisor = ins?.unidade_medida === 'kg' || ins?.unidade_medida === 'L' ? 1000 : 1
+        modos[r.insumo_id] = {
+          modo: r.modo_ep ?? 'recipiente',
+          porcao: r.reembalagem_tamanho_porcao ? Number(r.reembalagem_tamanho_porcao) / divisor : null,
+          embalagem: ins?.tamanho_embalagem ? Number(ins.tamanho_embalagem) : null,
+        }
+      }
+      setArmazenamento(modos)
 
       // Receita de cada ficha, para a conta de demanda por dia
       const versoes = rows.flatMap(f => {
@@ -698,15 +820,9 @@ export function PlanejadorSemanaPage({
       // Só a capacidade — o conteúdo dos potes na quinta depende do que for
       // consumido até lá, e prever isso seria chute.
       const apertados = Object.entries(demanda)
-        .map(([insumoId, qtd]) => {
-          const cap = capacidade[insumoId]
-          if (!cap || cap.capacidade <= 0) return null
-          const rodadas = Math.ceil(qtd / cap.capacidade)
-          return rodadas > 1
-            ? { nome: cap.nome, unidade: cap.unidade, qtd, cap: cap.capacidade, rodadas }
-            : null
-        })
-        .filter(Boolean) as { nome: string; unidade: string; qtd: number; cap: number; rodadas: number }[]
+        .map(([insumoId, qtd]) => avisoDeAbastecimento(
+          qtd, capacidade[insumoId], armazenamento[insumoId]))
+        .filter(Boolean) as Aviso[]
 
       return { dia, itens, formas, bateladas, formasReais, emAndamento, foraDoPlano, unidades, apertados }
     })
@@ -1494,13 +1610,15 @@ export function PlanejadorSemanaPage({
                 {/* Dia que não cabe nos recipientes: é estrutural, não depende
                     do estoque de hoje. */}
                 {d.apertados.length > 0 && (
-                  <div className="p-3 rounded-lg bg-amber-50 border border-amber-200 text-xs text-amber-800">
-                    <p className="font-medium">Vai precisar de mais de uma rodada de abastecimento</p>
+                  <div className="p-3 rounded-lg bg-amber-50 border border-amber-200 text-xs text-amber-800 space-y-2">
+                    {/* Um bloco por insumo: o título muda com o modo de
+                        armazenamento, porque "rodada" não quer dizer a mesma
+                        coisa para um pote e para um balde do fornecedor. */}
                     {d.apertados.map(a => (
-                      <p key={a.nome} className="mt-0.5">
-                        {a.nome}: o dia pede {fmt(a.qtd, 2)} {a.unidade} e os recipientes
-                        comportam {fmt(a.cap, 2)} — {a.rodadas} rodadas.
-                      </p>
+                      <div key={a.nome}>
+                        <p className="font-medium">{a.titulo}</p>
+                        <p className="mt-0.5">{a.detalhe}</p>
+                      </div>
                     ))}
                   </div>
                 )}
