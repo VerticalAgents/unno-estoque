@@ -952,13 +952,13 @@ export function TransferenciaPage() {
             className="w-full text-left rounded-xl border-2 border-gray-200 hover:border-brand-500 bg-white p-5 transition-colors"
           >
             <span className="block text-base font-semibold text-gray-900">
-              Porcionar em sacos de confeitar
+              Porcionar em embalagens descartáveis
             </span>
             <span className="block text-sm text-gray-500 mt-1">
               {configArmazenamento(lote).reembalagem_tamanho_porcao
-                ? `Sacos de ${configArmazenamento(lote).reembalagem_tamanho_porcao} g, `
+                ? `Porções de ${configArmazenamento(lote).reembalagem_tamanho_porcao} g, `
                 : ''}
-              guardados na caixa. Você vai bipar a caixa em seguida.
+              guardadas na caixa. Você vai bipar a caixa em seguida.
             </span>
           </button>
 

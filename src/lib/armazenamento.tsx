@@ -18,35 +18,50 @@ export const MODOS_EP: {
 }[] = [
   {
     value: 'recipiente',
-    titulo: 'Vai para um pote da cozinha',
-    curto: 'Pote',
-    ajuda: 'O caso comum. Na transferência o operador bipa o lote e depois o pote de destino.',
+    titulo: 'É transferido para um recipiente de armazenamento',
+    curto: 'Recipiente',
+    ajuda: 'O caso comum. Na transferência o operador bipa o lote e depois o recipiente de destino.',
     cor: 'bg-gray-100 text-gray-600',
   },
   {
     value: 'embalagem_fornecedor',
-    titulo: 'Fica na embalagem do fornecedor',
+    titulo: 'É utilizado na produção direto da embalagem original do fornecedor',
     curto: 'Embalagem',
-    ajuda: 'O balde ou garrafa do fornecedor é o próprio ponto de consumo. Um bipe só, '
-         + 'com a etiqueta que já vem colada — e ele some da lista quando esvazia.',
+    ajuda: 'A embalagem que veio do fornecedor é o próprio ponto de consumo. Um bipe só, '
+         + 'com a etiqueta que já vem colada — e ela some da lista quando esvazia.',
     cor: 'bg-blue-50 text-blue-700',
   },
   {
     value: 'porcionado',
-    titulo: 'É porcionado em sacos',
+    titulo: 'É porcionado em embalagens descartáveis',
     curto: 'Porcionado',
-    ajuda: 'O pacote é esvaziado em porções que ficam numa caixa. O operador bipa o lote, '
-         + 'bipa a caixa e informa quantos sacos encheu.',
+    ajuda: 'O lote é esvaziado em porções que ficam guardadas numa caixa. O operador bipa o '
+         + 'lote, bipa a caixa e informa quantas porções fez. Que embalagem é essa se '
+         + 'escolhe no campo Formato.',
     cor: 'bg-purple-50 text-purple-700',
   },
   {
     value: 'escolher',
-    titulo: 'Depende do pacote',
-    curto: 'Os dois',
-    ajuda: 'Faz as duas coisas, e quem transfere decide a cada pacote: usar direto ou porcionar.',
+    titulo: 'Depende do lote',
+    curto: 'Depende',
+    ajuda: 'Faz as duas coisas, e quem transfere decide a cada lote: usar direto ou porcionar.',
     cor: 'bg-amber-50 text-amber-700',
   },
 ]
+
+/**
+ * Como chamar a porção na tela.
+ *
+ * "Saco de confeitar" é um caso particular — o desta padaria. O conceito é
+ * embalagem descartável, e cada cliente usa a sua. O nome sai do formato
+ * configurado, então quem escolheu saco lê "sacos" e quem escolheu porção
+ * avulsa lê "porções", sem que o sistema precise generalizar a ponto de ficar
+ * vago para os dois.
+ */
+export function nomeDaPorcao(formato?: string | null, plural = false): string {
+  if (formato === 'saco_confeitar') return plural ? 'sacos' : 'saco'
+  return plural ? 'porções' : 'porção'
+}
 
 export const FORMATOS_PORCAO = [
   { value: 'saco_confeitar', label: 'Saco de confeitar' },

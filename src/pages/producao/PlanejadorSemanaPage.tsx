@@ -108,6 +108,8 @@ function diaCurto(iso: string): string {
   return `${DIAS_LABEL[d.getDay()]} ${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')}`
 }
 
+import { nomeDaPorcao } from '../../lib/armazenamento'
+
 // ── Aviso de abastecimento ───────────────────────────────────
 
 type ModoEp = 'recipiente' | 'embalagem_fornecedor' | 'porcionado' | 'escolher'
@@ -116,6 +118,8 @@ type Armazenamento = {
   modo: ModoEp
   /** Tamanho da porção, já na unidade do insumo (o cadastro guarda em g/ml). */
   porcao: number | null
+  /** Como a porção se chama na tela: saco, porção... */
+  formato: string | null
   /** Tamanho da embalagem do fornecedor, na unidade do insumo. */
   embalagem: number | null
 }
@@ -178,8 +182,9 @@ function avisoDeAbastecimento(
     return {
       nome: cap.nome,
       titulo: 'A caixa não comporta o dia inteiro',
-      detalhe: `${cap.nome}: o dia pede ${fmt(qtd, 2)} ${un} = ${s.sacos} sacos, `
-             + `e na caixa cabem ${s.porCaixa} — ${s.enchimentos} enchimentos.`,
+      detalhe: `${cap.nome}: o dia pede ${fmt(qtd, 2)} ${un} = ${s.sacos} `
+             + `${nomeDaPorcao(arm?.formato, true)}, e na caixa cabem ${s.porCaixa} `
+             + `— ${s.enchimentos} enchimentos.`,
     }
   }
 
@@ -188,7 +193,10 @@ function avisoDeAbastecimento(
     const p = emPacotes()
     const partes: string[] = []
     if (p && p.pacotes > 1) partes.push(`direto, ${p.pacotes} pacotes de ${fmt(p.tam, 2)} ${un}`)
-    if (s && s.enchimentos > 1) partes.push(`porcionado, ${s.sacos} sacos = ${s.enchimentos} enchimentos da caixa`)
+    if (s && s.enchimentos > 1) {
+      partes.push(`porcionado, ${s.sacos} ${nomeDaPorcao(arm?.formato, true)} `
+        + `= ${s.enchimentos} enchimentos da caixa`)
+    }
     if (partes.length === 0) return null
     return {
       nome: cap.nome,
@@ -373,7 +381,7 @@ export function PlanejadorSemanaPage({
         // Como cada insumo ocupa o EP: a conta de "quantas rodadas" só vale
         // para quem passa por pote da cozinha (ver ARMAZENAMENTO abaixo).
         supabase.from('insumos_armazenamento_config')
-          .select('insumo_id, modo_ep, reembalagem_tamanho_porcao, insumo:insumos(unidade_medida, tamanho_embalagem)'),
+          .select('insumo_id, modo_ep, reembalagem_tamanho_porcao, reembalagem_formato, insumo:insumos(unidade_medida, tamanho_embalagem)'),
       ])
 
       const rows = (fichasRes.data ?? []) as unknown as {
@@ -401,6 +409,7 @@ export function PlanejadorSemanaPage({
       const modos: Record<string, Armazenamento> = {}
       for (const r of (modoRes.data ?? []) as unknown as {
         insumo_id: string; modo_ep: ModoEp; reembalagem_tamanho_porcao: number | null
+        reembalagem_formato: string | null
         insumo?: { unidade_medida?: string; tamanho_embalagem?: number | null }
           | { unidade_medida?: string; tamanho_embalagem?: number | null }[]
       }[]) {
@@ -410,6 +419,7 @@ export function PlanejadorSemanaPage({
         modos[r.insumo_id] = {
           modo: r.modo_ep ?? 'recipiente',
           porcao: r.reembalagem_tamanho_porcao ? Number(r.reembalagem_tamanho_porcao) / divisor : null,
+          formato: r.reembalagem_formato,
           embalagem: ins?.tamanho_embalagem ? Number(ins.tamanho_embalagem) : null,
         }
       }

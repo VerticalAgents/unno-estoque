@@ -6,6 +6,7 @@ import { Button } from '../../../components/ui/Button'
 import { Card } from '../../../components/ui/Card'
 import { ConfirmModal } from '../../../components/ui/ConfirmModal'
 import { calcSacos, formatDate, formatQty } from '../../../lib/utils'
+import { nomeDaPorcao } from '../../../lib/armazenamento'
 
 /**
  * Porcionar um pacote em sacos, e depositar na caixa.
@@ -45,7 +46,11 @@ export function Reembalagem({ lote, local, config, onSuccess, onCancel }: Props)
   const { profile } = useAuth()
 
   const porcao = Number(config.reembalagem_tamanho_porcao ?? 0)
-  const emPorcoes = (config.reembalagem_formato ?? '') === 'saco_confeitar' && porcao > 0
+  const emPorcoes = porcao > 0 && (config.reembalagem_formato ?? '') !== 'porcionamento'
+  // "saco" é o caso desta padaria; o conceito é embalagem descartável, e o nome
+  // sai do formato que o insumo tem cadastrado.
+  const un1 = nomeDaPorcao(config.reembalagem_formato)
+  const unN = nomeDaPorcao(config.reembalagem_formato, true)
   const totalG = emGramas(lote.quantidade_disponivel, lote.unidade)
 
   // Quantos sacos cabem no pacote — o palpite que o operador ajusta se raspou
@@ -96,11 +101,11 @@ export function Reembalagem({ lote, local, config, onSuccess, onCancel }: Props)
     <div className="space-y-4">
       <Card className="p-5">
         <h2 className="text-base font-semibold text-gray-900 mb-1">
-          {emPorcoes ? 'Porcionar em sacos' : 'Abrir o pacote'}
+          {emPorcoes ? `Porcionar em ${unN}` : 'Abrir o pacote'}
         </h2>
         <p className="text-sm text-gray-500 mb-4">
           {lote.insumo.nome}
-          {emPorcoes && ` · sacos de ${porcao} g`}
+          {emPorcoes && ` · ${unN} de ${porcao} g`}
         </p>
 
         <div className="p-3 bg-blue-50 border border-blue-200 rounded-lg text-sm text-blue-800 mb-4">
@@ -113,7 +118,7 @@ export function Reembalagem({ lote, local, config, onSuccess, onCancel }: Props)
           <div className="space-y-4">
             <div>
               <label className="text-sm font-medium text-gray-700">
-                Quantos sacos você encheu?
+                Quantos {unN} você encheu?
               </label>
               <div className="flex items-center gap-3 mt-1">
                 <button
@@ -137,7 +142,7 @@ export function Reembalagem({ lote, local, config, onSuccess, onCancel }: Props)
                   ? 'bg-yellow-50 border-yellow-200 text-yellow-800'
                   : 'bg-emerald-50 border-emerald-200 text-emerald-800'
             }`}>
-              <p><strong>Nos sacos:</strong> {(qtdPorcoes * porcao).toFixed(0)} g</p>
+              <p><strong>Nas embalagens:</strong> {(qtdPorcoes * porcao).toFixed(0)} g</p>
               {excedeu
                 ? <p>Isso passa do que há no pacote ({totalG.toFixed(0)} g).</p>
                 : <p><strong>Sobra no pacote:</strong> {sobra.toFixed(0)} g</p>}
@@ -186,7 +191,7 @@ export function Reembalagem({ lote, local, config, onSuccess, onCancel }: Props)
           <div className="space-y-1">
             {emPorcoes ? (
               <>
-                <p>{lote.codigo} → <strong>{qtdPorcoes} saco(s) × {porcao} g</strong></p>
+                <p>{lote.codigo} → <strong>{qtdPorcoes} {qtdPorcoes === 1 ? un1 : unN} × {porcao} g</strong></p>
                 {sobra > 0 && (
                   <p>
                     Sobra de {sobra.toFixed(0)} g{' '}
