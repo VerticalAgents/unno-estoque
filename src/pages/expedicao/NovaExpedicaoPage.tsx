@@ -299,7 +299,9 @@ export function NovaExpedicaoPage() {
 
         {/* Header fields */}
         <Card className="p-5 space-y-4 mb-4">
-          <div className="grid grid-cols-2 gap-4">
+          {/* Empilhado no celular: ver o comentário no recebimento — o campo de
+              data do Android não cabe em meia tela e vaza pela borda. */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <Input
               label="Data da expedição"
               type="date"

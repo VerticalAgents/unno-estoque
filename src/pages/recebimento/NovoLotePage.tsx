@@ -503,7 +503,9 @@ function BlocoNota({
         onCriado={onNovoFornecedor}
       />
 
-      <div className="grid grid-cols-2 gap-4">
+      {/* Empilhado no celular: lado a lado, "DATA DE RECEBIMENTO" quebra em duas
+          linhas e o campo de data não cabe na metade da tela. */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
         <Input
           label="Número da NF"
           type="text"
@@ -647,7 +649,7 @@ function BlocoItem({
         </div>
       )}
 
-      <div className="grid grid-cols-2 gap-3">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         <Input
           label="Validade (embalagem)"
           type="date"
