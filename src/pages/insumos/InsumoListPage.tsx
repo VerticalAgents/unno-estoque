@@ -34,6 +34,9 @@ type FormState = {
   estoque_maximo_ep: string
   shelf_life_dias_pos_abertura: string
   tamanho_embalagem: string
+  exige_temperatura: boolean
+  temperatura_min: string
+  temperatura_max: string
   observacoes: string
   ativo: boolean
   recipiente_subtipo: string
@@ -56,6 +59,9 @@ const emptyForm = (): FormState => ({
   estoque_maximo_ep: '',
   shelf_life_dias_pos_abertura: '',
   tamanho_embalagem: '',
+  exige_temperatura: false,
+  temperatura_min: '',
+  temperatura_max: '',
   observacoes: '',
   ativo: true,
   recipiente_subtipo: '',
@@ -295,6 +301,9 @@ export function InsumoListPage() {
       estoque_maximo_ep: ins.estoque_maximo_ep?.toString() ?? '',
       shelf_life_dias_pos_abertura: ins.shelf_life_dias_pos_abertura?.toString() ?? '',
       tamanho_embalagem: ins.tamanho_embalagem?.toString() ?? '',
+      exige_temperatura: ins.exige_temperatura ?? false,
+      temperatura_min: ins.temperatura_min?.toString() ?? '',
+      temperatura_max: ins.temperatura_max?.toString() ?? '',
       observacoes: ins.observacoes ?? '',
       ativo: ins.ativo,
       recipiente_subtipo: ins.recipiente_subtipo ?? '',
@@ -333,6 +342,20 @@ export function InsumoListPage() {
       setError('Informe o tamanho da porção — é o que define quantos sacos saem de cada pacote.')
       return
     }
+    // Mesma regra do CHECK do banco: sem faixa, o recebimento não teria contra
+    // o que comparar a temperatura medida.
+    if (form.exige_temperatura) {
+      const tmin = parseFloat(form.temperatura_min)
+      const tmax = parseFloat(form.temperatura_max)
+      if (Number.isNaN(tmin) || Number.isNaN(tmax)) {
+        setError('Informe a faixa de temperatura aceitável (mínima e máxima).')
+        return
+      }
+      if (tmin > tmax) {
+        setError('A temperatura mínima não pode ser maior que a máxima.')
+        return
+      }
+    }
     setError('')
     setSaving(true)
 
@@ -350,6 +373,11 @@ export function InsumoListPage() {
         ? parseInt(form.shelf_life_dias_pos_abertura)
         : null,
       tamanho_embalagem: form.tamanho_embalagem ? parseFloat(form.tamanho_embalagem) : null,
+      exige_temperatura: form.exige_temperatura,
+      // Desligado, a faixa é apagada: guardar limites de uma conferência que
+      // não acontece mais é convite para ela voltar sozinha com números velhos.
+      temperatura_min: form.exige_temperatura ? parseFloat(form.temperatura_min) : null,
+      temperatura_max: form.exige_temperatura ? parseFloat(form.temperatura_max) : null,
       observacoes: form.observacoes || null,
       ativo: form.ativo,
       recipiente_subtipo: form.recipiente_subtipo || null,
@@ -687,6 +715,53 @@ export function InsumoListPage() {
                     placeholder="0"
                   />
                 </div>
+              </div>
+
+              {/* Temperatura de recebimento — desligado por padrão, porque a
+                  maioria dos insumos é seca e não precisa. */}
+              <div className="rounded-lg border border-gray-200 p-3 space-y-3">
+                <label className="flex items-start gap-2 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={form.exige_temperatura}
+                    onChange={e => set('exige_temperatura', e.target.checked)}
+                    className="rounded mt-0.5"
+                  />
+                  <span>
+                    <span className="text-sm font-medium text-gray-700">
+                      Conferir temperatura no recebimento
+                    </span>
+                    <span className="block text-xs text-gray-500 mt-0.5">
+                      O recebimento passa a pedir a temperatura medida na chegada e
+                      recusa a carga que estiver fora da faixa.
+                    </span>
+                  </span>
+                </label>
+
+                {form.exige_temperatura && (
+                  <>
+                    <div className="grid grid-cols-2 gap-3">
+                      <Input
+                        label="Mínima (°C)"
+                        type="number" inputMode="decimal" step="0.1"
+                        value={form.temperatura_min}
+                        onChange={e => set('temperatura_min', e.target.value)}
+                        placeholder="Ex: 0"
+                      />
+                      <Input
+                        label="Máxima (°C)"
+                        type="number" inputMode="decimal" step="0.1"
+                        value={form.temperatura_max}
+                        onChange={e => set('temperatura_max', e.target.value)}
+                        placeholder="Ex: 5"
+                      />
+                    </div>
+                    <p className="text-xs text-gray-500">
+                      Fora dessa faixa o sistema não deixa registrar o lote — a carga
+                      deve ser recusada com o entregador.
+                    </p>
+                  </>
+                )}
               </div>
 
               <Input

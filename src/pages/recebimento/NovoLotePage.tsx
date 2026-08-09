@@ -35,6 +35,8 @@ type Item = {
   marca_id: string
   validade_original: string
   quantidade_recebida: string
+  /** Em °C. Só aparece nos insumos com `exige_temperatura` (migration 078). */
+  temperatura: string
   /** Só usado quando o insumo não tem tamanho de embalagem cadastrado. */
   num_etiquetas: number
   observacoes: string
@@ -65,6 +67,7 @@ const novoItem = (): Item => ({
   marca_id: '',
   validade_original: '',
   quantidade_recebida: '',
+  temperatura: '',
   num_etiquetas: 1,
   observacoes: '',
   obsAberta: false,
@@ -89,6 +92,25 @@ function etiquetasDoItem(item: Item, insumo?: Insumo): number {
   const qtd = parseFloat(item.quantidade_recebida) || 0
   if (tam && tam > 0 && qtd > 0) return Math.max(1, Math.ceil(qtd / tam))
   return Math.max(1, item.num_etiquetas)
+}
+
+/**
+ * O que há de errado com a temperatura deste item, se houver.
+ *
+ * A RPC recusa de qualquer jeito (migration 078) — isto aqui é para o operador
+ * ver antes de tentar gravar, com a carga ainda no caminhão.
+ */
+function problemaDeTemperatura(item: Item, insumo?: Insumo): string | null {
+  if (!insumo?.exige_temperatura) return null
+  const min = insumo.temperatura_min ?? 0
+  const max = insumo.temperatura_max ?? 0
+  if (item.temperatura.trim() === '') return 'Informe a temperatura medida.'
+  const t = parseFloat(item.temperatura)
+  if (Number.isNaN(t)) return 'Informe a temperatura medida.'
+  if (t < min || t > max) {
+    return `Fora da faixa aceita (${min} a ${max} °C). Esta carga deve ser recusada.`
+  }
+  return null
 }
 
 /** Como a quantidade se reparte entre as etiquetas, em português. */
@@ -209,6 +231,8 @@ export function NovoLotePage() {
         if (!item.insumo_id) return `${onde}escolha o insumo.`
         if (!item.validade_original) return `${onde}informe a validade.`
         if (!(parseFloat(item.quantidade_recebida) > 0)) return `${onde}informe a quantidade.`
+        const temp = problemaDeTemperatura(item, insumos.find(x => x.id === item.insumo_id))
+        if (temp) return `${onde}${temp.charAt(0).toLowerCase()}${temp.slice(1)}`
       }
     }
     return null
@@ -251,6 +275,7 @@ export function NovoLotePage() {
           p_observacoes:         item.observacoes || null,
           p_responsavel_id:      profile.id,
           p_numero_nf:           nota.numero_nf || null,
+          p_temperatura:         insumo?.exige_temperatura ? parseFloat(item.temperatura) : null,
         })
 
         const ok = !rpcError && (data as { ok?: boolean })?.ok
@@ -519,6 +544,10 @@ function BlocoItem({
   const tamanhoEmbalagem = insumo?.tamanho_embalagem
   const quantidade = parseFloat(item.quantidade_recebida) || 0
   const reparticao = distribuicao(item, insumo)
+  const problemaTemp = problemaDeTemperatura(item, insumo)
+  // Campo em branco ainda não é erro para mostrar em vermelho: o operador
+  // acabou de escolher o insumo e nem mediu ainda.
+  const foraDaFaixa = problemaTemp !== null && item.temperatura.trim() !== ''
 
   // Já gravado: some com os campos para não haver dúvida do que ainda falta.
   if (item.gerados) {
@@ -592,6 +621,24 @@ function BlocoItem({
           placeholder="0.000"
         />
       </div>
+
+      {insumo?.exige_temperatura && (
+        <div className={`rounded-lg border p-3 ${
+          foraDaFaixa ? 'border-red-300 bg-red-50' : 'border-cyan-200 bg-cyan-50'
+        }`}>
+          <Input
+            label="Temperatura na chegada (°C)"
+            type="number" inputMode="decimal"
+            step="0.1"
+            required
+            value={item.temperatura}
+            onChange={e => onPatch({ temperatura: e.target.value })}
+            placeholder="Ex: 3.5"
+            error={foraDaFaixa ? problemaTemp ?? undefined : undefined}
+            hint={`Aceita de ${insumo.temperatura_min} a ${insumo.temperatura_max} °C`}
+          />
+        </div>
+      )}
 
       {quantidade > 0 && item.insumo_id && (
         <div className="rounded-lg border border-blue-200 bg-blue-50 p-3">

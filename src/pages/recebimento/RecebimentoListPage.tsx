@@ -150,6 +150,9 @@ function GrupoCard({
             {rep.numero_nf && (
               <span className="text-gray-400">NF {rep.numero_nf}</span>
             )}
+            {rep.temperatura_recebimento != null && (
+              <span className="text-cyan-600 font-medium">{rep.temperatura_recebimento} °C</span>
+            )}
           </div>
         </div>
 

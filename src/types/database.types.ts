@@ -112,6 +112,10 @@ export interface Insumo {
   recipiente_subtipo?: string
   recipiente_capacidade_max?: number
   recipiente_unidade_cap?: string
+  /** Conferir temperatura no recebimento, e recusar fora da faixa (migration 078). */
+  exige_temperatura?: boolean
+  temperatura_min?: number
+  temperatura_max?: number
   ativo: boolean
   observacoes?: string
   created_at: string
@@ -224,6 +228,10 @@ export interface Lote {
   numero_nf?: string
   lote_grupo_id?: string
   marca_id?: string
+  /** Embalagem incompleta: sobra de um fardo (migration 077). */
+  embalagem_aberta?: boolean
+  /** Medida na chegada, em °C — só nos insumos que exigem (migration 078). */
+  temperatura_recebimento?: number
   observacoes?: string
   created_at: string
   updated_at: string
