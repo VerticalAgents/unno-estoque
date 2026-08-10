@@ -99,12 +99,16 @@ export function AbastecimentoPage() {
 
   // Passo 4 — vazio = ainda não respondeu; '0' = zerou.
   const [sobras, setSobras] = useState<Record<string, string>>({})
+  // Explicação exigida quando os potes recebem muito mais do que saiu.
+  const [justExcesso, setJustExcesso] = useState('')
 
   const [erro, setErro] = useState('')
   const [salvando, setSalvando] = useState(false)
   const [confirmar, setConfirmar] = useState(false)
   const [sucesso, setSucesso] = useState<{
     colocado: number; consumido: number; perda: number; recipientes: string
+    ajustes: { codigo: string; sobra_declarada: number; sobra_ajustada: number }[]
+    potesCederam: number
   } | null>(null)
 
   const b = bancada(alvo?.unidade ?? '')
@@ -384,14 +388,27 @@ export function AbastecimentoPage() {
     return s !== null && s > l.saldo + 0.001
   })
   const consumido = respondidos.reduce((s, l) => s + (l.saldo - (sobraDe(l) ?? 0)), 0)
-  const perda = Number((consumido - colocado).toFixed(3))
+  const perda = Math.max(0, Number((consumido - colocado).toFixed(3)))
+
+  /**
+   * A folga de balança — mesma regra da migration 084, 2% do que saiu.
+   *
+   * O pote e a sobra são duas pesagens independentes, e duas medições nunca
+   * fecham no grama. Até 2% é ruído; acima disso o tamanho é de embalagem
+   * esquecida, e aí a tela pede uma explicação em vez de deixar passar calado.
+   */
+  const excesso = Number((colocado - consumido).toFixed(3))
+  const folga = Number((consumido * 0.02).toFixed(3))
+  const precisaExplicar = excesso > folga
+  /** Só dá para nomear o lote ajustado quando um único deles tem sobra. */
+  const unicoComSobra = respondidos.filter(l => (sobraDe(l) ?? 0) > 0)
 
   const podeFechar =
     respondidos.length === lotes.length
     && lotes.length > 0
     && !sobraExcedida
     && consumido > 0
-    && perda >= -0.001
+    && (!precisaExplicar || justExcesso.trim().length >= 5)
 
   async function confirmarAbastecimento() {
     if (!alvo || !profile) return
@@ -407,17 +424,25 @@ export function AbastecimentoPage() {
         colocou:  x.res.colocou,
       })),
       p_lotes: lotes.map(l => ({ lote_id: l.id, sobra: sobraDe(l) ?? 0 })),
-      p_justificativa: null,
+      p_justificativa: justExcesso.trim() || null,
     })
 
     setSalvando(false)
     setConfirmar(false)
 
     const resp = data as {
-      ok: boolean; erro?: string
+      ok: boolean; erro?: string; trava?: string; mensagem?: string
       colocado?: number; consumido?: number; perda?: number; recipientes?: string
+      sobras_ajustadas?: { codigo: string; sobra_declarada: number; sobra_ajustada: number }[]
+      potes_cederam?: number
     } | null
 
+    // O banco tem a última palavra sobre a folga: a tela calcula os 2% para
+    // avisar antes, mas quem decide é a RPC.
+    if (resp?.trava === 'excesso_abastecimento') {
+      setErro(resp.mensagem ?? 'Os recipientes receberam bem mais do que saiu das embalagens.')
+      return
+    }
     if (error || !resp?.ok) {
       setErro(resp?.erro ?? error?.message ?? 'Não foi possível registrar o abastecimento.')
       return
@@ -428,6 +453,8 @@ export function AbastecimentoPage() {
       consumido:   Number(resp.consumido ?? 0),
       perda:       Number(resp.perda ?? 0),
       recipientes: resp.recipientes ?? '',
+      ajustes:     resp.sobras_ajustadas ?? [],
+      potesCederam: Number(resp.potes_cederam ?? 0),
     })
     setPasso('sucesso')
   }
@@ -437,6 +464,7 @@ export function AbastecimentoPage() {
     setAlvo(null)
     setPesos({}); setTaras({}); setLotes([]); setSobras({})
     setErro(''); setErroScan(''); setTravaFefo(null); setJustFefo('')
+    setJustExcesso('')
     setSucesso(null)
     // Os saldos mudaram — a lista do passo 1 tem de ser relida, senão a tela
     // volta mostrando os potes como estavam antes de encher.
@@ -505,7 +533,7 @@ export function AbastecimentoPage() {
                 onClick={() => {
                   setAlvo(ins)
                   setPesos({}); setTaras({}); setLotes([]); setSobras({})
-                  setErro('')
+                  setJustExcesso(''); setErro('')
                   setPasso('potes')
                 }}
               >
@@ -873,13 +901,23 @@ export function AbastecimentoPage() {
             <div className="flex justify-between pt-2 border-t border-gray-100 dark:border-white/10">
               <span className="text-gray-500 dark:text-unno-muted">Diferença (perda)</span>
               <span className={`font-bold tabular-nums ${perda > 0 ? 'text-amber-700' : 'text-gray-400'}`}>
-                {formatQty(Math.max(perda, 0), alvo.unidade)}
+                {formatQty(perda, alvo.unidade)}
               </span>
             </div>
-            {perda < -0.001 && (
-              <p className="text-xs text-red-700">
-                Os potes receberam mais do que saiu das embalagens. Confira os pesos —
-                falta bipar alguma embalagem, ou uma sobra está alta demais.
+
+            {/* Excesso dentro da folga: é balança, não erro. A tela conta o que
+                vai ser acertado em vez de deixar o número mudar sozinho. */}
+            {excesso > 0 && !precisaExplicar && (
+              <p className="text-xs text-gray-600 dark:text-unno-muted">
+                Os potes marcaram {formatQty(excesso, alvo.unidade)} a mais — margem
+                das duas pesagens, dentro dos {formatQty(folga, alvo.unidade)} de
+                folga.{' '}
+                {unicoComSobra.length === 1
+                  ? `A sobra de ${unicoComSobra[0].codigo} vai voltar ao estoque como `
+                    + `${formatQty((sobraDe(unicoComSobra[0]) ?? 0) - excesso, alvo.unidade)}.`
+                  : unicoComSobra.length > 1
+                    ? 'A diferença sai das sobras que voltam ao estoque.'
+                    : 'Como tudo zerou, os potes é que ficam com essa diferença a menos.'}
               </p>
             )}
             {respondidos.length < lotes.length && (
@@ -889,6 +927,36 @@ export function AbastecimentoPage() {
               </p>
             )}
           </Card>
+
+          {/* Excesso grande demais para ser balança: quase sempre é embalagem
+              que não foi bipada. Avisa e pede explicação — não bloqueia, porque
+              prender o operador aqui não desfaz o que já foi despejado. */}
+          {precisaExplicar && respondidos.length === lotes.length && (
+            <div className="p-4 rounded-xl border bg-amber-50 border-amber-300 space-y-3">
+              <p className="font-semibold text-gray-900">
+                Os potes receberam {formatQty(excesso, alvo.unidade)} a mais
+              </p>
+              <p className="text-sm text-gray-700">
+                Isso é bem além da margem das balanças, que aqui seria{' '}
+                {formatQty(folga, alvo.unidade)}. Quase sempre quer dizer que faltou
+                bipar uma embalagem — vale voltar e conferir. Se estiver certo, explique
+                e siga.
+              </p>
+              <textarea
+                rows={2}
+                value={justExcesso}
+                onChange={e => setJustExcesso(e.target.value)}
+                placeholder="Ex: a etiqueta do outro saco rasgou e não deu para bipar"
+                className="block w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm
+                           focus:outline-none focus:border-brand-500 focus:ring-[3px] focus:ring-brand-500/10"
+              />
+              <p className="text-[0.7rem] text-gray-500">
+                {justExcesso.trim().length < 5
+                  ? `Faltam ${5 - justExcesso.trim().length} letra(s) para liberar o botão.`
+                  : 'Fica registrado junto com o abastecimento.'}
+              </p>
+            </div>
+          )}
 
           {erro && (
             <div className="p-3 bg-red-50 border border-red-200 rounded-lg text-sm text-red-700">
@@ -938,6 +1006,27 @@ export function AbastecimentoPage() {
               </div>
             )}
           </div>
+
+          {/* O que a folga de balança acertou. Dito aqui, e não escondido: o
+              número que volta ao estoque não é o mesmo que foi digitado. */}
+          {sucesso.ajustes.length > 0 && (
+            <div className="text-xs text-left text-gray-600 dark:text-unno-muted mb-6 space-y-1">
+              {sucesso.ajustes.map(a => (
+                <p key={a.codigo}>
+                  A sobra de <span className="font-mono">{a.codigo}</span> voltou ao
+                  estoque como <strong>{a.sobra_ajustada}</strong> (você pesou{' '}
+                  {a.sobra_declarada}) — margem entre as duas balanças.
+                </p>
+              ))}
+            </div>
+          )}
+          {sucesso.ajustes.length === 0 && sucesso.potesCederam > 0 && (
+            <p className="text-xs text-left text-gray-600 dark:text-unno-muted mb-6">
+              Como todas as embalagens zeraram, os {sucesso.potesCederam} a mais que a
+              balança dos potes marcou não tinham de onde sair — os potes ficaram com o
+              que as embalagens entregaram.
+            </p>
+          )}
           <Button size="xl" fullWidth onClick={recomecar}>
             Abastecer outro insumo
           </Button>
