@@ -36,7 +36,9 @@ export function AberturaSessaoPage() {
   const [fichas, setFichas] = useState<FichaOption[]>([])
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
-  const [success, setSuccess] = useState<{ codigo: string; locais: number; planejada: number } | null>(null)
+  const [success, setSuccess] = useState<
+    { codigo: string; locais: number; planejada: number; baixados: number } | null
+  >(null)
 
   const [formas, setFormas] = useState<Record<string, string>>(formasIniciais ?? {})
   // Trava sessao_sem_insumo: lista o que falta em vez de só recusar.
@@ -189,11 +191,15 @@ export function AberturaSessaoPage() {
       return
     }
 
-    const result = data as { codigo: string; locais_vinculados: number; quantidade_planejada: number }
+    const result = data as {
+      codigo: string; locais_vinculados: number; quantidade_planejada: number
+      recipientes_baixados?: number
+    }
     setSuccess({
       codigo: result.codigo,
       locais: result.locais_vinculados,
       planejada: result.quantidade_planejada,
+      baixados: result.recipientes_baixados ?? 0,
     })
   }
 
@@ -210,10 +216,18 @@ export function AberturaSessaoPage() {
           <p className="text-gray-600 dark:text-unno-muted mb-1">
             <span className="font-mono font-semibold">{success.codigo}</span> — {success.planejada} unidades planejadas
           </p>
+          {/* Os recipientes já foram descontados aqui, não no fechamento: os
+              baldes são repostos durante a produção, e quem repõe precisa ver
+              no sistema o pote como ele está na bancada. Sem esta frase o
+              operador vê os potes esvaziarem sozinhos e não sabe por quê. */}
           <p className="text-sm text-gray-500 dark:text-unno-muted mb-6">
-            {success.locais > 0
-              ? `${success.locais} recipiente(s) EP vinculado(s) automaticamente.`
-              : 'Nenhum recipiente EP com estoque encontrado para estas fichas.'}
+            {success.locais === 0
+              ? 'Nenhum recipiente EP com estoque encontrado para estas fichas.'
+              : success.baixados > 0
+                ? `${success.baixados} recipiente(s) já foram descontados do estoque `
+                  + 'produtivo — o previsto para esta produção. Quem for repor os baldes '
+                  + 'vai encontrar os números certos.'
+                : `${success.locais} recipiente(s) EP vinculado(s) automaticamente.`}
           </p>
           <Button onClick={() => navigate('/producao')} fullWidth size="lg">
             Ver sessões
