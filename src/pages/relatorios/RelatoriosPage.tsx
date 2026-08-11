@@ -40,7 +40,9 @@ interface RastrRow {
   quantidade_perdida: number | null
   fator_perda_pct: number | null
   insumo: string
+  /** O lote de RECEBIMENTO, não o pacote: os sublotes vêm somados (087). */
   lote_codigo: string
+  sublotes: number
   consumo_real: number | null
   consumo_teorico: number | null
   desvio: number | null
@@ -605,7 +607,14 @@ function RastreabilidadeTab() {
                         return (
                           <tr key={i} className="hover:bg-gray-50">
                             <td className="px-4 py-2.5 font-medium text-gray-900">{l.insumo}</td>
-                            <td className="px-4 py-2.5 font-mono text-xs text-gray-500">{l.lote_codigo}</td>
+                            {/* O lote de recebimento. Quantos pacotes dele
+                                entraram fica ao lado — é o que a linha resume. */}
+                            <td className="px-4 py-2.5 text-xs text-gray-500">
+                              <span className="font-mono">{l.lote_codigo}</span>
+                              {l.sublotes > 1 && (
+                                <span className="text-gray-400"> · {l.sublotes} pacotes</span>
+                              )}
+                            </td>
                             <td className="px-4 py-2.5 text-right text-gray-600">{l.consumo_teorico?.toFixed(3) ?? '—'}</td>
                             <td className="px-4 py-2.5 text-right text-gray-800 font-medium">{l.consumo_real?.toFixed(3) ?? '—'}</td>
                             <td className={`px-4 py-2.5 text-right font-medium ${desvioClass}`}>
