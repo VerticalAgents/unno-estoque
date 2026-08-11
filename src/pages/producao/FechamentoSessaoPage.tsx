@@ -6,6 +6,7 @@ import { Button } from '../../components/ui/Button'
 import { Card } from '../../components/ui/Card'
 import { Input } from '../../components/ui/Input'
 import { ConfirmModal } from '../../components/ui/ConfirmModal'
+import { cancelarSessao, avisoCancelamentoSessao } from '../../lib/producao'
 
 /**
  * A PRODUÇÃO NÃO PESA MAIS OS RECIPIENTES.
@@ -72,6 +73,8 @@ export function FechamentoSessaoPage() {
   const [medicoes, setMedicoes] = useState<Record<string, { formas: string; sobra: string }>>({})
   const [obs, setObs] = useState('')
   const [showConfirm, setShowConfirm] = useState(false)
+  const [showCancelar, setShowCancelar] = useState(false)
+  const [motivoCancelar, setMotivoCancelar] = useState('')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   const [dataLoaded, setDataLoaded] = useState(false)
@@ -342,13 +345,25 @@ export function FechamentoSessaoPage() {
         FECHAR SESSÃO
       </Button>
 
+      {/* A saída para quem abriu a sessão errada e só percebeu aqui. Discreto
+          de propósito: cancelar devolve insumo aos potes, não é rotina. */}
+      <button
+        type="button"
+        onClick={() => { setMotivoCancelar(''); setError(''); setShowCancelar(true) }}
+        className="mt-4 w-full text-center text-xs text-red-600 hover:underline"
+      >
+        Esta produção não aconteceu — cancelar a sessão
+      </button>
+
       <ConfirmModal
         open={showConfirm}
         title="Fechar sessão de produção?"
         variant="danger"
         confirmLabel="FECHAR"
         loading={loading}
-        description="Esta ação registra o consumo e não pode ser desfeita."
+        // O consumo já saiu dos recipientes na abertura (085): o que o
+        // fechamento faz é registrar o que foi produzido e gerar o lote.
+        description="Registra o que foi produzido e gera o lote. Não pode ser desfeita."
         summary={
           <div>
             {skus.map((s) => (
@@ -361,6 +376,37 @@ export function FechamentoSessaoPage() {
         }
         onConfirm={handleConfirmar}
         onCancel={() => setShowConfirm(false)}
+      />
+
+      <ConfirmModal
+        open={showCancelar}
+        title="Cancelar esta sessão?"
+        description={avisoCancelamentoSessao()}
+        variant="danger"
+        confirmLabel="CANCELAR A SESSÃO"
+        cancelLabel="Voltar"
+        loading={loading}
+        justificativa={{
+          valor: motivoCancelar,
+          onChange: setMotivoCancelar,
+          label: 'Por que está cancelando?',
+        }}
+        summary={
+          <div className="space-y-1">
+            <p><strong>{sessao?.codigo}</strong></p>
+            {error && <p className="text-red-600">{error}</p>}
+          </div>
+        }
+        onConfirm={async () => {
+          if (!profile || !id) return
+          setLoading(true)
+          const { erro } = await cancelarSessao(id, profile.empresa_id, profile.id, motivoCancelar)
+          setLoading(false)
+          if (erro) { setError(erro); return }
+          setShowCancelar(false)
+          navigate('/producao')
+        }}
+        onCancel={() => { setShowCancelar(false); setError('') }}
       />
     </div>
   )

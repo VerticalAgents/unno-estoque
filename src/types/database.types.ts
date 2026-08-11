@@ -334,6 +334,11 @@ export interface SessaoProducao {
   observacoes_fechamento?: string
   fator_perda_insumos?: number
   fator_perda_produto?: number
+  // Cancelamento (migration 086): a sessão fica no histórico, e o motivo é o
+  // que explica a devolução de insumo aos recipientes.
+  cancelada_por?: string
+  data_cancelamento?: string
+  motivo_cancelamento?: string
   created_at: string
   updated_at: string
   // joined

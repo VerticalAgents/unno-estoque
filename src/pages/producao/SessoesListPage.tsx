@@ -5,8 +5,10 @@ import { useAuth } from '../../contexts/AuthContext'
 import type { SessaoProducao } from '../../types/database.types'
 import { Card } from '../../components/ui/Card'
 import { Button } from '../../components/ui/Button'
+import { ConfirmModal } from '../../components/ui/ConfirmModal'
 import { StatusBadge } from '../../components/ui/Badge'
 import { formatDate, formatDateTime } from '../../lib/utils'
+import { cancelarSessao, avisoCancelamentoSessao } from '../../lib/producao'
 
 type Sessao = SessaoProducao & {
   skus: { quantidade_planejada: number; multiplicador: number | null; ficha_tecnica: { nome: string } }[]
@@ -16,6 +18,11 @@ export function SessoesListPage() {
   const { profile } = useAuth()
   const [sessoes, setSessoes] = useState<Sessao[]>([])
   const [loading, setLoading] = useState(true)
+  const [cancelando, setCancelando] = useState<Sessao | null>(null)
+  const [motivo, setMotivo] = useState('')
+  const [salvando, setSalvando] = useState(false)
+  const [erro, setErro] = useState('')
+  const [recarga, setRecarga] = useState(0)
 
   useEffect(() => {
     if (!profile) return
@@ -29,9 +36,25 @@ export function SessoesListPage() {
         setSessoes((data ?? []) as unknown as Sessao[])
         setLoading(false)
       })
-  }, [profile])
+  }, [profile, recarga])
 
   const sessaoAberta = sessoes.find((s) => s.status === 'aberta')
+
+  async function confirmarCancelamento() {
+    if (!cancelando || !profile) return
+    setSalvando(true)
+    const { erro: msg } = await cancelarSessao(
+      cancelando.id, profile.empresa_id, profile.id, motivo,
+    )
+    setSalvando(false)
+
+    if (msg) { setErro(msg); return }
+
+    setCancelando(null)
+    setMotivo('')
+    setErro('')
+    setRecarga((n) => n + 1)
+  }
 
   return (
     <div className="p-4 sm:p-6 max-w-3xl mx-auto">
@@ -99,10 +122,53 @@ export function SessoesListPage() {
                   </div>
                 )}
               </div>
+
+              {/* Cancelar fica embaixo e discreto: é a saída para quem abriu a
+                  sessão errada, não uma opção de rotina ao lado de "Fechar". */}
+              {s.status === 'aberta' && (
+                <button
+                  type="button"
+                  onClick={() => { setCancelando(s); setMotivo(''); setErro('') }}
+                  className="mt-3 text-xs text-red-600 hover:underline"
+                >
+                  Cancelar esta sessão
+                </button>
+              )}
+
+              {s.status === 'cancelada' && s.motivo_cancelamento && (
+                <p className="mt-2 text-xs text-gray-500 dark:text-unno-muted">
+                  Cancelada: {s.motivo_cancelamento}
+                </p>
+              )}
             </Card>
           ))}
         </div>
       )}
+
+      <ConfirmModal
+        open={!!cancelando}
+        title="Cancelar esta sessão?"
+        description={avisoCancelamentoSessao()}
+        variant="danger"
+        confirmLabel="CANCELAR A SESSÃO"
+        cancelLabel="Voltar"
+        loading={salvando}
+        justificativa={{
+          valor: motivo,
+          onChange: setMotivo,
+          label: 'Por que está cancelando?',
+        }}
+        summary={
+          cancelando ? (
+            <div className="space-y-1">
+              <p><strong>{cancelando.codigo}</strong> — {formatDate(cancelando.data_producao)}</p>
+              {erro && <p className="text-red-600">{erro}</p>}
+            </div>
+          ) : undefined
+        }
+        onConfirm={confirmarCancelamento}
+        onCancel={() => { setCancelando(null); setMotivo(''); setErro('') }}
+      />
     </div>
   )
 }
