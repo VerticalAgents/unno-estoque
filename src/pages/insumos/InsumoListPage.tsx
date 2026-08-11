@@ -5,6 +5,7 @@ import type { Insumo, CategoriaInsumo, Marca, InsumoMarca, InsumoNutrientes, Uni
 import { Input, Select, Textarea } from '../../components/ui/Input'
 import { Button } from '../../components/ui/Button'
 import { Card } from '../../components/ui/Card'
+import { combina } from '../../lib/busca'
 import {
   FORMATOS_PORCAO, MODOS_EP, SeloModoEp, exigePorcao, modoEp,
   payloadArmazenamento, type ModoEp,
@@ -508,10 +509,7 @@ export function InsumoListPage() {
     m => !marcasVinculadas.some(mv => mv.marca_id === m.id)
   )
 
-  const filtered = insumos.filter(i =>
-    i.nome.toLowerCase().includes(search.toLowerCase()) ||
-    i.codigo.toLowerCase().includes(search.toLowerCase())
-  )
+  const filtered = insumos.filter(i => combina(search, i.nome, i.codigo))
 
   return (
     <div className="p-4 sm:p-6">

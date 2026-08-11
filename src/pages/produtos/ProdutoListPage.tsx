@@ -5,6 +5,7 @@ import type { Produto, ProdutoEmbalagem } from '../../types/database.types'
 import { Input, Select, Textarea } from '../../components/ui/Input'
 import { Button } from '../../components/ui/Button'
 import { Card } from '../../components/ui/Card'
+import { combina } from '../../lib/busca'
 
 type FichaOption = {
   id: string
@@ -208,10 +209,7 @@ export function ProdutoListPage() {
     load()
   }
 
-  const filtered = produtos.filter(p =>
-    p.nome.toLowerCase().includes(search.toLowerCase()) ||
-    p.codigo.toLowerCase().includes(search.toLowerCase())
-  )
+  const filtered = produtos.filter(p => combina(search, p.nome, p.codigo))
 
   return (
     <div className="p-4 sm:p-6">

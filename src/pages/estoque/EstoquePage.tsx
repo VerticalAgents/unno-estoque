@@ -6,6 +6,7 @@ import { Card } from '../../components/ui/Card'
 import { CartaoLista, ListaResponsiva, ListaVazia } from '../../components/ui/ListaResponsiva'
 import { formatQty, formatDate, daysUntil } from '../../lib/utils'
 import { InsumoDetalhePanel } from './InsumoDetalhePanel'
+import { combina } from '../../lib/busca'
 
 /** Selo curto de alerta, do tamanho de caber três lado a lado num cartão. */
 function Selo({ cor, children }: { cor: 'amber' | 'blue' | 'purple'; children: React.ReactNode }) {
@@ -122,7 +123,7 @@ export function EstoquePage() {
   const catMap = Object.fromEntries(categorias.map((c) => [c.id, c]))
 
   const filtered = estoque.filter((e) => {
-    const matchSearch = search === '' || e.insumo_nome.toLowerCase().includes(search.toLowerCase())
+    const matchSearch = combina(search, e.insumo_nome)
     const cat = insumosMeta[e.insumo_id]?.categoria_id
     const matchCat = filtroCategoria === '' || cat === filtroCategoria
     return matchSearch && matchCat

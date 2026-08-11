@@ -5,6 +5,7 @@ import type { Fornecedor, Insumo, Marca, FornecedorInsumoMarca } from '../../typ
 import { Input, Textarea } from '../../components/ui/Input'
 import { Button } from '../../components/ui/Button'
 import { Card } from '../../components/ui/Card'
+import { combina } from '../../lib/busca'
 
 type FormState = {
   nome: string
@@ -204,11 +205,7 @@ export function FornecedorListPage() {
     await loadVinculos(editing.id)
   }
 
-  const filtered = fornecedores.filter(f =>
-    f.nome.toLowerCase().includes(search.toLowerCase()) ||
-    (f.marca ?? '').toLowerCase().includes(search.toLowerCase()) ||
-    (f.cidade ?? '').toLowerCase().includes(search.toLowerCase())
-  )
+  const filtered = fornecedores.filter(f => combina(search, f.nome, f.marca, f.cidade))
 
   return (
     <div className="p-4 sm:p-6">

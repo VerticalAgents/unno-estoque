@@ -4,6 +4,7 @@ import { useAuth } from '../../contexts/AuthContext'
 import { Card } from '../../components/ui/Card'
 import { Button } from '../../components/ui/Button'
 import { ordemNatural } from '../../lib/utils'
+import { combina } from '../../lib/busca'
 import {
   FORMATOS_PORCAO, MODOS_EP, exigePorcao, modoEp,
   payloadArmazenamento, type ModoEp,
@@ -108,10 +109,7 @@ export function ArmazenamentoTab() {
     })
   }, [profile])
 
-  const filtradas = linhas.filter(l => {
-    const q = busca.trim().toLowerCase()
-    return !q || l.nome.toLowerCase().includes(q) || l.codigo.toLowerCase().includes(q)
-  })
+  const filtradas = linhas.filter(l => combina(busca, l.nome, l.codigo))
 
   const alteradas = linhas.filter(l => assinatura(l) !== l.original)
   const semPorcao = alteradas.filter(l => exigePorcao(l.modo) && !(parseFloat(l.porcaoTamanho) > 0))

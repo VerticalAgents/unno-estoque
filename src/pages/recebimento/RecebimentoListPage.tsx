@@ -7,6 +7,7 @@ import { Card } from '../../components/ui/Card'
 import { Button } from '../../components/ui/Button'
 import { StatusBadge } from '../../components/ui/Badge'
 import { formatDate, formatQty, daysUntil, getValidityStatus } from '../../lib/utils'
+import { combina } from '../../lib/busca'
 
 type LoteRow = Lote & { insumo: { nome: string; unidade_medida: string } }
 
@@ -420,11 +421,7 @@ export function RecebimentoListPage() {
   const grupos = agruparLotes(lotes)
 
   const filteredGrupos = grupos.filter(g =>
-    search === '' ||
-    g.lotes.some(l =>
-      l.codigo.toLowerCase().includes(search.toLowerCase()) ||
-      l.insumo?.nome.toLowerCase().includes(search.toLowerCase())
-    )
+    g.lotes.some(l => combina(search, l.codigo, l.insumo?.nome))
   )
 
   const gruposAtivos    = filteredGrupos.filter(g => g.lotes.some(l => l.status === 'ativo'))

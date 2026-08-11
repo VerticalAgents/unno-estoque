@@ -5,6 +5,7 @@ import { useAuth } from '../../contexts/AuthContext'
 import { Button } from '../../components/ui/Button'
 import { Card } from '../../components/ui/Card'
 import { formatDate } from '../../lib/utils'
+import { combina } from '../../lib/busca'
 
 interface FichaRow {
   id: string
@@ -43,9 +44,7 @@ export function FichasListPage() {
   const filtered = fichas.filter(
     (f) =>
       (f.tipo ?? 'produto') === tab &&
-      (search === '' ||
-      f.nome.toLowerCase().includes(search.toLowerCase()) ||
-      f.codigo.toLowerCase().includes(search.toLowerCase()))
+      combina(search, f.nome, f.codigo)
   )
 
   function getIngredientesCount(f: FichaRow): number {

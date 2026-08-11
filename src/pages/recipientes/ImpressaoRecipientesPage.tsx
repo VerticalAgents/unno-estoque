@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../contexts/AuthContext'
 import { ordemNatural } from '../../lib/utils'
+import { combina } from '../../lib/busca'
 import { Button } from '../../components/ui/Button'
 import {
   EtiquetaRecipienteContent,
@@ -72,12 +73,8 @@ export function ImpressaoRecipientesPage() {
   }, [profile])
 
   const filtrados = useMemo(() => {
-    const q = busca.trim().toLowerCase()
-    if (!q) return recipientes
     return recipientes.filter(r =>
-      r.nome.toLowerCase().includes(q)
-      || (SUBTIPO_LABELS[r.subtipo ?? ''] ?? '').toLowerCase().includes(q)
-      || (r.insumo?.nome ?? '').toLowerCase().includes(q),
+      combina(busca, r.nome, SUBTIPO_LABELS[r.subtipo ?? ''], r.insumo?.nome),
     )
   }, [recipientes, busca])
 

@@ -8,6 +8,7 @@ import { Button } from '../../components/ui/Button'
 import { Card } from '../../components/ui/Card'
 import { ConfirmModal } from '../../components/ui/ConfirmModal'
 import { CartaoLista, ListaResponsiva } from '../../components/ui/ListaResponsiva'
+import { combina } from '../../lib/busca'
 
 const SUBTIPOS = [
   { value: 'balde',              label: 'Balde' },
@@ -447,11 +448,8 @@ export function RecipienteListPage() {
 
   // ── Computed groupings ────────────────────────────────────
 
-  const searchLow = search.toLowerCase()
-
   const casaComBusca = (r: LocalComMarca) =>
-    nomeExibido(r).toLowerCase().includes(searchLow)
-    || (r.subtipo ?? '').toLowerCase().includes(searchLow)
+    combina(search, nomeExibido(r), r.subtipo)
 
   /**
    * Três populações diferentes, que a tela tratava como uma só:
