@@ -19,6 +19,7 @@ import { ReabastecimentoPage } from './pages/reabastecimento/ReabastecimentoPage
 import { FechamentoSessaoPage } from './pages/producao/FechamentoSessaoPage'
 import { PerdaListPage } from './pages/perdas/PerdaListPage'
 import { NovaPerdaPage } from './pages/perdas/NovaPerdaPage'
+import { RelatorioPerdasPage } from './pages/perdas/RelatorioPerdasPage'
 import { FichasListPage } from './pages/fichas/FichasListPage'
 import { NovaFichaPage } from './pages/fichas/NovaFichaPage'
 import { FichaDetailPage } from './pages/fichas/FichaDetailPage'
@@ -80,6 +81,7 @@ export default function App() {
           <Route path="contagem/resumo/:id" element={<ContagemResumoPage />} />
           <Route path="perdas" element={<PerdaListPage />} />
           <Route path="perdas/nova" element={<NovaPerdaPage />} />
+          <Route path="perdas/relatorio" element={<RelatorioPerdasPage />} />
           <Route path="expedicao" element={<ExpedicaoListPage />} />
           <Route path="expedicao/nova" element={<NovaExpedicaoPage />} />
           <Route path="fichas" element={<FichasListPage />} />
