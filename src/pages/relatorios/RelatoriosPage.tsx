@@ -5,7 +5,10 @@ import { Card } from '../../components/ui/Card'
 import { formatDate, formatDateTime, formatQty, daysUntil } from '../../lib/utils'
 import type { UnidadeMedida, MotivoPerdaEnum } from '../../types/database.types'
 
-type Tab = 'vencendo' | 'perdas' | 'perdasProducao' | 'expedicao' | 'rastreabilidade' | 'movimentacoes'
+// A rastreabilidade saiu daqui: virou tela própria, com calendário de validades
+// e dossiê para imprimir (migration 093). Uma lista de sessões não respondia à
+// pergunta que a auditoria do cliente faz.
+type Tab = 'vencendo' | 'perdas' | 'perdasProducao' | 'expedicao' | 'movimentacoes'
 
 // ── Types ─────────────────────────────────────────────────────
 
@@ -30,23 +33,6 @@ interface PerdaRow {
   descricao: string | null
   insumo: { nome: string }
   lote: { codigo: string }
-}
-
-interface RastrRow {
-  data_producao: string
-  sessao_codigo: string
-  produto_final: string
-  quantidade_produzida: number | null
-  quantidade_perdida: number | null
-  fator_perda_pct: number | null
-  insumo: string
-  /** O lote de RECEBIMENTO, não o pacote: os sublotes vêm somados (087). */
-  lote_codigo: string
-  sublotes: number
-  consumo_real: number | null
-  consumo_teorico: number | null
-  desvio: number | null
-  recipiente_ep: string
 }
 
 interface MovRow {
@@ -536,106 +522,6 @@ function ExpedicaoTab() {
   )
 }
 
-// ── Tab: Rastreabilidade de Produção ─────────────────────────
-
-function RastreabilidadeTab() {
-  const { profile } = useAuth()
-  const [rows, setRows] = useState<RastrRow[]>([])
-  const [loading, setLoading] = useState(true)
-
-  useEffect(() => {
-    if (!profile) return
-    supabase
-      .from('v_rastreabilidade_producao')
-      .select('*')
-      .order('data_producao', { ascending: false })
-      .limit(200)
-      .then(({ data }) => {
-        setRows((data ?? []) as unknown as RastrRow[])
-        setLoading(false)
-      })
-  }, [profile])
-
-  // Group by sessao_codigo
-  const grouped = rows.reduce<Record<string, RastrRow[]>>((acc, r) => {
-    if (!acc[r.sessao_codigo]) acc[r.sessao_codigo] = []
-    acc[r.sessao_codigo].push(r)
-    return acc
-  }, {})
-
-  return (
-    <div>
-      {loading ? (
-        <Spinner />
-      ) : rows.length === 0 ? (
-        <Card>
-          <div className="px-4 py-8 text-center text-gray-400">
-            Nenhuma sessão fechada encontrada.
-          </div>
-        </Card>
-      ) : (
-        <div className="space-y-4">
-          {Object.entries(grouped).map(([sessao, linhas]) => {
-            const primeiraLinha = linhas[0]
-            const produtos = [...new Set(linhas.map((l) => l.produto_final))]
-            return (
-              <Card key={sessao}>
-                <div className="px-4 py-3 border-b border-gray-100">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <p className="font-semibold text-gray-900">{sessao}</p>
-                      <p className="text-xs text-gray-400">{formatDate(primeiraLinha.data_producao)} · {produtos.join(', ')}</p>
-                    </div>
-                  </div>
-                </div>
-                <div className="overflow-x-auto">
-                  <table className="w-full text-sm">
-                    <thead>
-                      <tr className="border-b border-gray-100 text-left bg-gray-50">
-                        <th className="px-4 py-2 text-xs font-semibold text-gray-500 uppercase tracking-wide">Ingrediente</th>
-                        <th className="px-4 py-2 text-xs font-semibold text-gray-500 uppercase tracking-wide">Lote</th>
-                        <th className="px-4 py-2 text-xs font-semibold text-gray-500 uppercase tracking-wide text-right">Teórico</th>
-                        <th className="px-4 py-2 text-xs font-semibold text-gray-500 uppercase tracking-wide text-right">Real</th>
-                        <th className="px-4 py-2 text-xs font-semibold text-gray-500 uppercase tracking-wide text-right">Desvio</th>
-                        <th className="px-4 py-2 text-xs font-semibold text-gray-500 uppercase tracking-wide">Recipiente</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-gray-50">
-                      {linhas.map((l, i) => {
-                        const desvio = l.desvio ?? 0
-                        const desvioClass = Math.abs(desvio) <= 0 ? 'text-gray-400' : desvio > 0 ? 'text-red-600' : 'text-emerald-600'
-                        return (
-                          <tr key={i} className="hover:bg-gray-50">
-                            <td className="px-4 py-2.5 font-medium text-gray-900">{l.insumo}</td>
-                            {/* O lote de recebimento. Quantos pacotes dele
-                                entraram fica ao lado — é o que a linha resume. */}
-                            <td className="px-4 py-2.5 text-xs text-gray-500">
-                              <span className="font-mono">{l.lote_codigo}</span>
-                              {l.sublotes > 1 && (
-                                <span className="text-gray-400"> · {l.sublotes} pacotes</span>
-                              )}
-                            </td>
-                            <td className="px-4 py-2.5 text-right text-gray-600">{l.consumo_teorico?.toFixed(3) ?? '—'}</td>
-                            <td className="px-4 py-2.5 text-right text-gray-800 font-medium">{l.consumo_real?.toFixed(3) ?? '—'}</td>
-                            <td className={`px-4 py-2.5 text-right font-medium ${desvioClass}`}>
-                              {l.desvio != null ? (desvio >= 0 ? '+' : '') + desvio.toFixed(3) : '—'}
-                            </td>
-                            <td className="px-4 py-2.5 text-xs text-gray-500">{l.recipiente_ep}</td>
-                          </tr>
-                        )
-                      })}
-                    </tbody>
-                  </table>
-                </div>
-              </Card>
-            )
-          })}
-        </div>
-      )}
-    </div>
-  )
-}
-
 // ── Tab: Movimentações ────────────────────────────────────────
 
 function MovimentacoesTab() {
@@ -732,7 +618,6 @@ const TABS: { id: Tab; label: string }[] = [
   { id: 'perdas', label: 'Perdas de Insumos' },
   { id: 'perdasProducao', label: 'Perdas de Produção' },
   { id: 'expedicao', label: 'Expedição' },
-  { id: 'rastreabilidade', label: 'Rastreabilidade' },
   { id: 'movimentacoes', label: 'Movimentações' },
 ]
 
@@ -768,7 +653,6 @@ export function RelatoriosPage() {
       {activeTab === 'perdas' && <PerdasTab />}
       {activeTab === 'perdasProducao' && <PerdasProducaoTab />}
       {activeTab === 'expedicao' && <ExpedicaoTab />}
-      {activeTab === 'rastreabilidade' && <RastreabilidadeTab />}
       {activeTab === 'movimentacoes' && <MovimentacoesTab />}
     </div>
   )

@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { useParams, Link } from 'react-router-dom'
+import { useParams, useSearchParams, Link } from 'react-router-dom'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../contexts/AuthContext'
 import { Button } from '../../components/ui/Button'
@@ -40,6 +40,11 @@ interface FichaRow {
 
 export function ImpressaoFichaPage() {
   const { id } = useParams<{ id: string }>()
+  // `?versao=<uuid>` vem do dossiê de rastreabilidade: numa auditoria de agosto
+  // vale a receita de agosto, não a que está ativa hoje. Sem o parâmetro, nada
+  // muda — imprime a versão ativa, como sempre imprimiu.
+  const [params] = useSearchParams()
+  const versaoPedida = params.get('versao')
   const { profile } = useAuth()
   const [ficha, setFicha] = useState<FichaRow | null>(null)
   const [empresa, setEmpresa] = useState<Empresa | null>(null)
@@ -86,7 +91,10 @@ export function ImpressaoFichaPage() {
     </div>
   )
 
-  const versaoAtiva = ficha.versoes.find(v => v.ativa)
+  const versaoAtiva =
+    (versaoPedida && ficha.versoes.find(v => v.id === versaoPedida))
+    || ficha.versoes.find(v => v.ativa)
+  const versaoHistorica = Boolean(versaoPedida) && !versaoAtiva?.ativa
   const itens = [...(versaoAtiva?.itens ?? [])].sort((a, b) => {
     const toG = (q: number, u: string) => u === 'kg' || u === 'L' ? q * 1000 : q
     return toG(b.quantidade, b.unidade) - toG(a.quantidade, a.unidade)
@@ -113,7 +121,7 @@ export function ImpressaoFichaPage() {
 
         {/* Preview */}
         <div className="bg-white border-2 border-dashed border-gray-300 rounded-xl p-6 mb-6">
-          <FichaDocument ficha={ficha} versao={versaoAtiva} itens={itens} empresa={empresaNome} tipo={tipo} />
+          <FichaDocument ficha={ficha} versao={versaoAtiva} itens={itens} empresa={empresaNome} tipo={tipo} historica={versaoHistorica} />
         </div>
 
         <Button
@@ -164,13 +172,15 @@ const printStyles = `
 // ── Document layout ──────────────────────────────────────────
 
 function FichaDocument({
-  ficha, versao, itens, empresa, tipo,
+  ficha, versao, itens, empresa, tipo, historica = false,
 }: {
   ficha: FichaRow
   versao: VersaoRow | undefined
   itens: ItemRow[]
   empresa: string
   tipo: string
+  /** Impressa a pedido do dossiê: é uma versão antiga, não a que vale hoje. */
+  historica?: boolean
 }) {
   const responsavel = versao?.criado_por_usuario
     ? (versao.criado_por_usuario as { nome: string }).nome
@@ -188,8 +198,13 @@ function FichaDocument({
         <div style={{ textAlign: 'right' }}>
           <div style={{ fontSize: '12pt', fontWeight: 'bold' }}>{ficha.codigo}</div>
           <div style={{ fontSize: '9pt', color: '#666' }}>
-            Versão {ficha.versao_atual} · {tipo === 'insumo' ? 'Insumo' : 'Produto'}
+            Versão {versao?.versao ?? ficha.versao_atual} · {tipo === 'insumo' ? 'Insumo' : 'Produto'}
           </div>
+          {historica && (
+            <div style={{ fontSize: '8pt', color: '#8a5a00', marginTop: '1mm' }}>
+              Versão histórica — a atual é a {ficha.versao_atual}
+            </div>
+          )}
         </div>
       </div>
 

@@ -26,6 +26,8 @@ import { NovaVersaoFichaPage } from './pages/fichas/NovaVersaoFichaPage'
 import { ImpressaoFichaPage } from './pages/fichas/ImpressaoFichaPage'
 import { TabelaNutricionalPage } from './pages/fichas/TabelaNutricionalPage'
 import { RelatoriosPage } from './pages/relatorios/RelatoriosPage'
+import { RastreabilidadePage } from './pages/rastreabilidade/RastreabilidadePage'
+import { DossiePage } from './pages/rastreabilidade/DossiePage'
 import { ContagemListPage } from './pages/contagem/ContagemListPage'
 import { NovaContagemEcPage } from './pages/contagem/NovaContagemEcPage'
 import { NovaContagemEpPage } from './pages/contagem/NovaContagemEpPage'
@@ -87,6 +89,9 @@ export default function App() {
           <Route path="fichas/:id/imprimir" element={<ImpressaoFichaPage />} />
           <Route path="fichas/:id/nutricional" element={<TabelaNutricionalPage />} />
           <Route path="relatorios" element={<RelatoriosPage />} />
+          <Route path="rastreabilidade" element={<RastreabilidadePage />} />
+          {/* Rota própria para o dossiê: ele é recarregado, guardado e impresso. */}
+          <Route path="rastreabilidade/:validade/:produtoId" element={<DossiePage />} />
           <Route path="produtos" element={<ProdutoListPage />} />
           <Route path="recipientes" element={<RecipienteListPage />} />
           <Route path="recipientes/etiquetas" element={<ImpressaoRecipientesPage />} />
