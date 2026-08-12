@@ -191,44 +191,114 @@ function BarrasSemana({
   )
 }
 
-/** Composição percentual por motivo, semana a semana. */
-function BarrasEmpilhadas({
-  semanas,
+/**
+ * A participação de cada motivo ao longo do tempo, uma linha por motivo.
+ *
+ * Empilhado mostrava a composição de cada semana, mas escondia o movimento: era
+ * preciso comparar espessuras de faixa que começam em alturas diferentes. Com
+ * linhas, um motivo ultrapassando o outro é literalmente uma linha cruzando a
+ * outra — que é o sinal que se quer ver antes de o total mexer.
+ *
+ * Só entram semanas COM descarte: uma semana sem produção não tem participação
+ * de nada, e plotá-la como zero desenharia um mergulho que não aconteceu. Como
+ * as semanas vazias saem, o eixo é uma sequência de medições, não uma régua de
+ * tempo — o rótulo de cada ponto diz a semana.
+ */
+function LinhasMotivos({
+  semanas, motivos,
 }: {
-  semanas: { chave: string; total: number; fatias: { motivo: string; ordem: number; qtd: number }[] }[]
+  semanas: { chave: string; total: number; fatias: { id: string; motivo: string; ordem: number; qtd: number }[] }[]
+  motivos: { id: string; motivo: string; ordem: number }[]
 }) {
+  const pontos = semanas.filter(s => s.total > 0)
+  if (pontos.length === 0) {
+    return (
+      <p className="text-sm text-gray-400 text-center py-8">
+        Ainda não há descarte registrado para desenhar a série.
+      </p>
+    )
+  }
+
+  // Viewbox fixo escalado por CSS: o texto acompanha a largura sem distorcer.
+  const L = 34, R = 12, T = 14, B = 26
+  const W = 620, H = 260
+  const alturaUtil = H - T - B
+  const larguraUtil = W - L - R
+
+  const share = (s: typeof pontos[number], id: string) => {
+    const f = s.fatias.find(x => x.id === id)
+    return f ? (f.qtd / s.total) * 100 : 0
+  }
+
+  const maiorValor = Math.max(...motivos.flatMap(m => pontos.map(p => share(p, m.id))), 10)
+  const passo = maiorValor <= 20 ? 5 : 10
+  // Um passo SEMPRE acima do maior valor: sem essa folga, um motivo com 100%
+  // dos descartes encosta no teto e o rótulo dele sai do quadro. Medido.
+  const topo = (Math.floor(maiorValor / passo) + 1) * passo
+
+  const x = (i: number) => pontos.length === 1
+    ? L + larguraUtil / 2
+    : L + (i * larguraUtil) / (pontos.length - 1)
+  const y = (v: number) => T + alturaUtil - (v / topo) * alturaUtil
+
+  const linhas = motivos.map(m => ({
+    ...m,
+    valores: pontos.map((p, i) => ({ i, v: share(p, m.id) })),
+  }))
+  // Desenha o motivo mais forte por último, para ele ficar por cima no cruzamento.
+  const ordenadas = [...linhas].sort(
+    (a, b) => a.valores[a.valores.length - 1].v - b.valores[b.valores.length - 1].v)
+
+  const ticks: number[] = []
+  for (let v = 0; v <= topo; v += passo) ticks.push(v)
+
   return (
-    <div>
-      <div className="flex items-end gap-1.5 h-[100px]">
-        {semanas.map(s => (
-          <div key={s.chave} className="flex-1 h-full flex flex-col justify-end">
-            {s.total === 0 ? (
-              <div className="w-full h-[3px] rounded bg-gray-200 dark:bg-white/10" />
-            ) : (
-              <div className="w-full h-full flex flex-col-reverse rounded overflow-hidden">
-                {s.fatias.map(f => (
-                  <div
-                    key={f.motivo}
-                    style={{
-                      height: `${(f.qtd / s.total) * 100}%`,
-                      backgroundColor: corDoMotivo(f.ordem),
-                    }}
-                    title={`${f.motivo}: ${f.qtd} un (${((f.qtd / s.total) * 100).toFixed(0)}%)`}
-                  />
-                ))}
-              </div>
+    <svg viewBox={`0 0 ${W} ${H}`} className="w-full h-auto" role="img">
+      {/* Grade e eixo */}
+      {ticks.map(t => (
+        <g key={t}>
+          <line x1={L} y1={y(t)} x2={W - R} y2={y(t)}
+                stroke="currentColor" className="text-gray-200 dark:text-white/10" strokeWidth={1} />
+          <text x={L - 6} y={y(t) + 3} textAnchor="end"
+                className="fill-gray-400" style={{ fontSize: 10 }}>{t}</text>
+        </g>
+      ))}
+
+      {ordenadas.map(l => {
+        const cor = corDoMotivo(l.ordem)
+        const d = l.valores.map((p, k) => `${k === 0 ? 'M' : 'L'} ${x(p.i)} ${y(p.v)}`).join(' ')
+        return (
+          <g key={l.id}>
+            {pontos.length > 1 && (
+              <path d={d} fill="none" stroke={cor} strokeWidth={2}
+                    strokeLinejoin="round" strokeLinecap="round" />
             )}
-          </div>
-        ))}
-      </div>
-      <div className="flex gap-1.5 mt-1">
-        {semanas.map(s => (
-          <span key={s.chave} className="flex-1 text-[10px] text-center text-gray-400">
-            {rotuloSemana(s.chave)}
-          </span>
-        ))}
-      </div>
-    </div>
+            {l.valores.map(p => (
+              <g key={p.i}>
+                <circle cx={x(p.i)} cy={y(p.v)} r={3.5} fill={cor} />
+                <text
+                  x={x(p.i)}
+                  y={y(p.v) - 8}
+                  textAnchor={p.i === 0 ? 'start' : p.i === pontos.length - 1 ? 'end' : 'middle'}
+                  style={{ fontSize: 11, fontWeight: 600 }}
+                  fill={cor}
+                >
+                  {Math.round(p.v)}
+                </text>
+              </g>
+            ))}
+          </g>
+        )
+      })}
+
+      {/* Semanas */}
+      {pontos.map((p, i) => (
+        <text key={p.chave} x={x(i)} y={H - 8} textAnchor="middle"
+              className="fill-gray-400" style={{ fontSize: 10 }}>
+          {rotuloSemana(p.chave)}
+        </text>
+      ))}
+    </svg>
   )
 }
 
@@ -549,11 +619,14 @@ export function PerdaListPage() {
               Composição do descarte
             </h2>
             <p className="text-xs text-gray-500 dark:text-unno-muted mb-2">
-              A participação de cada motivo, semana a semana. Uma faixa que engorda é sinal de
-              processo, não de azar.
+              Quanto por cento dos descartes coube a cada motivo, semana a semana. Uma linha
+              cruzando a outra é sinal de processo, não de azar.
             </p>
-            <BarrasEmpilhadas
+            <LinhasMotivos
               semanas={semanas.map(s => ({ chave: s.chave, total: s.descartadas, fatias: s.fatias }))}
+              motivos={[...new Map(motivos.map(m => [m.motivo_id, m])).values()]
+                .sort((a, b) => a.motivo_ordem - b.motivo_ordem)
+                .map(m => ({ id: m.motivo_id, motivo: m.motivo, ordem: m.motivo_ordem }))}
             />
             <div className="flex flex-wrap gap-x-4 gap-y-1 mt-3 pt-3 border-t border-gray-100 dark:border-white/[.06]">
               {[...new Map(motivos.map(m => [m.motivo_id, m])).values()]
