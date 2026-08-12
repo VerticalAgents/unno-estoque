@@ -21,7 +21,7 @@ import { cancelarSessao, avisoCancelamentoSessao } from '../../lib/producao'
  *
  * Fica aqui só o que de fato se mede no fim da produção: quantas formas foram
  * ao forno e quanta massa sobrou no tacho. As unidades só existem no dia
- * seguinte, quando o brownie é desenformado — elas entram na Pós-produção.
+ * seguinte, quando o brownie sai da forma — elas entram na Pós-produção.
  */
 
 interface SkuRow {

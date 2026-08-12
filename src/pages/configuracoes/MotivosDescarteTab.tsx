@@ -65,7 +65,7 @@ export function MotivosDescarteTab() {
     <Card className="p-5">
       <h2 className="text-base font-semibold text-gray-900">Motivos de descarte</h2>
       <p className="text-sm text-gray-500 mt-0.5 mb-4">
-        Usados na pós-produção, ao desenformar e embalar.
+        Usados na pós-produção, ao abrir as formas e embalar.
       </p>
 
       <div className="space-y-2">

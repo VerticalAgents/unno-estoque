@@ -103,7 +103,7 @@ interface Desenforma {
 /**
  * O aproveitamento destas unidades.
  *
- * Só o descarte da DESENFORMA entra aqui: é o que quebrou nas formas que
+ * Só o descarte da PÓS-PRODUÇÃO entra aqui: é o que quebrou nas formas que
  * viraram este lote, medido no dia, com motivo. A perda de insumo fica de fora
  * de propósito — ela é apurada na auditoria de estoque, por período, e não se
  * reparte por lote.
@@ -345,7 +345,7 @@ export function DossiePage() {
                       <p className="text-xl font-bold text-gray-900 dark:text-unno-text tabular-nums">
                         {fmt(dossie.resumo.perda_pct, 2)}%
                       </p>
-                      <p className="text-[11px] text-gray-400">na desenforma</p>
+                      <p className="text-[11px] text-gray-400">na pós-produção</p>
                     </div>
                   </div>
 
@@ -369,7 +369,7 @@ export function DossiePage() {
 
                   {/* Quem lê o documento precisa saber o que ele não mede. */}
                   <p className="text-[11px] text-gray-400 pt-1">
-                    Perda medida na desenforma. A perda de insumo é apurada por
+                    Perda medida na pós-produção. A perda de insumo é apurada por
                     período na auditoria de estoque e não se reparte por lote.
                   </p>
                 </CardBody>
@@ -385,7 +385,7 @@ export function DossiePage() {
                     <tr className="text-left border-b border-gray-100 dark:border-white/[.06]">
                       <th className="px-4 py-2 text-xs font-semibold text-gray-500 uppercase">Lote</th>
                       <th className="px-4 py-2 text-xs font-semibold text-gray-500 uppercase">Produção</th>
-                      <th className="px-4 py-2 text-xs font-semibold text-gray-500 uppercase">Desenforma</th>
+                      <th className="px-4 py-2 text-xs font-semibold text-gray-500 uppercase">Pós-produção</th>
                       <th className="px-4 py-2 text-xs font-semibold text-gray-500 uppercase text-right">Produzidas</th>
                       <th className="px-4 py-2 text-xs font-semibold text-gray-500 uppercase text-right">Em estoque</th>
                     </tr>
@@ -607,12 +607,12 @@ export function DossiePage() {
               </Card>
             )}
 
-            {/* ── Desenforma ─────────────────────────────────── */}
+            {/* ── Pós-produção ───────────────────────────────── */}
             {dossie.desenforma.length > 0 && (
               <Card className="dossie-bloco">
                 <CardHeader
-                  title="Desenforma"
-                  subtitle="Cada dia em que se desenformou, com o que quebrou nele — é daqui que conta a validade"
+                  title="Pós-produção"
+                  subtitle="Cada dia em que se abriu forma, com o que quebrou nele — é daqui que conta a validade"
                 />
                 <CardBody className="p-0 overflow-x-auto">
                   <table className="w-full text-sm">

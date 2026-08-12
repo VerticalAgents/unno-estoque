@@ -17,7 +17,7 @@ import type { MotivoPerdaEnum, UnidadeMedida } from '../../types/database.types'
  *
  * A fábrica perde de três jeitos, e eles não se somam:
  *
- *   1. PRODUTO descartado na desenforma — em unidades, com motivo e data desde
+ *   1. PRODUTO descartado na pós-produção — em unidades, com motivo e data desde
  *      a 092. Tem denominador natural (o que saiu do forno), então percentual,
  *      semana e composição são todos legítimos.
  *   2. INSUMO que some entre duas auditorias — em kg, L ou unidade. Não tem
@@ -446,7 +446,7 @@ export function PerdaListPage() {
   }
 
   const ABAS: { id: Aba; label: string }[] = [
-    { id: 'produto', label: 'Produto (desenforma)' },
+    { id: 'produto', label: 'Produto (pós-produção)' },
     { id: 'insumo', label: 'Insumo (auditoria)' },
     { id: 'registros', label: 'Descartes de insumo' },
   ]
@@ -599,8 +599,8 @@ export function PerdaListPage() {
           {comDados.length === 0 && (
             <Card>
               <p className="px-4 py-8 text-center text-sm text-gray-400">
-                Nenhuma desenforma registrada nas últimas 12 semanas. Os números aparecem quando a
-                pós-produção for registrada.
+                Nenhuma pós-produção registrada nas últimas 12 semanas. Os números aparecem quando
+                a primeira for lançada.
               </p>
             </Card>
           )}

@@ -10,7 +10,7 @@ import { formatDate } from '../../lib/utils'
  * Pós-produção — o que acontece depois do forno.
  *
  * No dia da produção o brownie é cortado ainda quente, mas segue dentro da
- * forma. É ao desenformar que aparece unidade quebrada, crua, torta.
+ * forma. É ao abrir as formas que aparece unidade quebrada, crua, torta.
  *
  * A tela registra SÓ AS RUINS, com o motivo de cada uma. As boas saem por
  * diferença: `formas × rendimento − descartadas`. Ninguém conta unidade boa
@@ -20,11 +20,11 @@ import { formatDate } from '../../lib/utils'
  * É AQUI QUE O PRODUTO ENTRA NO ESTOQUE — na forma ele não existe para a
  * expedição — e a validade conta do dia em que saiu da forma.
  *
- * A unidade de registro é o DIA DE DESENFORMA, não a sessão. Desenformar
- * metade hoje e metade amanhã são dois eventos com quebras próprias: juntar
- * tudo num monte só apagaria o rendimento real de cada dia. Cada dia diz
- * quantas FORMAS foram abertas, com que validade, e o que quebrou; e vira um
- * lote. A sessão fica na fila até a última forma ser aberta.
+ * A unidade de registro é o DIA, não a sessão. Abrir metade das formas hoje e
+ * metade amanhã são dois eventos com quebras próprias: juntar tudo num monte
+ * só apagaria o rendimento real de cada dia. Cada dia diz quantas FORMAS foram
+ * abertas, com que validade, e o que quebrou; e vira um lote. A sessão fica na
+ * fila até a última forma ser aberta.
  *
  * Este registro é sempre o retrato COMPLETO do que se sabe até agora: a tela
  * carrega os dias já gravados antes de mandar tudo de volta. O que não voltar
@@ -60,7 +60,7 @@ interface SkuSessao {
   validade_dias: number | null
 }
 
-/** Um dia de desenforma: formas abertas, validade e o que quebrou nele. */
+/** Um dia de pós-produção: formas abertas, validade e o que quebrou nele. */
 interface Desenforma {
   data: string
   validade: string
@@ -100,7 +100,7 @@ export function PosProducaoPage() {
   const [motivos, setMotivos] = useState<Motivo[]>([])
   const [sessaoId, setSessaoId] = useState<string | null>(null)
   const [skus, setSkus] = useState<SkuSessao[]>([])
-  /** sku_id → os dias em que se desenformou */
+  /** sku_id → os dias em que se abriu forma */
   const [dias, setDias] = useState<Record<string, Desenforma[]>>({})
   /** sku_id → já mexeram nas formas? Até mexer, um dia sozinho leva tudo. */
   const [tocou, setTocou] = useState<Record<string, boolean>>({})
@@ -216,7 +216,7 @@ export function PosProducaoPage() {
     }
 
     // Sem nada gravado: um dia com a data de hoje e TODAS as formas, para quem
-    // desenformou de uma vez só conferir e salvar.
+    // abriu tudo de uma vez só conferir e salvar.
     setDias(Object.fromEntries(lista.map(s => [
       s.id,
       gravados[s.id] ?? [novoDia(s, hojeISO(), String(s.formas))],
@@ -248,7 +248,7 @@ export function PosProducaoPage() {
   const resumo = useMemo(() => skus.map(s => {
     const crus = dias[s.id] ?? []
     // Enquanto ninguém mexeu e só existe um dia, ele leva todas as formas: é o
-    // caso comum de desenformar tudo de uma vez, sem digitar nada.
+    // caso comum de abrir tudo de uma vez, sem digitar nada.
     const auto = !tocou[s.id] && crus.length === 1
     const linhas = (auto ? [{ ...crus[0], formas: String(s.formas) }] : crus).map(d => {
       const formas = num(d.formas)
@@ -318,8 +318,8 @@ export function PosProducaoPage() {
       + (lotes === 1 ? '1 lote' : `${lotes} lotes`)
       + `, ${totalDescartado} descartadas. `
       + (falta > 0
-        ? `Faltam ${falta} formas para desenformar — a sessão continua na fila.`
-        : 'Sessão desenformada por inteiro.')
+        ? `Faltam ${falta} formas — a sessão continua na fila.`
+        : 'Sessão concluída por inteiro.')
       + (resp.avisos?.length ? ` ${resp.avisos.join(' ')}` : ''))
     voltar()
     await carregar()
@@ -344,7 +344,7 @@ export function PosProducaoPage() {
       <div>
         <h1 className="text-xl font-bold text-gray-900 dark:text-unno-text">Pós-produção</h1>
         <p className="text-sm text-gray-500 dark:text-unno-muted mt-0.5">
-          Desenforme e embalagem: registre as formas abertas e o que foi descartado em cada dia.
+          Registre as formas abertas e o que foi descartado em cada dia.
         </p>
       </div>
 
@@ -359,7 +359,7 @@ export function PosProducaoPage() {
         <Card>
           <CardHeader
             title="Sessões esperando"
-            subtitle="Produções já fechadas com formas ainda por desenformar"
+            subtitle="Produções já fechadas com formas ainda por abrir"
           />
           <CardBody className={pendentes.length === 0 ? '' : 'p-0'}>
             {pendentes.length === 0 ? (
@@ -384,7 +384,7 @@ export function PosProducaoPage() {
                         {p.formas} formas · {p.unidades_teoricas} unidades no forno
                         {p.formas_desenformadas > 0 && (
                           <> · <strong className="text-gray-700 dark:text-unno-text">
-                            {p.formas_desenformadas} formas já desenformadas
+                            {p.formas_desenformadas} formas já registradas
                           </strong>, faltam {p.formas - p.formas_desenformadas}</>
                         )}
                       </p>
@@ -404,7 +404,7 @@ export function PosProducaoPage() {
       {sessaoId && (
         <Card>
           <CardHeader
-            title={`Desenforma — ${sessaoAtual?.codigo ?? ''}`}
+            title={`Pós-produção — ${sessaoAtual?.codigo ?? ''}`}
             subtitle="Um bloco por dia: as formas abertas e o que quebrou naquele dia"
             action={<Button variant="ghost" size="sm" onClick={voltar}>Voltar</Button>}
           />
@@ -434,7 +434,7 @@ export function PosProducaoPage() {
                 {r.sku.produto_nome === null && (
                   <div className="rounded-lg px-3 py-2 text-xs bg-amber-50 border border-amber-200 text-amber-800">
                     <strong>{r.sku.ficha_nome}</strong> não tem produto cadastrado:
-                    o que for desenformado não vai entrar no estoque. Cadastre em{' '}
+                    o que for registrado não vai entrar no estoque. Cadastre em{' '}
                     <strong>Produtos</strong> e registre depois.
                   </div>
                 )}
@@ -444,7 +444,7 @@ export function PosProducaoPage() {
                     <div className="flex items-end gap-2 flex-wrap">
                       <label className="flex-1 min-w-[8.5rem]">
                         <span className="block text-[11px] text-gray-500 dark:text-unno-muted mb-0.5">
-                          Desenformado em
+                          Pós-produção em
                         </span>
                         <input type="date" className={campoData} value={l.dia.data}
                           onChange={e => editarDia(r.sku, i, 'data', e.target.value)} />
@@ -533,7 +533,7 @@ export function PosProducaoPage() {
                         ...(r.auto ? r.linhas.map(x => x.dia) : ds),
                         novoDia(r.sku, hojeISO(), ''),
                       ]) }}>
-                    + Outro dia de desenforma
+                    + Outro dia
                   </Button>
 
                   <p className={`text-xs ${
@@ -542,10 +542,10 @@ export function PosProducaoPage() {
                       : 'text-gray-500 dark:text-unno-muted'
                   }`}>
                     {r.excedeuFormas
-                      ? `${r.formasFeitas} formas desenformadas contra ${r.sku.formas} que foram ao forno.`
+                      ? `${r.formasFeitas} formas registradas contra ${r.sku.formas} que foram ao forno.`
                       : r.faltaFormas > 0
                         ? `Faltam ${r.faltaFormas} formas na prateleira.`
-                        : 'Todas as formas desenformadas.'}
+                        : 'Todas as formas registradas.'}
                   </p>
                 </div>
               </div>
