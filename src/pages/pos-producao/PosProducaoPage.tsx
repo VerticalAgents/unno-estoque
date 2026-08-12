@@ -18,9 +18,15 @@ import { formatDate } from '../../lib/utils'
  * disfarçada de medição.
  *
  * É AQUI QUE O PRODUTO ENTRA NO ESTOQUE. Enquanto está na forma ele não
- * existe para a expedição. Um registro por sessão — mas a quantidade boa pode
- * ser dividida por VALIDADE, porque a desenforma nem sempre acaba no mesmo
- * dia: cada data vira um lote, com os dias de validade contados dela.
+ * existe para a expedição. A quantidade boa se divide por VALIDADE, porque a
+ * desenforma nem sempre acaba no mesmo dia: cada data vira um lote, com os
+ * dias de validade contados dela.
+ *
+ * E o registro PODE SER PARCIAL: o que saiu da forma hoje entra no estoque
+ * hoje, e a sessão continua na fila até a última unidade sair. Continua um
+ * registro por sessão, mas ele é sempre o retrato completo do que se sabe até
+ * agora — por isso esta tela CARREGA o que já foi gravado antes de mandar de
+ * volta. O que não voltar daqui seria apagado.
  */
 
 interface Pendente {
@@ -30,6 +36,9 @@ interface Pendente {
   dias_parado: number
   formas: number
   unidades_teoricas: number
+  /** o que já virou lote em registros anteriores */
+  unidades_registradas: number
+  falta: number
 }
 
 interface Motivo {
@@ -53,8 +62,9 @@ interface SkuSessao {
 interface Parte {
   desenforma: string
   validade: string
-  /** vazia na primeira linha: ela é sempre o resto */
   quantidade: string
+  /** preenchido quando esta linha já é um lote gravado antes */
+  lote: string | null
 }
 
 function fmt(n: number) {
@@ -85,6 +95,9 @@ export function PosProducaoPage() {
   const [descartes, setDescartes] = useState<Record<string, string>>({})
   /** sku_id → as validades em que a quantidade boa foi dividida */
   const [partes, setPartes] = useState<Record<string, Parte[]>>({})
+  /** sku_id → o usuário já mexeu nas quantidades? Até mexer, a linha única
+   *  acompanha as boas sozinha; depois dela mexida, ninguém mexe por ele. */
+  const [tocou, setTocou] = useState<Record<string, boolean>>({})
   const [observacoes, setObservacoes] = useState('')
   const [loading, setLoading] = useState(true)
   const [salvando, setSalvando] = useState(false)
@@ -131,14 +144,15 @@ export function PosProducaoPage() {
     // tem produto cadastrado não vira estoque nenhum.
     const { data: prods } = await supabase
       .from('produtos')
-      .select('nome, ficha_tecnica_id, validade_dias')
+      .select('id, nome, ficha_tecnica_id, validade_dias')
       .eq('empresa_id', profile.empresa_id)
       .eq('ativo', true)
       .in('ficha_tecnica_id', linhas.map(r => r.ficha_tecnica_id))
 
-    const porFicha = new Map(
-      ((prods ?? []) as { nome: string; ficha_tecnica_id: string; validade_dias: number | null }[])
-        .map(p => [p.ficha_tecnica_id, p]))
+    const produtos = (prods ?? []) as {
+      id: string; nome: string; ficha_tecnica_id: string; validade_dias: number | null
+    }[]
+    const porFicha = new Map(produtos.map(p => [p.ficha_tecnica_id, p]))
 
     const lista: SkuSessao[] = linhas.map(r => {
       const p = porFicha.get(r.ficha_tecnica_id)
@@ -155,9 +169,58 @@ export function PosProducaoPage() {
     })
 
     setSkus(lista)
-    // Uma validade só, com a data de hoje: quem desenformou tudo num dia
-    // confirma e salva sem digitar nada.
-    setPartes(Object.fromEntries(lista.map(s => [s.id, [novaParte(s, hojeISO())]])))
+
+    // O que já foi registrado antes. A pós pode ter sido feita em pedaços, e
+    // este registro é sempre o retrato COMPLETO do que se sabe até agora — o
+    // que não voltar daqui seria apagado ao salvar.
+    const [{ data: pos }, { data: lotes }] = await Promise.all([
+      supabase.from('pos_producao')
+        .select('id, observacoes, descartes:pos_producao_descartes(sessao_sku_id, motivo_id, quantidade)')
+        .eq('sessao_id', id).maybeSingle(),
+      supabase.from('lotes_produto')
+        .select('codigo, produto_id, quantidade_produzida, validade, data_desenforma')
+        .eq('sessao_id', id).order('validade'),
+    ])
+
+    const anterior = pos as unknown as {
+      id: string; observacoes: string | null
+      descartes: { sessao_sku_id: string; motivo_id: string; quantidade: number }[]
+    } | null
+
+    if (anterior) {
+      setObservacoes(anterior.observacoes ?? '')
+      setDescartes(Object.fromEntries(
+        (anterior.descartes ?? []).map(d =>
+          [chave(d.sessao_sku_id, d.motivo_id), String(d.quantidade)])))
+    }
+
+    // Cada lote vira uma linha de validade, pela ficha do produto dele.
+    const skuPorFicha = new Map(linhas.map(l => [l.ficha_tecnica_id, l.id]))
+    const skuDoProduto = new Map(
+      produtos.map(p => [p.id, skuPorFicha.get(p.ficha_tecnica_id)]))
+
+    const jaGravadas: Record<string, Parte[]> = {}
+    for (const l of (lotes ?? []) as unknown as {
+      codigo: string; produto_id: string; quantidade_produzida: number
+      validade: string; data_desenforma: string | null
+    }[]) {
+      const skuId = skuDoProduto.get(l.produto_id)
+      if (!skuId) continue
+      ;(jaGravadas[skuId] ??= []).push({
+        desenforma: l.data_desenforma ?? '',
+        validade: l.validade,
+        quantidade: String(l.quantidade_produzida),
+        lote: l.codigo,
+      })
+    }
+
+    // Sem nada gravado: uma linha com a data de hoje e tudo que saiu bom, para
+    // quem desenformou de uma vez só confirmar e salvar.
+    setPartes(Object.fromEntries(lista.map(s => [
+      s.id,
+      jaGravadas[s.id] ?? [novaParte(s, hojeISO())],
+    ])))
+    setTocou(Object.fromEntries(lista.map(s => [s.id, Boolean(jaGravadas[s.id])])))
   }
 
   function novaParte(sku: SkuSessao, data: string): Parte {
@@ -165,6 +228,7 @@ export function PosProducaoPage() {
       desenforma: data,
       validade: somarDias(data, sku.validade_dias ?? 365),
       quantidade: '',
+      lote: null,
     }
   }
 
@@ -174,6 +238,7 @@ export function PosProducaoPage() {
 
   /** Mudar a data recalcula a validade; mudar a validade só muda a validade. */
   function editarParte(sku: SkuSessao, i: number, campo: keyof Parte, valor: string) {
+    if (campo === 'quantidade') setTocou(t => ({ ...t, [sku.id]: true }))
     mexerNasPartes(sku.id, linhas => linhas.map((p, j) => {
       if (j !== i) return p
       if (campo !== 'desenforma') return { ...p, [campo]: valor }
@@ -185,26 +250,33 @@ export function PosProducaoPage() {
     const teorico = s.formas * s.rendimento
     const descartadas = motivos.reduce((t, m) => t + num(descartes[chave(s.id, m.id)]), 0)
     const boas = Math.max(teorico - descartadas, 0)
-    const linhas = partes[s.id] ?? []
-    // A primeira linha é sempre o RESTO: assim a soma fecha sozinha e ninguém
-    // precisa fazer conta para dividir a produção entre dois dias.
-    const digitadas = linhas.slice(1).reduce((t, p) => t + num(p.quantidade), 0)
-    const resto = boas - digitadas
+    const cru = partes[s.id] ?? []
+    // Enquanto ele não mexeu nas quantidades e só existe uma linha, ela é
+    // "tudo o que saiu bom" e acompanha os descartes sozinha. É o caso comum:
+    // desenformou de uma vez, não digita quantidade nenhuma.
+    const auto = !tocou[s.id] && cru.length === 1
+    const linhas = auto ? [{ ...cru[0], quantidade: String(boas) }] : cru
+    const somadas = linhas.reduce((t, p) => t + num(p.quantidade), 0)
+    const falta = boas - somadas
     return {
-      sku: s, teorico, descartadas, boas, linhas, resto,
+      sku: s, teorico, descartadas, boas, linhas, somadas, falta, auto,
       rendimentoReal: s.formas > 0 ? boas / s.formas : 0,
       excedeu: descartadas > teorico,
-      // As outras validades pediram mais unidades do que existem.
-      restoNegativo: resto < 0,
+      // Não se desenforma o que não saiu do forno.
+      excedeuPartes: falta < 0,
       semValidade: s.produto_nome !== null
-        && linhas.some((p, i) => (i === 0 ? resto > 0 : num(p.quantidade) > 0) && !p.validade),
+        && linhas.some(p => num(p.quantidade) > 0 && !p.validade),
     }
-  }), [skus, motivos, descartes, partes])
+  }), [skus, motivos, descartes, partes, tocou])
 
   const totalDescartado = resumo.reduce((t, r) => t + r.descartadas, 0)
   const totalTeorico = resumo.reduce((t, r) => t + r.teorico, 0)
   const totalBoas = resumo.reduce((t, r) => t + r.boas, 0)
-  const algumExcede = resumo.some(r => r.excedeu || r.restoNegativo || r.semValidade)
+  const totalRegistrando = resumo.reduce((t, r) => t + r.somadas, 0)
+  const algumExcede = resumo.some(r => r.excedeu || r.excedeuPartes || r.semValidade)
+  /** Registro parcial: sobra brownie na forma para amanhã. */
+  const faltaDesenformar = resumo.reduce(
+    (t, r) => t + (r.sku.produto_nome === null ? 0 : Math.max(r.falta, 0)), 0)
 
   async function salvar() {
     if (!profile || !sessaoId) return
@@ -215,15 +287,16 @@ export function PosProducaoPage() {
         .map(m => ({ sessao_sku_id: s.id, motivo_id: m.id, quantidade: num(descartes[chave(s.id, m.id)]) }))
         .filter(d => d.quantidade > 0))
 
-    // Só as fichas que têm produto geram lote. A primeira linha leva o resto.
+    // Só as fichas que têm produto geram lote. Vai o retrato completo — o que
+    // já estava gravado mais o que saiu agora.
     const partesEnviadas = resumo
       .filter(r => r.sku.produto_nome !== null)
       .flatMap(r => r.linhas
-        .map((p, i) => ({
+        .map(p => ({
           sessao_sku_id: r.sku.id,
           data_desenforma: p.desenforma || null,
           validade: p.validade || null,
-          quantidade: i === 0 ? r.resto : num(p.quantidade),
+          quantidade: num(p.quantidade),
         }))
         .filter(p => p.quantidade > 0))
 
@@ -237,19 +310,27 @@ export function PosProducaoPage() {
     })
 
     setSalvando(false)
-    const resp = data as { ok?: boolean; erro?: string; lotes?: number; avisos?: string[] } | null
+    const resp = data as {
+      ok?: boolean; erro?: string; lotes?: number; falta?: number; avisos?: string[]
+    } | null
     if (error || !resp?.ok) {
       setErro(error?.message ?? resp?.erro ?? 'Não foi possível registrar.')
       return
     }
     const lotes = resp.lotes ?? 0
+    const falta = resp.falta ?? 0
     setSucesso(
-      `Pós-produção registrada: ${totalBoas} unidades boas, ${totalDescartado} descartadas. `
-      + (lotes === 1 ? '1 lote entrou no estoque.' : `${lotes} lotes entraram no estoque.`)
+      `${totalRegistrando} unidades no estoque em `
+      + (lotes === 1 ? '1 lote' : `${lotes} lotes`)
+      + `, ${totalDescartado} descartadas. `
+      + (falta > 0
+        ? `Faltam ${falta} para desenformar — a sessão continua na fila.`
+        : 'Sessão desenformada por inteiro.')
       + (resp.avisos?.length ? ` ${resp.avisos.join(' ')}` : ''))
     setSessaoId(null)
     setSkus([])
     setPartes({})
+    setTocou({})
     await carregar()
   }
 
@@ -306,9 +387,16 @@ export function PosProducaoPage() {
                       </p>
                       <p className="text-xs text-gray-500 dark:text-unno-muted">
                         {p.formas} formas · {p.unidades_teoricas} unidades no forno
+                        {p.unidades_registradas > 0 && (
+                          <> · <strong className="text-gray-700 dark:text-unno-text">
+                            {p.unidades_registradas} já no estoque
+                          </strong>, faltam {p.falta}</>
+                        )}
                       </p>
                     </div>
-                    <Button size="sm" onClick={() => abrir(p.sessao_id)}>Registrar</Button>
+                    <Button size="sm" onClick={() => abrir(p.sessao_id)}>
+                      {p.unidades_registradas > 0 ? 'Continuar' : 'Registrar'}
+                    </Button>
                   </div>
                 ))}
               </div>
@@ -450,54 +538,60 @@ export function PosProducaoPage() {
                             <span className="block text-[11px] text-gray-500 dark:text-unno-muted mb-0.5">
                               Unidades
                             </span>
-                            {i === 0 ? (
-                              // A primeira linha é o resto: a soma fecha sozinha
-                              // e ninguém precisa fazer conta.
-                              <div className={`w-20 rounded-lg border px-2 py-1.5 text-sm text-center tabular-nums ${
-                                r.restoNegativo
-                                  ? 'border-red-200 bg-red-50 text-red-700'
-                                  : 'border-gray-200 bg-gray-50 text-gray-700 dark:border-white/[.06] dark:bg-white/[.03] dark:text-unno-muted'
-                              }`}>
-                                {r.resto}
-                              </div>
-                            ) : (
-                              <CampoNumerico
-                                valor={p.quantidade}
-                                onDigitar={v => editarParte(r.sku, i, 'quantidade', v)}
-                                onPasso={d => editarParte(r.sku, i, 'quantidade',
-                                  String(Math.max(0, num(p.quantidade) + d)))}
-                                largura="w-20"
-                              />
-                            )}
+                            <CampoNumerico
+                              valor={p.quantidade}
+                              onDigitar={v => editarParte(r.sku, i, 'quantidade', v)}
+                              onPasso={d => editarParte(r.sku, i, 'quantidade',
+                                String(Math.max(0, num(p.quantidade) + d)))}
+                              largura="w-24"
+                            />
                           </div>
 
-                          {i > 0 && (
+                          {p.lote ? (
+                            <span className="text-[11px] text-gray-400 font-mono pb-2">{p.lote}</span>
+                          ) : r.linhas.length > 1 && (
                             <Button variant="ghost" size="sm"
-                              onClick={() => mexerNasPartes(r.sku.id, l => l.filter((_, j) => j !== i))}>
+                              onClick={() => { setTocou(t => ({ ...t, [r.sku.id]: true }))
+                                mexerNasPartes(r.sku.id, l => l.filter((_, j) => j !== i)) }}>
                               Remover
                             </Button>
                           )}
                         </div>
                       ))}
 
-                      {r.restoNegativo && (
-                        <p className="text-xs text-red-700">
-                          As outras validades pedem {Math.abs(r.resto)} unidade(s) a mais
-                          do que as {r.boas} que saíram boas.
-                        </p>
-                      )}
+                      {/* Quanto ainda está na forma. Registrar sem fechar a
+                          conta é legítimo: desenformou metade hoje, o resto
+                          amanhã, e o que saiu já vira estoque. */}
+                      <div className={`rounded-lg px-3 py-2 text-xs ${
+                        r.excedeuPartes
+                          ? 'bg-red-50 border border-red-200 text-red-700'
+                          : r.falta > 0
+                            ? 'bg-amber-50 border border-amber-200 text-amber-800'
+                            : 'bg-gray-50 dark:bg-white/[.03] text-gray-600 dark:text-unno-muted'
+                      }`}>
+                        {r.excedeuPartes ? (
+                          <>As validades pedem {Math.abs(r.falta)} unidade(s) a mais
+                            do que as {r.boas} que saíram boas.</>
+                        ) : r.falta > 0 ? (
+                          <>Vão para o estoque <strong>{r.somadas}</strong>;
+                            {' '}<strong>{r.falta}</strong> ainda estão na forma.
+                            Registre agora e volte quando desenformar o resto.</>
+                        ) : (
+                          <>Todas as <strong>{r.boas}</strong> unidades boas vão para o estoque
+                            {r.linhas.length > 1 && ` em ${r.linhas.length} lotes`}.</>
+                        )}
+                      </div>
 
                       <Button variant="ghost" size="sm"
-                        onClick={() => mexerNasPartes(r.sku.id,
-                          l => [...l, novaParte(r.sku, hojeISO())])}>
+                        onClick={() => { setTocou(t => ({ ...t, [r.sku.id]: true }))
+                          mexerNasPartes(r.sku.id, l => [
+                            // A linha automática vira número antes de ganhar
+                            // companhia, senão ela sumiria com o valor.
+                            ...(r.auto ? r.linhas : l),
+                            novaParte(r.sku, hojeISO()),
+                          ]) }}>
                         + Outra validade
                       </Button>
-
-                      {r.linhas.length > 1 && !r.restoNegativo && (
-                        <p className="text-xs text-gray-500 dark:text-unno-muted">
-                          {r.linhas.length} lotes: a primeira linha leva o que sobrar das outras.
-                        </p>
-                      )}
                     </div>
                   )}
                 </div>
@@ -527,9 +621,12 @@ export function PosProducaoPage() {
                 <p className="text-sm text-gray-600 dark:text-unno-muted">
                   Total: <strong className="text-gray-900 dark:text-unno-text">{totalBoas}</strong> boas
                   {' · '}{totalDescartado} descartadas de {totalTeorico}
+                  {faltaDesenformar > 0 && (
+                    <span className="text-amber-700"> · {faltaDesenformar} ainda na forma</span>
+                  )}
                 </p>
                 <Button loading={salvando} disabled={algumExcede} onClick={salvar}>
-                  Registrar pós-produção
+                  {faltaDesenformar > 0 ? 'Registrar o que já saiu' : 'Registrar pós-produção'}
                 </Button>
               </div>
             </CardBody>
