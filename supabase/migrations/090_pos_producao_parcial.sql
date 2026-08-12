@@ -293,8 +293,12 @@ COMMENT ON FUNCTION registrar_pos_producao(UUID, UUID, UUID, JSONB, TEXT, DATE, 
 
 -- ── A fila da pós conta o que ainda falta desenformar ───────
 -- Antes: sai da fila quando existe registro. Agora: sai quando todas as
--- unidades boas viraram lote. Duas colunas novas no fim — CREATE OR REPLACE
--- aceita acrescentar, e assim o security_invoker fica de pé.
+-- unidades boas viraram lote. Duas colunas novas no fim, que é o que o
+-- CREATE OR REPLACE aceita.
+--
+-- ERRATA (092): a frase que estava aqui dizendo que "assim o security_invoker
+-- fica de pé" era falsa. O replace apaga a opção do mesmo jeito que o
+-- DROP+CREATE — medido depois, num begin/rollback. Quem religou foi a 091.
 CREATE OR REPLACE VIEW v_pos_producao_pendente AS
 WITH linhas AS (
   SELECT s.id AS sessao_id, s.empresa_id, s.codigo, s.data_producao, s.data_fechamento,
