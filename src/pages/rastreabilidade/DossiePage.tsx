@@ -379,13 +379,13 @@ export function DossiePage() {
             {/* ── Lotes ──────────────────────────────────────── */}
             <Card className="dossie-bloco">
               <CardHeader title="Lotes do produto" subtitle="O que vence nesta data" />
-              <CardBody className="p-0 overflow-x-auto">
+              {/* Três colunas, não cinco: as datas cabem embaixo do código e a
+                  tabela para de exigir rolagem lateral no celular. */}
+              <CardBody className="p-0">
                 <table className="w-full text-sm">
                   <thead>
                     <tr className="text-left border-b border-gray-100 dark:border-white/[.06]">
                       <th className="px-4 py-2 text-xs font-semibold text-gray-500 uppercase">Lote</th>
-                      <th className="px-4 py-2 text-xs font-semibold text-gray-500 uppercase">Produção</th>
-                      <th className="px-4 py-2 text-xs font-semibold text-gray-500 uppercase">Pós-produção</th>
                       <th className="px-4 py-2 text-xs font-semibold text-gray-500 uppercase text-right">Produzidas</th>
                       <th className="px-4 py-2 text-xs font-semibold text-gray-500 uppercase text-right">Em estoque</th>
                     </tr>
@@ -393,9 +393,13 @@ export function DossiePage() {
                   <tbody className="divide-y divide-gray-50 dark:divide-white/[.04]">
                     {dossie.lotes.map(l => (
                       <tr key={l.codigo}>
-                        <td className="px-4 py-2 font-mono text-xs">{l.codigo}</td>
-                        <td className="px-4 py-2">{formatDate(l.data_producao)}</td>
-                        <td className="px-4 py-2">{l.data_desenforma ? formatDate(l.data_desenforma) : '—'}</td>
+                        <td className="px-4 py-2">
+                          <span className="font-mono text-xs">{l.codigo}</span>
+                          <span className="block text-[11px] text-gray-400">
+                            produção {formatDate(l.data_producao)}
+                            {l.data_desenforma && ` · pós ${formatDate(l.data_desenforma)}`}
+                          </span>
+                        </td>
                         <td className="px-4 py-2 text-right tabular-nums">{fmt(l.quantidade_produzida, 0)}</td>
                         <td className="px-4 py-2 text-right tabular-nums">{fmt(l.quantidade_disponivel, 0)}</td>
                       </tr>
@@ -459,13 +463,12 @@ export function DossiePage() {
                     </Link>
                   }
                 />
-                <CardBody className="p-0 overflow-x-auto">
+                <CardBody className="p-0">
                   <table className="w-full text-sm">
                     <thead>
                       <tr className="text-left border-b border-gray-100 dark:border-white/[.06]">
                         <th className="px-4 py-2 text-xs font-semibold text-gray-500 uppercase">Insumo</th>
                         <th className="px-4 py-2 text-xs font-semibold text-gray-500 uppercase text-right">Por forma</th>
-                        <th className="px-4 py-2 text-xs font-semibold text-gray-500 uppercase">Observação</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-gray-50 dark:divide-white/[.04]">
@@ -474,11 +477,13 @@ export function DossiePage() {
                           <td className="px-4 py-2">
                             <span className="text-gray-400 font-mono text-xs mr-1.5">{it.insumo_codigo}</span>
                             {it.insumo_nome}
+                            {it.observacoes && (
+                              <span className="block text-[11px] text-gray-400">{it.observacoes}</span>
+                            )}
                           </td>
-                          <td className="px-4 py-2 text-right tabular-nums whitespace-nowrap">
+                          <td className="px-4 py-2 text-right tabular-nums align-top">
                             {fmt(it.quantidade)} {it.unidade}
                           </td>
-                          <td className="px-4 py-2 text-xs text-gray-500">{it.observacoes ?? '—'}</td>
                         </tr>
                       ))}
                     </tbody>
@@ -498,7 +503,9 @@ export function DossiePage() {
                 title="Insumos utilizados"
                 subtitle="O que de fato saiu dos recipientes nesta produção"
               />
-              <CardBody className="p-0 overflow-x-auto">
+              {/* Recipiente e sessão descem para dentro da célula do insumo: são
+                  contexto, e como colunas empurravam a tabela para fora da tela. */}
+              <CardBody className="p-0">
                 {dossie.insumos.length === 0 ? (
                   <p className="px-4 py-6 text-sm text-center text-gray-400">
                     Sem consumo de insumo registrado nestas produções.
@@ -508,35 +515,31 @@ export function DossiePage() {
                     <thead>
                       <tr className="text-left border-b border-gray-100 dark:border-white/[.06]">
                         <th className="px-4 py-2 text-xs font-semibold text-gray-500 uppercase">Insumo</th>
-                        <th className="px-4 py-2 text-xs font-semibold text-gray-500 uppercase">Lote</th>
-                        <th className="px-4 py-2 text-xs font-semibold text-gray-500 uppercase">Marca</th>
+                        <th className="px-4 py-2 text-xs font-semibold text-gray-500 uppercase">Lote e marca</th>
                         <th className="px-4 py-2 text-xs font-semibold text-gray-500 uppercase text-right">Consumo</th>
-                        <th className="px-4 py-2 text-xs font-semibold text-gray-500 uppercase">Recipiente</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-gray-50 dark:divide-white/[.04]">
                       {dossie.insumos.map((u, i) => (
                         <tr key={i}>
-                          <td className="px-4 py-2">
+                          <td className="px-4 py-2 align-top">
                             <span className="text-gray-400 font-mono text-xs mr-1.5">{u.insumo_codigo}</span>
                             {u.insumo_nome}
-                            {dossie.sessoes.length > 1 && (
-                              <span className="block text-[11px] text-gray-400 font-mono">{u.sessao_codigo}</span>
-                            )}
+                            <span className="block text-[11px] text-gray-400">
+                              {dossie.sessoes.length > 1 && `${u.sessao_codigo} · `}
+                              {u.recipientes ?? '—'}
+                            </span>
                           </td>
-                          <td className="px-4 py-2 font-mono text-xs">
-                            {u.lote_codigo}
-                            {u.sublotes > 1 && (
-                              <span className="block text-[11px] text-gray-400 font-sans">
-                                {u.sublotes} sublotes
-                              </span>
-                            )}
+                          <td className="px-4 py-2 align-top">
+                            <span className="font-mono text-xs">{u.lote_codigo}</span>
+                            <span className="block text-[11px] text-gray-400">
+                              {u.marca ?? 'sem marca'}
+                              {u.sublotes > 1 && ` · ${u.sublotes} sublotes`}
+                            </span>
                           </td>
-                          <td className="px-4 py-2">{u.marca ?? '—'}</td>
-                          <td className="px-4 py-2 text-right tabular-nums whitespace-nowrap">
+                          <td className="px-4 py-2 text-right tabular-nums align-top">
                             {fmt(u.consumo_real)} {u.unidade}
                           </td>
-                          <td className="px-4 py-2 text-xs text-gray-500">{u.recipientes ?? '—'}</td>
                         </tr>
                       ))}
                     </tbody>
@@ -552,52 +555,46 @@ export function DossiePage() {
                   title="Recebimento e nota fiscal"
                   subtitle="De onde veio cada lote de insumo"
                 />
-                <CardBody className="p-0 overflow-x-auto">
+                <CardBody className="p-0">
                   <table className="w-full text-sm">
                     <thead>
                       <tr className="text-left border-b border-gray-100 dark:border-white/[.06]">
                         <th className="px-4 py-2 text-xs font-semibold text-gray-500 uppercase">Lote</th>
-                        <th className="px-4 py-2 text-xs font-semibold text-gray-500 uppercase">Fornecedor</th>
-                        <th className="px-4 py-2 text-xs font-semibold text-gray-500 uppercase">NF</th>
-                        <th className="px-4 py-2 text-xs font-semibold text-gray-500 uppercase">Recebido</th>
-                        <th className="px-4 py-2 text-xs font-semibold text-gray-500 uppercase">Validade de origem</th>
+                        <th className="px-4 py-2 text-xs font-semibold text-gray-500 uppercase">Fornecedor e NF</th>
+                        <th className="px-4 py-2 text-xs font-semibold text-gray-500 uppercase">Recebimento</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-gray-50 dark:divide-white/[.04]">
                       {dossie.insumos.map((u, i) => (
                         <tr key={i}>
-                          <td className="px-4 py-2">
+                          <td className="px-4 py-2 align-top">
                             <span className="font-mono text-xs">{u.lote_codigo}</span>
                             <span className="block text-[11px] text-gray-400">{u.insumo_nome}</span>
                           </td>
-                          <td className="px-4 py-2">
+                          <td className="px-4 py-2 align-top">
                             {u.fornecedor ?? '—'}
-                            {u.fornecedor_cnpj && (
-                              <span className="block text-[11px] text-gray-400">{u.fornecedor_cnpj}</span>
-                            )}
+                            <span className="block text-[11px] text-gray-400">
+                              {u.numero_nf ? `NF ${u.numero_nf}` : 'sem NF'}
+                              {u.fornecedor_cnpj && ` · ${u.fornecedor_cnpj}`}
+                            </span>
                             <span className="block text-[11px] text-gray-400">
                               {ORIGEM_LABEL[u.origem ?? ''] ?? u.origem ?? ''}
                             </span>
                           </td>
-                          <td className="px-4 py-2 font-mono text-xs">{u.numero_nf ?? '—'}</td>
-                          <td className="px-4 py-2 text-xs">
+                          <td className="px-4 py-2 text-xs align-top">
                             {u.data_recebimento ? formatDate(u.data_recebimento) : '—'}
+                            {u.recebido_por && (
+                              <span className="block text-[11px] text-gray-400">por {u.recebido_por}</span>
+                            )}
                             {u.temperatura_recebimento !== null && (
                               <span className="block text-[11px] text-gray-400">
                                 {fmt(u.temperatura_recebimento, 1)} °C na chegada
                               </span>
                             )}
-                            {u.recebido_por && (
-                              <span className="block text-[11px] text-gray-400">por {u.recebido_por}</span>
-                            )}
-                          </td>
-                          <td className="px-4 py-2 text-xs">
-                            {u.validade_original ? formatDate(u.validade_original) : '—'}
-                            {u.data_fabricacao && (
-                              <span className="block text-[11px] text-gray-400">
-                                fabricado em {formatDate(u.data_fabricacao)}
-                              </span>
-                            )}
+                            <span className="block text-[11px] text-gray-400">
+                              vence {u.validade_original ? formatDate(u.validade_original) : '—'}
+                              {u.data_fabricacao && ` · fab. ${formatDate(u.data_fabricacao)}`}
+                            </span>
                           </td>
                         </tr>
                       ))}
@@ -614,14 +611,12 @@ export function DossiePage() {
                   title="Pós-produção"
                   subtitle="Cada dia em que se abriu forma, com o que quebrou nele — é daqui que conta a validade"
                 />
-                <CardBody className="p-0 overflow-x-auto">
+                <CardBody className="p-0">
                   <table className="w-full text-sm">
                     <thead>
                       <tr className="text-left border-b border-gray-100 dark:border-white/[.06]">
-                        <th className="px-4 py-2 text-xs font-semibold text-gray-500 uppercase">Produção</th>
-                        <th className="px-4 py-2 text-xs font-semibold text-gray-500 uppercase">Data</th>
+                        <th className="px-4 py-2 text-xs font-semibold text-gray-500 uppercase">Dia</th>
                         <th className="px-4 py-2 text-xs font-semibold text-gray-500 uppercase text-right">Formas</th>
-                        <th className="px-4 py-2 text-xs font-semibold text-gray-500 uppercase text-right">Produzidas</th>
                         <th className="px-4 py-2 text-xs font-semibold text-gray-500 uppercase text-right">Descartadas</th>
                         <th className="px-4 py-2 text-xs font-semibold text-gray-500 uppercase text-right">Aproveitadas</th>
                       </tr>
@@ -629,12 +624,20 @@ export function DossiePage() {
                     <tbody className="divide-y divide-gray-50 dark:divide-white/[.04]">
                       {dossie.desenforma.map((d, i) => (
                         <tr key={i}>
-                          <td className="px-4 py-2 font-mono text-xs">{d.sessao_codigo}</td>
-                          <td className="px-4 py-2">{formatDate(d.data_desenforma)}</td>
-                          <td className="px-4 py-2 text-right tabular-nums">{d.formas}</td>
-                          <td className="px-4 py-2 text-right tabular-nums">{fmt(d.no_forno, 0)}</td>
-                          <td className="px-4 py-2 text-right tabular-nums">{fmt(d.descartadas, 0)}</td>
-                          <td className="px-4 py-2 text-right tabular-nums font-medium">
+                          <td className="px-4 py-2 align-top">
+                            {formatDate(d.data_desenforma)}
+                            <span className="block text-[11px] text-gray-400 font-mono">
+                              {d.sessao_codigo}
+                            </span>
+                          </td>
+                          <td className="px-4 py-2 text-right tabular-nums align-top">
+                            {d.formas}
+                            <span className="block text-[11px] text-gray-400">
+                              {fmt(d.no_forno, 0)} un
+                            </span>
+                          </td>
+                          <td className="px-4 py-2 text-right tabular-nums align-top">{fmt(d.descartadas, 0)}</td>
+                          <td className="px-4 py-2 text-right tabular-nums font-medium align-top">
                             {fmt(d.aproveitadas, 0)}
                           </td>
                         </tr>

@@ -268,37 +268,38 @@ export function RelatorioPerdasPage() {
                   Nenhuma pós-produção registrada no período.
                 </p>
               ) : (
-                <div className="overflow-x-auto">
-                  <table className="w-full text-sm">
-                    <thead>
-                      <tr className="text-left border-b border-gray-100 dark:border-white/[.06]">
-                        <th className="px-2 py-2 text-xs font-semibold text-gray-500 uppercase">Semana</th>
-                        <th className="px-2 py-2 text-xs font-semibold text-gray-500 uppercase text-right">No forno</th>
-                        <th className="px-2 py-2 text-xs font-semibold text-gray-500 uppercase text-right">Descartadas</th>
-                        <th className="px-2 py-2 text-xs font-semibold text-gray-500 uppercase text-right">Perda</th>
-                        <th className="px-2 py-2 text-xs font-semibold text-gray-500 uppercase">Contra a meta</th>
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="text-left border-b border-gray-100 dark:border-white/[.06]">
+                      <th className="px-2 py-2 text-xs font-semibold text-gray-500 uppercase">Semana</th>
+                      <th className="px-2 py-2 text-xs font-semibold text-gray-500 uppercase text-right">No forno</th>
+                      <th className="px-2 py-2 text-xs font-semibold text-gray-500 uppercase text-right">Descartadas</th>
+                      <th className="px-2 py-2 text-xs font-semibold text-gray-500 uppercase text-right">Perda</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-50 dark:divide-white/[.04]">
+                    {semanas.map(s => (
+                      <tr key={s.chave}>
+                        <td className="px-2 py-2 align-top">de {rotuloSemana(s.chave)}</td>
+                        <td className="px-2 py-2 text-right tabular-nums align-top">{fmt(s.noForno)}</td>
+                        <td className="px-2 py-2 text-right tabular-nums align-top">{fmt(s.descartadas)}</td>
+                        <td className={`px-2 py-2 text-right tabular-nums align-top ${
+                          s.pct === null ? 'text-gray-300' : corPct(s.pct)}`}>
+                          {s.pct === null ? '—' : `${s.pct.toFixed(2)}%`}
+                          {/* A distância da meta desce para cá: como coluna, ela
+                              empurrava a tabela para fora da tela no celular. */}
+                          {metaProduto !== null && s.pct !== null && (
+                            <span className="block text-[11px] font-normal text-gray-400">
+                              {s.pct <= metaProduto
+                                ? 'dentro da meta'
+                                : `${(s.pct - metaProduto).toFixed(2)} p.p. acima`}
+                            </span>
+                          )}
+                        </td>
                       </tr>
-                    </thead>
-                    <tbody className="divide-y divide-gray-50 dark:divide-white/[.04]">
-                      {semanas.map(s => (
-                        <tr key={s.chave}>
-                          <td className="px-2 py-2">semana de {rotuloSemana(s.chave)}</td>
-                          <td className="px-2 py-2 text-right tabular-nums">{fmt(s.noForno)}</td>
-                          <td className="px-2 py-2 text-right tabular-nums">{fmt(s.descartadas)}</td>
-                          <td className={`px-2 py-2 text-right tabular-nums ${
-                            s.pct === null ? 'text-gray-300' : corPct(s.pct)}`}>
-                            {s.pct === null ? '—' : `${s.pct.toFixed(2)}%`}
-                          </td>
-                          <td className="px-2 py-2 text-xs text-gray-500">
-                            {metaProduto === null || s.pct === null ? '—'
-                              : s.pct <= metaProduto ? 'dentro'
-                              : `${(s.pct - metaProduto).toFixed(2)} p.p. acima`}
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
+                    ))}
+                  </tbody>
+                </table>
               )}
             </CardBody>
           </Card>
@@ -311,36 +312,35 @@ export function RelatorioPerdasPage() {
                 subtitle="Participação de cada motivo, no período e semana a semana"
               />
               <CardBody className="space-y-4">
-                <div className="overflow-x-auto">
-                  <table className="w-full text-sm">
-                    <thead>
-                      <tr className="text-left border-b border-gray-100 dark:border-white/[.06]">
-                        <th className="px-2 py-2 text-xs font-semibold text-gray-500 uppercase">Motivo</th>
-                        <th className="px-2 py-2 text-xs font-semibold text-gray-500 uppercase text-right">Unidades</th>
-                        <th className="px-2 py-2 text-xs font-semibold text-gray-500 uppercase text-right">Do descarte</th>
-                        <th className="px-2 py-2 text-xs font-semibold text-gray-500 uppercase text-right">Do produzido</th>
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="text-left border-b border-gray-100 dark:border-white/[.06]">
+                      <th className="px-2 py-2 text-xs font-semibold text-gray-500 uppercase">Motivo</th>
+                      <th className="px-2 py-2 text-xs font-semibold text-gray-500 uppercase text-right">Unidades</th>
+                      <th className="px-2 py-2 text-xs font-semibold text-gray-500 uppercase text-right">Do descarte</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-50 dark:divide-white/[.04]">
+                    {motivosPeriodo.map(m => (
+                      <tr key={m.id}>
+                        <td className="px-2 py-2 align-top">
+                          <span className="inline-block w-2.5 h-2.5 rounded-sm mr-2 align-middle"
+                                style={{ backgroundColor: corDoMotivo(m.ordem) }} />
+                          {m.motivo}
+                        </td>
+                        <td className="px-2 py-2 text-right tabular-nums align-top">
+                          {fmt(m.qtd)}
+                          <span className="block text-[11px] text-gray-400">
+                            {totalForno > 0 ? `${((m.qtd / totalForno) * 100).toFixed(2)}% do produzido` : ''}
+                          </span>
+                        </td>
+                        <td className="px-2 py-2 text-right tabular-nums align-top">
+                          {totalDescartado > 0 ? `${((m.qtd / totalDescartado) * 100).toFixed(1)}%` : '—'}
+                        </td>
                       </tr>
-                    </thead>
-                    <tbody className="divide-y divide-gray-50 dark:divide-white/[.04]">
-                      {motivosPeriodo.map(m => (
-                        <tr key={m.id}>
-                          <td className="px-2 py-2">
-                            <span className="inline-block w-2.5 h-2.5 rounded-sm mr-2 align-middle"
-                                  style={{ backgroundColor: corDoMotivo(m.ordem) }} />
-                            {m.motivo}
-                          </td>
-                          <td className="px-2 py-2 text-right tabular-nums">{fmt(m.qtd)}</td>
-                          <td className="px-2 py-2 text-right tabular-nums">
-                            {totalDescartado > 0 ? `${((m.qtd / totalDescartado) * 100).toFixed(1)}%` : '—'}
-                          </td>
-                          <td className="px-2 py-2 text-right tabular-nums">
-                            {totalForno > 0 ? `${((m.qtd / totalForno) * 100).toFixed(2)}%` : '—'}
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
+                    ))}
+                  </tbody>
+                </table>
 
                 <div>
                   <p className="text-xs text-gray-500 dark:text-unno-muted mb-1">
@@ -363,15 +363,14 @@ export function RelatorioPerdasPage() {
           {dias.length > 0 && (
             <Card className="rel-bloco">
               <CardHeader title="Dia a dia" subtitle="Cada registro de pós-produção do período" />
-              <CardBody className="p-0 overflow-x-auto">
+              {/* Sete colunas viravam rolagem lateral. A produção e a ficha
+                  descem para baixo da data; formas e forno andam juntos. */}
+              <CardBody className="p-0">
                 <table className="w-full text-sm">
                   <thead>
                     <tr className="text-left border-b border-gray-100 dark:border-white/[.06]">
-                      <th className="px-4 py-2 text-xs font-semibold text-gray-500 uppercase">Data</th>
-                      <th className="px-4 py-2 text-xs font-semibold text-gray-500 uppercase">Produção</th>
-                      <th className="px-4 py-2 text-xs font-semibold text-gray-500 uppercase">Ficha</th>
+                      <th className="px-4 py-2 text-xs font-semibold text-gray-500 uppercase">Dia</th>
                       <th className="px-4 py-2 text-xs font-semibold text-gray-500 uppercase text-right">Formas</th>
-                      <th className="px-4 py-2 text-xs font-semibold text-gray-500 uppercase text-right">No forno</th>
                       <th className="px-4 py-2 text-xs font-semibold text-gray-500 uppercase text-right">Descartadas</th>
                       <th className="px-4 py-2 text-xs font-semibold text-gray-500 uppercase text-right">Perda</th>
                     </tr>
@@ -379,13 +378,18 @@ export function RelatorioPerdasPage() {
                   <tbody className="divide-y divide-gray-50 dark:divide-white/[.04]">
                     {dias.map((d, i) => (
                       <tr key={i}>
-                        <td className="px-4 py-2">{formatDate(d.data)}</td>
-                        <td className="px-4 py-2 font-mono text-xs">{d.sessao_codigo}</td>
-                        <td className="px-4 py-2">{d.ficha_nome}</td>
-                        <td className="px-4 py-2 text-right tabular-nums">{d.formas}</td>
-                        <td className="px-4 py-2 text-right tabular-nums">{fmt(d.no_forno)}</td>
-                        <td className="px-4 py-2 text-right tabular-nums">{fmt(d.descartadas)}</td>
-                        <td className={`px-4 py-2 text-right tabular-nums ${
+                        <td className="px-4 py-2 align-top">
+                          {formatDate(d.data)}
+                          <span className="block text-[11px] text-gray-400">
+                            <span className="font-mono">{d.sessao_codigo}</span> · {d.ficha_nome}
+                          </span>
+                        </td>
+                        <td className="px-4 py-2 text-right tabular-nums align-top">
+                          {d.formas}
+                          <span className="block text-[11px] text-gray-400">{fmt(d.no_forno)} un</span>
+                        </td>
+                        <td className="px-4 py-2 text-right tabular-nums align-top">{fmt(d.descartadas)}</td>
+                        <td className={`px-4 py-2 text-right tabular-nums align-top ${
                           d.perda_pct === null ? 'text-gray-300' : corPct(Number(d.perda_pct))}`}>
                           {d.perda_pct === null ? '—' : `${Number(d.perda_pct).toFixed(2)}%`}
                         </td>
@@ -438,27 +442,26 @@ export function RelatorioPerdasPage() {
                         <thead>
                           <tr className="text-left border-b border-gray-100 dark:border-white/[.06]">
                             <th className="px-2 py-2 text-xs font-semibold text-gray-500 uppercase">Insumo</th>
-                            <th className="px-2 py-2 text-xs font-semibold text-gray-500 uppercase text-right">Teórico</th>
-                            <th className="px-2 py-2 text-xs font-semibold text-gray-500 uppercase text-right">Contado</th>
-                            <th className="px-2 py-2 text-xs font-semibold text-gray-500 uppercase text-right">Diferença</th>
+                            <th className="px-2 py-2 text-xs font-semibold text-gray-500 uppercase text-right">Teórico → contado</th>
                             <th className="px-2 py-2 text-xs font-semibold text-gray-500 uppercase text-right">Perda</th>
                           </tr>
                         </thead>
                         <tbody className="divide-y divide-gray-50 dark:divide-white/[.04]">
                           {linhas.map(l => (
                             <tr key={l.insumo_codigo}>
-                              <td className="px-2 py-2">
+                              <td className="px-2 py-2 align-top">
                                 <span className="inline-block w-2 h-2 rounded-full mr-1.5 align-middle"
                                       style={{ backgroundColor: l.categoria_cor ?? '#9ca3af' }} />
                                 {l.insumo_nome}
-                                <span className="text-xs text-gray-400 ml-1.5">{l.insumo_codigo}</span>
+                                <span className="block text-[11px] text-gray-400">{l.insumo_codigo}</span>
                               </td>
-                              <td className="px-2 py-2 text-right tabular-nums">{fmt(Number(l.teorico), 3)}</td>
-                              <td className="px-2 py-2 text-right tabular-nums">{fmt(Number(l.fisico), 3)}</td>
-                              <td className="px-2 py-2 text-right tabular-nums">
-                                {fmt(Number(l.perda), 3)} {l.unidade_medida}
+                              <td className="px-2 py-2 text-right tabular-nums align-top">
+                                {fmt(Number(l.teorico), 3)} → {fmt(Number(l.fisico), 3)}
+                                <span className="block text-[11px] text-gray-400">
+                                  {fmt(Number(l.perda), 3)} {l.unidade_medida} de diferença
+                                </span>
                               </td>
-                              <td className={`px-2 py-2 text-right tabular-nums ${corPct(Number(l.perda_pct))}`}>
+                              <td className={`px-2 py-2 text-right tabular-nums align-top ${corPct(Number(l.perda_pct))}`}>
                                 {Number(l.perda_pct) > 0 ? '+' : ''}{Number(l.perda_pct).toFixed(1)}%
                               </td>
                             </tr>
@@ -478,7 +481,7 @@ export function RelatorioPerdasPage() {
               title="Insumo — descartes registrados"
               subtitle="Vencimento, contaminação, queda — com lote identificado"
             />
-            <CardBody className="p-0 overflow-x-auto">
+            <CardBody className="p-0">
               {perdas.length === 0 ? (
                 <p className="px-4 py-6 text-sm text-center text-gray-400">
                   Nenhum descarte de insumo registrado no período.
@@ -488,27 +491,27 @@ export function RelatorioPerdasPage() {
                   <thead>
                     <tr className="text-left border-b border-gray-100 dark:border-white/[.06]">
                       <th className="px-4 py-2 text-xs font-semibold text-gray-500 uppercase">Data</th>
-                      <th className="px-4 py-2 text-xs font-semibold text-gray-500 uppercase">Insumo</th>
-                      <th className="px-4 py-2 text-xs font-semibold text-gray-500 uppercase">Lote</th>
+                      <th className="px-4 py-2 text-xs font-semibold text-gray-500 uppercase">Insumo e lote</th>
                       <th className="px-4 py-2 text-xs font-semibold text-gray-500 uppercase text-right">Qtd</th>
-                      <th className="px-4 py-2 text-xs font-semibold text-gray-500 uppercase">Motivo</th>
-                      <th className="px-4 py-2 text-xs font-semibold text-gray-500 uppercase">Local</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-gray-50 dark:divide-white/[.04]">
                     {perdas.map(p => (
                       <tr key={p.id}>
-                        <td className="px-4 py-2">{formatDate(p.data)}</td>
-                        <td className="px-4 py-2">
+                        <td className="px-4 py-2 align-top">{formatDate(p.data)}</td>
+                        <td className="px-4 py-2 align-top">
                           {p.insumo?.nome}
-                          <span className="text-xs text-gray-400 ml-1.5">{p.insumo?.codigo}</span>
+                          <span className="block text-[11px] text-gray-400">
+                            <span className="font-mono">{p.lote?.codigo}</span>
+                            {p.local?.nome && ` · ${p.local.nome}`}
+                          </span>
                         </td>
-                        <td className="px-4 py-2 font-mono text-xs">{p.lote?.codigo}</td>
-                        <td className="px-4 py-2 text-right tabular-nums">
+                        <td className="px-4 py-2 text-right tabular-nums align-top">
                           -{formatQty(p.quantidade, p.unidade)}
+                          <span className="block text-[11px] font-normal text-gray-400">
+                            {MOTIVO_LABELS[p.motivo]}
+                          </span>
                         </td>
-                        <td className="px-4 py-2 text-xs">{MOTIVO_LABELS[p.motivo]}</td>
-                        <td className="px-4 py-2 text-xs text-gray-500">{p.local?.nome ?? '—'}</td>
                       </tr>
                     ))}
                   </tbody>

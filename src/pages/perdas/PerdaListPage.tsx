@@ -642,13 +642,15 @@ export function PerdaListPage() {
                 </div>
               </Card>
 
-              <Card className="p-0 overflow-x-auto">
+              {/* Quatro auditorias, não seis: com seis a matriz saía da tela no
+                  celular. Quem quiser o histórico inteiro tem o relatório. */}
+              <Card className="p-0">
                 <table className="w-full text-sm">
                   <thead>
                     <tr className="border-b border-gray-100 dark:border-white/[.06] text-left">
                       <th className="px-4 py-3 text-xs font-semibold text-gray-500 uppercase">Insumo</th>
-                      {datasAuditoria.slice(0, 6).map(d => (
-                        <th key={d} className="px-3 py-3 text-xs font-semibold text-gray-500 uppercase text-right whitespace-nowrap">
+                      {datasAuditoria.slice(0, 4).map(d => (
+                        <th key={d} className="px-2 py-3 text-xs font-semibold text-gray-500 uppercase text-right">
                           {formatDate(d)}
                         </th>
                       ))}
@@ -661,13 +663,13 @@ export function PerdaListPage() {
                         <tr key={codigo}>
                           <td className="px-4 py-2.5">
                             <span className="text-gray-900 dark:text-unno-text">{linhas[0].insumo_nome}</span>
-                            <span className="text-xs text-gray-400 ml-1.5">{codigo}</span>
+                            <span className="block text-[11px] text-gray-400">{codigo}</span>
                           </td>
-                          {datasAuditoria.slice(0, 6).map(d => {
+                          {datasAuditoria.slice(0, 4).map(d => {
                             const l = linhas.find(x => x.data === d)
                             const pct = l?.perda_pct === null || l === undefined ? null : Number(l.perda_pct)
                             return (
-                              <td key={d} className="px-3 py-2.5 text-right tabular-nums">
+                              <td key={d} className="px-2 py-2.5 text-right tabular-nums">
                                 {pct === null ? <span className="text-gray-300">—</span> : (
                                   <span className={corPct(pct)}>
                                     {pct > 0 ? '+' : ''}{pct.toFixed(1)}%
@@ -706,45 +708,42 @@ export function PerdaListPage() {
             </select>
           </div>
 
-          <Card className="p-0 overflow-x-auto">
+          <Card className="p-0">
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-gray-100 dark:border-white/[.06] text-left">
                   <th className="px-4 py-3 text-xs font-semibold text-gray-500 uppercase">Data</th>
-                  <th className="px-4 py-3 text-xs font-semibold text-gray-500 uppercase">Código</th>
-                  <th className="px-4 py-3 text-xs font-semibold text-gray-500 uppercase">Insumo</th>
-                  <th className="px-4 py-3 text-xs font-semibold text-gray-500 uppercase">Lote</th>
+                  <th className="px-4 py-3 text-xs font-semibold text-gray-500 uppercase">Insumo e lote</th>
                   <th className="px-4 py-3 text-xs font-semibold text-gray-500 uppercase text-right">Qtd</th>
-                  <th className="px-4 py-3 text-xs font-semibold text-gray-500 uppercase">Motivo</th>
-                  <th className="px-4 py-3 text-xs font-semibold text-gray-500 uppercase">Local</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-50 dark:divide-white/[.04]">
                 {filtered.map(p => (
                   <tr key={p.id}>
-                    <td className="px-4 py-3 text-gray-600 dark:text-unno-muted">{formatDate(p.data)}</td>
-                    <td className="px-4 py-3 text-gray-400 font-mono text-xs">{p.codigo}</td>
-                    <td className="px-4 py-3">
+                    <td className="px-4 py-3 align-top text-gray-600 dark:text-unno-muted">
+                      {formatDate(p.data)}
+                      <span className="block text-[11px] text-gray-400 font-mono">{p.codigo}</span>
+                    </td>
+                    <td className="px-4 py-3 align-top">
                       <p className="font-medium text-gray-900 dark:text-unno-text">{p.insumo?.nome}</p>
-                      <p className="text-xs text-gray-400">{p.insumo?.codigo}</p>
+                      <p className="text-[11px] text-gray-400">
+                        <span className="font-mono">{p.lote?.codigo}</span>
+                        {p.local?.nome && ` · ${p.local.nome}`}
+                      </p>
                     </td>
-                    <td className="px-4 py-3 text-gray-600 dark:text-unno-muted font-mono text-xs">
-                      {p.lote?.codigo}
-                    </td>
-                    <td className="px-4 py-3 text-right font-semibold text-red-700">
-                      -{formatQty(p.quantidade, p.unidade)}
-                    </td>
-                    <td className="px-4 py-3">
-                      <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-red-50 text-red-700">
+                    <td className="px-4 py-3 text-right align-top">
+                      <span className="font-semibold text-red-700">
+                        -{formatQty(p.quantidade, p.unidade)}
+                      </span>
+                      <span className="block text-[11px] text-gray-400">
                         {MOTIVO_LABELS[p.motivo]}
                       </span>
                     </td>
-                    <td className="px-4 py-3 text-gray-500 text-xs">{p.local?.nome ?? '—'}</td>
                   </tr>
                 ))}
                 {filtered.length === 0 && (
                   <tr>
-                    <td colSpan={7} className="px-4 py-8 text-center text-gray-400">
+                    <td colSpan={3} className="px-4 py-8 text-center text-gray-400">
                       Nenhum descarte registrado.
                     </td>
                   </tr>
