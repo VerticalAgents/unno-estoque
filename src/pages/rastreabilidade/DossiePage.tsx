@@ -95,6 +95,30 @@ interface Desenforma {
   data_desenforma: string
   validade: string
   formas: number
+  no_forno: number
+  descartadas: number
+  aproveitadas: number
+}
+
+/**
+ * O aproveitamento destas unidades.
+ *
+ * Só o descarte da DESENFORMA entra aqui: é o que quebrou nas formas que
+ * viraram este lote, medido no dia, com motivo. A perda de insumo fica de fora
+ * de propósito — ela é apurada na auditoria de estoque, por período, e não se
+ * reparte por lote.
+ */
+interface Resumo {
+  formas: number
+  no_forno: number
+  descartadas: number
+  aproveitadas: number
+  perda_pct: number
+}
+
+interface Descarte {
+  motivo: string
+  quantidade: number
 }
 
 interface Dossie {
@@ -106,6 +130,8 @@ interface Dossie {
     peso_unitario_g: number | null; validade_dias: number | null
     ficha_tecnica_id: string | null
   }
+  resumo: Resumo
+  descartes: Descarte[]
   lotes: Lote[]
   sessoes: Sessao[]
   insumos: InsumoUsado[]
@@ -243,8 +269,11 @@ export function DossiePage() {
               </div>
 
               <div className="grid grid-cols-2 gap-2 text-xs">
+                {/* "Aproveitadas", não "produzidas": o card lateral fala da
+                    mesma coisa que o bloco de aproveitamento, e usar dois
+                    rótulos para o mesmo número confunde quem confere. */}
                 <div>
-                  <p className="text-gray-400">Produzidas</p>
+                  <p className="text-gray-400">Aproveitadas</p>
                   <p className="font-semibold text-gray-900 dark:text-unno-text">{fmt(totalProduzido, 0)}</p>
                 </div>
                 <div>
@@ -279,6 +308,72 @@ export function DossiePage() {
               <div className="dossie-bloco p-3 rounded-lg bg-amber-50 border border-amber-200 text-sm text-amber-900">
                 {dossie.avisos.map((a, i) => <p key={i}>{a}</p>)}
               </div>
+            )}
+
+            {/* ── Aproveitamento: a primeira coisa que se lê ─── */}
+            {dossie.resumo?.no_forno > 0 && (
+              <Card className="dossie-bloco">
+                <CardHeader
+                  title="Aproveitamento"
+                  subtitle="Do que saiu do forno até o que virou estoque"
+                />
+                <CardBody className="space-y-3">
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                    <div>
+                      <p className="text-[11px] uppercase tracking-wide text-gray-400">Produzidas</p>
+                      <p className="text-xl font-bold text-gray-900 dark:text-unno-text tabular-nums">
+                        {fmt(dossie.resumo.no_forno, 0)}
+                      </p>
+                      <p className="text-[11px] text-gray-400">{dossie.resumo.formas} formas</p>
+                    </div>
+                    <div>
+                      <p className="text-[11px] uppercase tracking-wide text-gray-400">Aproveitadas</p>
+                      <p className="text-xl font-bold text-emerald-600 tabular-nums">
+                        {fmt(dossie.resumo.aproveitadas, 0)}
+                      </p>
+                      <p className="text-[11px] text-gray-400">viraram estoque</p>
+                    </div>
+                    <div>
+                      <p className="text-[11px] uppercase tracking-wide text-gray-400">Descartadas</p>
+                      <p className="text-xl font-bold text-gray-900 dark:text-unno-text tabular-nums">
+                        {fmt(dossie.resumo.descartadas, 0)}
+                      </p>
+                      <p className="text-[11px] text-gray-400">unidades</p>
+                    </div>
+                    <div>
+                      <p className="text-[11px] uppercase tracking-wide text-gray-400">Perda</p>
+                      <p className="text-xl font-bold text-gray-900 dark:text-unno-text tabular-nums">
+                        {fmt(dossie.resumo.perda_pct, 2)}%
+                      </p>
+                      <p className="text-[11px] text-gray-400">na desenforma</p>
+                    </div>
+                  </div>
+
+                  {dossie.descartes.length > 0 && (
+                    <div className="pt-3 border-t border-gray-100 dark:border-white/[.06]">
+                      <p className="text-[11px] uppercase tracking-wide text-gray-400 mb-1.5">
+                        Motivo do descarte
+                      </p>
+                      <div className="flex flex-wrap gap-x-5 gap-y-1">
+                        {dossie.descartes.map(d => (
+                          <span key={d.motivo} className="text-sm text-gray-700 dark:text-unno-muted">
+                            {d.motivo}{' '}
+                            <strong className="text-gray-900 dark:text-unno-text tabular-nums">
+                              {fmt(d.quantidade, 0)}
+                            </strong>
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Quem lê o documento precisa saber o que ele não mede. */}
+                  <p className="text-[11px] text-gray-400 pt-1">
+                    Perda medida na desenforma. A perda de insumo é apurada por
+                    período na auditoria de estoque e não se reparte por lote.
+                  </p>
+                </CardBody>
+              </Card>
             )}
 
             {/* ── Lotes ──────────────────────────────────────── */}
@@ -517,7 +612,7 @@ export function DossiePage() {
               <Card className="dossie-bloco">
                 <CardHeader
                   title="Desenforma"
-                  subtitle="Quando estas unidades saíram da forma — é daqui que conta a validade"
+                  subtitle="Cada dia em que se desenformou, com o que quebrou nele — é daqui que conta a validade"
                 />
                 <CardBody className="p-0 overflow-x-auto">
                   <table className="w-full text-sm">
@@ -526,7 +621,9 @@ export function DossiePage() {
                         <th className="px-4 py-2 text-xs font-semibold text-gray-500 uppercase">Produção</th>
                         <th className="px-4 py-2 text-xs font-semibold text-gray-500 uppercase">Data</th>
                         <th className="px-4 py-2 text-xs font-semibold text-gray-500 uppercase text-right">Formas</th>
-                        <th className="px-4 py-2 text-xs font-semibold text-gray-500 uppercase">Validade</th>
+                        <th className="px-4 py-2 text-xs font-semibold text-gray-500 uppercase text-right">Produzidas</th>
+                        <th className="px-4 py-2 text-xs font-semibold text-gray-500 uppercase text-right">Descartadas</th>
+                        <th className="px-4 py-2 text-xs font-semibold text-gray-500 uppercase text-right">Aproveitadas</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-gray-50 dark:divide-white/[.04]">
@@ -535,7 +632,11 @@ export function DossiePage() {
                           <td className="px-4 py-2 font-mono text-xs">{d.sessao_codigo}</td>
                           <td className="px-4 py-2">{formatDate(d.data_desenforma)}</td>
                           <td className="px-4 py-2 text-right tabular-nums">{d.formas}</td>
-                          <td className="px-4 py-2">{formatDate(d.validade)}</td>
+                          <td className="px-4 py-2 text-right tabular-nums">{fmt(d.no_forno, 0)}</td>
+                          <td className="px-4 py-2 text-right tabular-nums">{fmt(d.descartadas, 0)}</td>
+                          <td className="px-4 py-2 text-right tabular-nums font-medium">
+                            {fmt(d.aproveitadas, 0)}
+                          </td>
                         </tr>
                       ))}
                     </tbody>
