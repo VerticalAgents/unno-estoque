@@ -36,6 +36,7 @@ import { ContagemResumoPage } from './pages/contagem/ContagemResumoPage'
 import { DevPage } from './pages/dev/DevPage'
 import { ConfiguracoesPage } from './pages/configuracoes/ConfiguracoesPage'
 import { AberturaEstoquePage } from './pages/configuracoes/AberturaEstoquePage'
+import { ProducaoAnteriorPage } from './pages/configuracoes/ProducaoAnteriorPage'
 import { RecipienteListPage } from './pages/recipientes/RecipienteListPage'
 import { EtiquetaRecipientePage } from './pages/recipientes/EtiquetaRecipientePage'
 import { ImpressaoRecipientesPage } from './pages/recipientes/ImpressaoRecipientesPage'
@@ -100,6 +101,7 @@ export default function App() {
           <Route path="recipientes/:id/etiqueta" element={<EtiquetaRecipientePage />} />
           <Route path="configuracoes" element={<ConfiguracoesPage />} />
           <Route path="configuracoes/abertura-estoque" element={<AberturaEstoquePage />} />
+          <Route path="configuracoes/producao-anterior" element={<ProducaoAnteriorPage />} />
           <Route path="dev" element={<DevPage />} />
         </Route>
         <Route path="*" element={<Navigate to="/dashboard" replace />} />

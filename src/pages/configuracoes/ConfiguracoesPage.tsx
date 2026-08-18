@@ -12,7 +12,7 @@ import { MotivosDescarteTab } from './MotivosDescarteTab'
 import { EtiquetasTab } from './EtiquetasTab'
 import { ArmazenamentoTab } from './ArmazenamentoTab'
 
-type Tab = 'perfil' | 'senha' | 'empresa' | 'funcionarios' | 'categorias' | 'producao' | 'etiquetas' | 'travas' | 'abertura' | 'armazenamento'
+type Tab = 'perfil' | 'senha' | 'empresa' | 'funcionarios' | 'categorias' | 'producao' | 'etiquetas' | 'travas' | 'abertura' | 'armazenamento' | 'anterior'
 
 /**
  * As regras que o sistema pode impor. Cada uma pode BLOQUEAR (recusa sempre)
@@ -85,6 +85,7 @@ export function ConfiguracoesPage() {
     { key: 'armazenamento', label: 'Armazenamento' },
     { key: 'travas', label: 'Travas', adminOnly: true },
     { key: 'abertura', label: 'Abertura de estoque', adminOnly: true },
+    { key: 'anterior', label: 'Produção anterior', adminOnly: true },
   ]
 
   const [activeTab, setActiveTab] = useState<Tab>('perfil')
@@ -117,6 +118,7 @@ export function ConfiguracoesPage() {
           {activeTab === 'armazenamento' && <ArmazenamentoTab />}
           {activeTab === 'travas' && isAdmin && <TravasTab />}
           {activeTab === 'abertura' && isAdmin && <AberturaTab />}
+          {activeTab === 'anterior' && isAdmin && <ProducaoAnteriorTab />}
         </div>
       </div>
     </div>
@@ -219,6 +221,31 @@ function AberturaTab() {
       </ol>
       <Link to="/configuracoes/abertura-estoque">
         <Button size="lg">Começar abertura de estoque</Button>
+      </Link>
+    </Card>
+  )
+}
+
+/**
+ * Irmã da abertura de estoque: uma diz o que a fábrica TINHA no primeiro dia,
+ * a outra diz o que ela FEZ antes dele. As duas moram aqui pelo mesmo motivo
+ * — são operações de migração, não do dia a dia.
+ */
+function ProducaoAnteriorTab() {
+  return (
+    <Card className="p-5">
+      <h2 className="font-semibold text-gray-900 mb-1">Produção anterior ao sistema</h2>
+      <p className="text-sm text-gray-600 mb-4">
+        Os dias de produção que aconteceram antes de o sistema existir. Entram só
+        como registro — quantas unidades de cada produto saíram em cada dia — para
+        o histórico e os relatórios não começarem do zero.
+      </p>
+      <p className="text-sm text-gray-600 mb-4">
+        Não mexe em estoque, em balde nem em validade, e não gera lote de produto.
+        Nada do que for lançado aqui aparece na fila da pós-produção.
+      </p>
+      <Link to="/configuracoes/producao-anterior">
+        <Button size="lg">Lançar produção anterior</Button>
       </Link>
     </Card>
   )
