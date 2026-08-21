@@ -339,6 +339,10 @@ export interface SessaoProducao {
   cancelada_por?: string
   data_cancelamento?: string
   motivo_cancelamento?: string
+  // Produção lançada de memória (migration 096): não consumiu insumo, não gerou
+  // lote e fica fora da fila da pós-produção. O número de unidades é o que o
+  // usuário informou, não o que o sistema mediu.
+  importada?: boolean
   created_at: string
   updated_at: string
   // joined
