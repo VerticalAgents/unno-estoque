@@ -5,6 +5,7 @@ import { useAuth } from '../../contexts/AuthContext'
 import type { Insumo, UnidadeMedida } from '../../types/database.types'
 import { Input, Select, Textarea } from '../../components/ui/Input'
 import { Button } from '../../components/ui/Button'
+import { CampoPorcionado, temPorcionamento, type ConfigPorcao } from './CampoPorcionado'
 import { Card } from '../../components/ui/Card'
 
 interface ItemForm {
@@ -12,6 +13,8 @@ interface ItemForm {
   quantidade: string
   unidade: UnidadeMedida
   observacoes: string
+  /** Quanto desta linha vem da embalagem porcionada. Vazio = tudo do pote. */
+  quantidade_porcionada: string
 }
 
 const UNIDADES: UnidadeMedida[] = ['kg', 'g', 'L', 'ml', 'unid']
@@ -28,8 +31,22 @@ export function NovaVersaoFichaPage() {
   const [notas, setNotas] = useState('')
   const [rendimentoFornada, setRendimentoFornada] = useState('')
   const [pesoMedioG, setPesoMedioG] = useState('')
+  /**
+   * A configuração de porcionamento do insumo escolhido na linha.
+   *
+   * O PostgREST devolve o embed como objeto ou como lista de um elemento,
+   * dependendo de como resolve o relacionamento — os dois casos aparecem no
+   * mesmo projeto (ver TransferenciaPage).
+   */
+  const achaConfig = (insumoId: string): ConfigPorcao | null => {
+    const ins = insumos.find(i => i.id === insumoId) as
+      (Insumo & { armazenamento_config?: ConfigPorcao | ConfigPorcao[] }) | undefined
+    const cfg = ins?.armazenamento_config
+    return (Array.isArray(cfg) ? cfg[0] : cfg) ?? null
+  }
+
   const [itens, setItens] = useState<ItemForm[]>([
-    { insumo_id: '', quantidade: '', unidade: 'kg', observacoes: '' },
+    { insumo_id: '', quantidade: '', unidade: 'kg', observacoes: '', quantidade_porcionada: '' },
   ])
 
   useEffect(() => {
@@ -42,7 +59,7 @@ export function NovaVersaoFichaPage() {
         .single(),
       supabase
         .from('insumos')
-        .select('*')
+        .select('*, armazenamento_config:insumos_armazenamento_config(passa_reembalagem, reembalagem_tamanho_porcao, reembalagem_unidade)')
         .eq('empresa_id', profile.empresa_id)
         .eq('ativo', true)
         .order('nome'),
@@ -58,7 +75,7 @@ export function NovaVersaoFichaPage() {
         .eq('ativa', true)
         .single()
         .then(({ data: vd }) => {
-          const versaoData = vd as { id: string; rendimento_fornada: number | null; peso_medio_g: number | null; fichas_tecnicas_itens: { insumo_id: string; quantidade: number; unidade: UnidadeMedida; observacoes: string | null }[] } | null
+          const versaoData = vd as { id: string; rendimento_fornada: number | null; peso_medio_g: number | null; fichas_tecnicas_itens: { insumo_id: string; quantidade: number; unidade: UnidadeMedida; observacoes: string | null; quantidade_porcionada: number | null }[] } | null
           if (versaoData) {
             if (versaoData.rendimento_fornada) setRendimentoFornada(String(versaoData.rendimento_fornada))
             if (versaoData.peso_medio_g) setPesoMedioG(String(versaoData.peso_medio_g))
@@ -69,6 +86,10 @@ export function NovaVersaoFichaPage() {
                   quantidade: String(it.quantidade),
                   unidade: it.unidade,
                   observacoes: it.observacoes ?? '',
+                  // Herda o topping da versão anterior: uma versão nova quase
+                  // sempre muda quantidade, não o caminho por onde o insumo entra.
+                  quantidade_porcionada:
+                    it.quantidade_porcionada != null ? String(it.quantidade_porcionada) : '',
                 }))
               )
             }
@@ -90,7 +111,7 @@ export function NovaVersaoFichaPage() {
   }
 
   function addItem() {
-    setItens((prev) => [...prev, { insumo_id: '', quantidade: '', unidade: 'kg', observacoes: '' }])
+    setItens((prev) => [...prev, { insumo_id: '', quantidade: '', unidade: 'kg', observacoes: '', quantidade_porcionada: '' }])
   }
 
   function removeItem(idx: number) {
@@ -137,6 +158,8 @@ export function NovaVersaoFichaPage() {
       p_itens:              itensValidos.map((it) => ({
         insumo_id:   it.insumo_id,
         quantidade:  parseFloat(it.quantidade),
+        quantidade_porcionada: it.quantidade_porcionada
+          ? parseFloat(it.quantidade_porcionada) : null,
         unidade:     it.unidade,
         observacoes: it.observacoes || null,
       })),
@@ -260,6 +283,23 @@ export function NovaVersaoFichaPage() {
                   {UNIDADES.map((u) => <option key={u} value={u}>{u}</option>)}
                 </Select>
               </div>
+
+              {/* Só para insumo que passa por reembalagem. Para o resto — a
+                  esmagadora maioria — a linha continua com dois campos, e a
+                  tela não fica mais pesada para quem nunca vai usar isto. */}
+              {(() => {
+                const cfg = achaConfig(item.insumo_id)
+                return temPorcionamento(cfg) ? (
+                  <CampoPorcionado
+                    cfg={cfg!}
+                    quantidade={item.quantidade}
+                    unidade={item.unidade}
+                    valor={item.quantidade_porcionada}
+                    onChange={v => setItem(idx, 'quantidade_porcionada', v)}
+                  />
+                ) : null
+              })()}
+
               <Input
                 label="Observações (opcional)"
                 value={item.observacoes}

@@ -10,6 +10,8 @@ import { formatDate } from '../../lib/utils'
 interface ItemRow {
   id: string
   quantidade: number
+  /** Quanto desta linha vem da embalagem porcionada, quando é o caso. */
+  quantidade_porcionada: number | null
   unidade: UnidadeMedida
   observacoes: string | null
   insumo: { nome: string; codigo: string; unidade_medida: UnidadeMedida }
@@ -201,6 +203,16 @@ export function FichaDetailPage() {
                       <span className="font-semibold text-gray-900">
                         {item.quantidade} {item.unidade}
                       </span>
+                      {/* A linha continua mostrando o total, que é o que quem
+                          está na bancada precisa somar. A divisão vem abaixo,
+                          em letra menor, para quem precisa saber por onde entra. */}
+                      {item.quantidade_porcionada != null && item.quantidade_porcionada > 0 && (
+                        <p className="text-xs text-brand-700 dark:text-brand-300 mt-0.5">
+                          {item.quantidade_porcionada} {item.unidade} porcionado ·{' '}
+                          {Number((item.quantidade - item.quantidade_porcionada).toFixed(3))}{' '}
+                          {item.unidade} do pote
+                        </p>
+                      )}
                     </td>
                     <td className="px-4 py-3 text-xs text-gray-500">{item.observacoes ?? '—'}</td>
                   </tr>
