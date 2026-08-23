@@ -138,12 +138,15 @@ type Aviso = { nome: string; titulo: string; detalhe: string }
  * sim quantos pacotes existem no estoque. Nem para o porcionado, onde a unidade
  * que se conta é o SACO, não a caixa.
  *
- * E para quem decide na hora (o doce de leite) a resposta depende de uma
- * escolha que ainda não foi feita quando se planeja a semana — então a tela
- * mostra as duas, em vez de fingir que sabe.
+ * E para quem tem dois destinos (o doce de leite) a resposta vem da FICHA: ela
+ * diz quanto entra porcionado e quanto entra do pote. Este comentário já disse
+ * o contrário — que a escolha ainda não tinha sido feita na hora de planejar, e
+ * por isso a tela mostrava as duas hipóteses. Isso valia enquanto a ficha só
+ * sabia QUANTO entra, e nunca POR ONDE.
  */
 function avisoDeAbastecimento(
   qtd: number,
+  qtdPorcionada: number,
   cap: { nome: string; unidade: string; capacidade: number } | undefined,
   arm: Armazenamento | undefined,
 ): Aviso | null {
@@ -151,18 +154,18 @@ function avisoDeAbastecimento(
   const modo = arm?.modo ?? 'recipiente'
   const un = cap.unidade
 
-  const emSacos = () => {
+  const emSacos = (quanto: number = qtd) => {
     if (!arm?.porcao || arm.porcao <= 0) return null
-    const sacos = Math.ceil(qtd / arm.porcao)
+    const sacos = Math.ceil(quanto / arm.porcao)
     const porCaixa = cap.capacidade > 0 ? Math.floor(cap.capacidade / arm.porcao) : 0
     const enchimentos = porCaixa > 0 ? Math.ceil(sacos / porCaixa) : 0
     return { sacos, porCaixa, enchimentos }
   }
 
-  const emPacotes = () => {
+  const emPacotes = (quanto: number = qtd) => {
     const tam = arm?.embalagem && arm.embalagem > 0 ? arm.embalagem : cap.capacidade
     if (!tam || tam <= 0) return null
-    return { pacotes: Math.ceil(qtd / tam), tam }
+    return { pacotes: Math.ceil(quanto / tam), tam }
   }
 
   if (modo === 'embalagem_fornecedor') {
@@ -189,19 +192,36 @@ function avisoDeAbastecimento(
   }
 
   if (modo === 'escolher') {
-    const s = emSacos()
-    const p = emPacotes()
+    // A escolha JÁ FOI FEITA — na ficha, quando alguém disse quanto daquele
+    // insumo entra porcionado. Antes disto a tela mostrava as duas hipóteses
+    // ("se for tudo direto…; se for tudo porcionado…"), e num dia só de brownie
+    // tradicional oferecia 67 sacos para uma receita que não tem topping.
+    const resto = Math.max(qtd - qtdPorcionada, 0)
     const partes: string[] = []
-    if (p && p.pacotes > 1) partes.push(`direto, ${p.pacotes} pacotes de ${fmt(p.tam, 2)} ${un}`)
-    if (s && s.enchimentos > 1) {
-      partes.push(`porcionado, ${s.sacos} ${nomeDaPorcao(arm?.formato, true)} `
-        + `= ${s.enchimentos} enchimentos da caixa`)
+
+    if (qtdPorcionada > 0) {
+      const s = emSacos(qtdPorcionada)
+      if (s && s.enchimentos > 1) {
+        partes.push(`${fmt(qtdPorcionada, 2)} ${un} porcionados = ${s.sacos} `
+          + `${nomeDaPorcao(arm?.formato, true)}, ${s.enchimentos} enchimentos da caixa`)
+      }
     }
+
+    if (resto > 0) {
+      const p = emPacotes(resto)
+      if (p && p.pacotes > 1) {
+        partes.push(`${fmt(resto, 2)} ${un} do pote = ${p.pacotes} pacotes de ${fmt(p.tam, 2)} ${un}`)
+      }
+    }
+
+    // Nada a dizer é a resposta certa quando tudo cabe. E caminho que dá zero
+    // não vira frase: "0 sacos" faz a pessoa parar para entender que não há
+    // nada a fazer.
     if (partes.length === 0) return null
     return {
       nome: cap.nome,
-      titulo: 'Depende do destino escolhido',
-      detalhe: `${cap.nome}: o dia pede ${fmt(qtd, 2)} ${un} — ${partes.join('; ')}.`,
+      titulo: 'O dia pede mais de uma rodada',
+      detalhe: `${cap.nome}: ${partes.join(' · ')}.`,
     }
   }
 
@@ -343,7 +363,7 @@ export function PlanejadorSemanaPage({
   // edição sem ida ao banco
   const [capacidade, setCapacidade] = useState<Record<string, { nome: string; unidade: string; capacidade: number }>>({})
   const [armazenamento, setArmazenamento] = useState<Record<string, Armazenamento>>({})
-  const [receitas, setReceitas] = useState<Record<string, { insumo_id: string; quantidade: number }[]>>({})
+  const [receitas, setReceitas] = useState<Record<string, { insumo_id: string; quantidade: number; porcionada: number }[]>>({})
 
   const [realizado, setRealizado] = useState<Record<string, Realizado>>({})
 
@@ -453,13 +473,14 @@ export function PlanejadorSemanaPage({
       if (versoes.length > 0) {
         const { data: itens } = await supabase
           .from('fichas_tecnicas_itens')
-          .select('versao_id, insumo_id, quantidade')
+          .select('versao_id, insumo_id, quantidade, quantidade_porcionada')
           .in('versao_id', versoes.map(v => v.versao_id))
-        const porFicha: Record<string, { insumo_id: string; quantidade: number }[]> = {}
+        const porFicha: Record<string, { insumo_id: string; quantidade: number; porcionada: number }[]> = {}
         for (const v of versoes) {
-          porFicha[v.ficha_id] = ((itens ?? []) as { versao_id: string; insumo_id: string; quantidade: number }[])
+          porFicha[v.ficha_id] = ((itens ?? []) as { versao_id: string; insumo_id: string; quantidade: number; quantidade_porcionada: number | null }[])
             .filter(i => i.versao_id === v.versao_id)
-            .map(i => ({ insumo_id: i.insumo_id, quantidade: Number(i.quantidade) }))
+            .map(i => ({ insumo_id: i.insumo_id, quantidade: Number(i.quantidade),
+                         porcionada: Number(i.quantidade_porcionada ?? 0) }))
         }
         setReceitas(porFicha)
       }
@@ -854,18 +875,22 @@ export function PlanejadorSemanaPage({
       const unidades = itens.reduce((s, i) => s + i.formas * (i.ficha.rendimento_fornada ?? 0), 0)
 
       // Demanda de insumo daquele dia, para saber se cabe nos recipientes
-      const demanda: Record<string, number> = {}
+      // Separada por caminho: o doce de leite entra na mesma receita pelos
+      // dois, e somar apagaria justamente a informação que o aviso precisa.
+      const demanda: Record<string, { total: number; porcionada: number }> = {}
       for (const i of itens) {
         for (const r of receitas[i.ficha.id] ?? []) {
-          demanda[r.insumo_id] = (demanda[r.insumo_id] ?? 0) + r.quantidade * i.formas
+          const d = (demanda[r.insumo_id] ??= { total: 0, porcionada: 0 })
+          d.total += r.quantidade * i.formas
+          d.porcionada += r.porcionada * i.formas
         }
       }
 
       // Só a capacidade — o conteúdo dos potes na quinta depende do que for
       // consumido até lá, e prever isso seria chute.
       const apertados = Object.entries(demanda)
-        .map(([insumoId, qtd]) => avisoDeAbastecimento(
-          qtd, capacidade[insumoId], armazenamento[insumoId]))
+        .map(([insumoId, d]) => avisoDeAbastecimento(
+          d.total, d.porcionada, capacidade[insumoId], armazenamento[insumoId]))
         .filter(Boolean) as Aviso[]
 
       return { dia, itens, formas, bateladas, formasReais, emAndamento, foraDoPlano, unidades, apertados }

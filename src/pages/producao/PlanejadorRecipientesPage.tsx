@@ -87,6 +87,15 @@ interface LinhaAbastecimento {
 
 interface LinhaPlano {
   insumo_id: string
+  /**
+   * Por onde esta parte do insumo entra: 'porcionado' (saco de confeitar) ou
+   * 'recipiente' (o pote de sempre).
+   *
+   * O mesmo insumo pode aparecer nas duas linhas quando a receita o divide — é
+   * o caso do doce de leite, com 200 g de topping por forma e o resto do balde.
+   * Por isso a chave da linha não pode ser só o insumo.
+   */
+  via: 'porcionado' | 'recipiente'
   codigo: string
   nome: string
   unidade: string
@@ -523,10 +532,17 @@ export function PlanejadorRecipientesPage({
                   </thead>
                   <tbody className="divide-y divide-gray-100 dark:divide-white/[.06]">
                     {linhas.map(l => (
-                      <tr key={l.insumo_id} className="hover:bg-gray-50 dark:hover:bg-white/[.02]">
+                      <tr key={`${l.insumo_id}-${l.via}`} className="hover:bg-gray-50 dark:hover:bg-white/[.02]">
                         <td className="px-4 py-2.5">
                           <span className="text-gray-400 dark:text-unno-dim text-xs mr-2">{l.codigo}</span>
                           <span className="text-gray-900 dark:text-unno-text">{l.nome}</span>
+                          {/* Só quando o insumo se divide. Escrever "do pote" em
+                              tudo transformaria informação em ruído. */}
+                          {linhas.filter(x => x.insumo_id === l.insumo_id).length > 1 && (
+                            <span className="ml-2 text-xs text-brand-700 dark:text-brand-300">
+                              {l.via === 'porcionado' ? 'topping' : 'massa'}
+                            </span>
+                          )}
                         </td>
                         <td className="px-4 py-2.5 text-gray-500 dark:text-unno-muted">
                           {l.recipiente_modelo ?? (
