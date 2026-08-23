@@ -45,6 +45,34 @@ acabado (SESS-0001 e 0002) são exatamente 1.438 + 3.584 — a produção dos di
 **Eles não existem fisicamente** e o reset tem de zerá-los. Vale a mesma coisa
 para os 2.558 do dia 12, se a pós-produção chegar a criá-los.
 
+### Pendências abertas na abertura de estoque
+
+Encontradas em 23/08 enquanto o Lucca contava. Nenhuma trava a contagem, e por
+isso ficaram para depois — mexer no meio da operação dele era o risco maior.
+
+1. **A etiqueta é marcada como impressa ao CLICAR, não ao imprimir.**
+   `ImpressaoLotesPage.tsx:125` grava `etiqueta_impressa = true` e só então chama
+   `window.print()`. O Lucca clicou pelo celular, não conseguiu imprimir, e as 18
+   etiquetas do açúcar sumiram da fila mesmo sem sair no papel — foram devolvidas
+   à mão. O papel picotar errado dá no mesmo. Marcar depois de imprimir não é
+   confiável (o navegador não conta se saiu), então o caminho é um passo
+   explícito: "saiu tudo certo?" depois do diálogo, ou um botão de desmarcar na
+   própria lista.
+
+2. **O conteúdo dos baldes vira vários lotes fatiados pelo tamanho da embalagem.**
+   180 kg na prateleira + 31,584 kg nos potes viraram 18 + **4** lotes: 10, 10,
+   10 e 1,584. Não existe fardo nenhum dentro do pote — deveria ser **um** lote
+   de 31,584. Some com `registrar_entrada_lote` fatiando quando
+   `tamanho_embalagem > 0`; a saída limpa é um parâmetro `p_fatiar` e a chamada
+   dos baldes passando `false`. **Cuidado:** parâmetro novo com DEFAULT exige
+   DROP da assinatura antiga, senão o Postgres recusa por ambiguidade (a lição da
+   migration 042, no `CLAUDE.md`).
+
+   Efeito colateral que vem junto: `locais_lotes` aponta os dois potes para o
+   **primeiro** dos 4 lotes, que tem 10 kg de recebida e 31,584 de conteúdo. As
+   contas fecham e o consumo funciona, mas os outros 3 ficam zerados apontando
+   para nada.
+
 ### Pendências laterais, sem pressa
 
 - **7 insumos sem `tamanho_embalagem`** (INS028 a INS034). O Lucca deixou para
