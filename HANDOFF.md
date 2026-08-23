@@ -33,17 +33,16 @@ Já feito: produção anterior ao sistema importada (17 dias, 28/06 a 13/08,
    foi produzido antes de o sistema existir" — falso para produção de agosto
    registrada em atraso. São duas ausências diferentes e o documento precisa
    distinguir.
-3. **Perda do 13/08 (SESS-0020), por sabor** — pendente do Lucca. Junto:
-   confirmar se os 1.200 (Tradicional) e 1.440 (Doce de Leite) eram teóricos
-   (formas × 60) ou já vinham com a quebra descontada.
-4. **12/08 (SESS-0003) pela tela de Pós-produção**, não pelo banco — assim a
-   perda entra com motivo e o painel de Perdas sabe a causa.
-5. Lançar a produção de 14 a 21/08 (dias livres).
-6. Resetar, contar fisicamente, lançar pela Abertura, reetiquetar.
+3. ~~Perdas do 12 e 13/08~~ — **feito em 23/08**, ver abaixo.
+4. Lançar a produção de 14 a 21/08 (dias livres). A tela existe:
+   Configurações → Produção anterior ao sistema, com colagem em massa.
+5. Resetar, contar fisicamente, lançar pela Abertura, reetiquetar.
 
-**Pergunta em aberto:** os 5.022 brownies em estoque de produto acabado
-(SESS-0001 e 0002) ainda existem fisicamente? Se já foram vendidos, precisam
-ser zerados junto com o reset.
+**Respondido em 23/08:** os 5.022 brownies pendurados no estoque de produto
+acabado (SESS-0001 e 0002) são exatamente 1.438 + 3.584 — a produção dos dias
+10 e 11. O Lucca confirmou que tudo que a semana produziu, a semana vendeu.
+**Eles não existem fisicamente** e o reset tem de zerá-los. Vale a mesma coisa
+para os 2.558 do dia 12, se a pós-produção chegar a criá-los.
 
 ### Pendências laterais, sem pressa
 
@@ -55,6 +54,40 @@ ser zerados junto com o reset.
   quando o primeiro funcionário for cadastrado, não antes.
 - **`SECURITY DEFINER` não confere a empresa de quem chama** (ver `CLAUDE.md`).
 - **17 commits não enviados ao GitHub** (de `8698e0e` a `669df39`).
+
+---
+
+## Perdas de 10 a 13/08 — fechadas em 23/08
+
+O Lucca deu o faturamento da semana (**10.172 unidades boas**: 6.218 Tradicional
+e 3.954 Doce de Leite) e confirmou que tudo que foi produzido na semana foi
+vendido na semana. Daí sai a perda por diferença.
+
+**`quantidade_produzida` é o líquido**, as unidades boas — a perda vive em campo
+separado. Confirmado no dia 10: 24 formas × 60 = 1.440 assadas = 1.438 boas + 2
+perdidas. Idem no 11 (3.584 + 16 = 3.600).
+
+Assado bruto 10.320 − 10.172 vendidas = **148 de perda** nos quatro dias.
+Por sabor: Tradicional perdeu 22 (18 já lançados no 10 e 11, sobrando 4 para o
+dia 13, número forçado); Doce de Leite perdeu 126, rateados entre 12 e 13
+**proporcionalmente ao assado de cada dia** (2.640 × 1.440), por escolha do
+Lucca. Gravado numa transação que só fecha se a soma bater 10.172/148.
+
+**Doce de leite perdeu 3,1% do que assou; tradicional, 0,35%** — quase dez vezes
+mais. Pode ser real (desenforma pior) ou pode ser doce de leite parado em
+estoque que a conta leu como quebra. Sem resposta até agora.
+
+**O que ficou faltando:** `sessoes_producao` **não tem campo de observação**, então
+não há onde registrar que essas perdas foram **estimadas pelo faturamento e não
+medidas na bancada**. O dia 13 se defende pelo selo `importada`; o **dia 12 agora
+parece número medido e não é**. Migration pequena resolve, e o campo serve para
+muito mais. Não feito porque o reset vem antes.
+
+**Por que pelo banco e não pela tela de Pós-produção**, revertendo a decisão
+anterior: a tela pede o motivo da perda, o que seria melhor, mas também **cria
+estoque de produto acabado** — 2.558 brownies que já foram vendidos. Preferido o
+número certo sem motivo a um motivo com estoque falso. Dá para refazer pela tela
+depois do reset.
 
 ---
 
