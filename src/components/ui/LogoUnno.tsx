@@ -1,41 +1,31 @@
-import claro from '../../assets/logo-unno-claro.png'
-import escuro from '../../assets/logo-unno-escuro.png'
+import logo from '../../assets/logo-unno.png'
 
 /**
  * A marca do Unno.
  *
- * São dois arquivos e não um: os PNGs vêm com fundo sólido, sem transparência
- * — branco na versão clara, quase preto na escura. Um só deles apareceria como
- * um retângulo da cor errada metade do tempo.
+ * UM arquivo, com transparência de verdade.
  *
- * A troca é por CSS (`dark:hidden` / `hidden dark:block`) e não por estado de
- * React. O tema já vive na classe `dark` do <html>; ler isso em JavaScript
- * significaria renderizar a versão errada por um quadro no primeiro
- * carregamento, e piscar branco num sistema que fica aberto o dia todo numa
- * cozinha escura é pior do que qualquer ganho de organização.
+ * A primeira versão usava os dois PNGs originais — um de fundo branco, outro de
+ * fundo quase preto — trocados por CSS. Não funcionou: fundo opaco vira
+ * ladrilho, e ladrilho nunca assenta sobre a superfície do cartão. No claro
+ * sobrava um contorno em volta do quadrado; no escuro, o quadrado inteiro
+ * destoava do cartão.
  *
- * O `scale-125` dentro de um recorte: o arquivo original tem margem larga em
- * volta da marca, feita para post de rede social. Em 32px essa margem come um
- * terço do espaço e sobra um desenho minúsculo. Ampliar dentro do recorte
- * aperta a margem sem precisar reexportar o arquivo.
+ * A transparência não foi recortada no olho. Como a mesma marca existia sobre
+ * dois fundos conhecidos, o alfa saiu por álgebra — subtraindo uma imagem da
+ * outra, o desenho se cancela e sobra exatamente quanto de fundo havia em cada
+ * pixel. Isso preserva os meio-tons da borda curva, que qualquer limiar teria
+ * transformado em degrau.
+ *
+ * Sem fundo, a marca assenta em qualquer superfície e o tema deixa de importar.
  */
 export function LogoUnno({ className = 'w-8 h-8' }: { className?: string }) {
   return (
-    <span
-      className={`${className} shrink-0 block overflow-hidden rounded-controle
-                  ring-1 ring-border shadow-tema`}
-    >
-      <img
-        src={claro}
-        alt="Unno"
-        className="w-full h-full object-cover scale-125 dark:hidden"
-      />
-      <img
-        src={escuro}
-        alt=""
-        aria-hidden="true"
-        className="w-full h-full object-cover scale-125 hidden dark:block"
-      />
-    </span>
+    <img
+      src={logo}
+      alt="Unno"
+      className={`${className} shrink-0 object-contain select-none`}
+      draggable={false}
+    />
   )
 }
