@@ -180,6 +180,7 @@ export function AberturaEstoquePage() {
   const [guardarTamanho, setGuardarTamanho] = useState<Record<string, boolean>>({})
 
   const [retomado, setRetomado] = useState(false)
+  const [refazendo, setRefazendo] = useState<string | null>(null)
   const [linhas, setLinhas] = useState<Record<string, Linha[]>>({})
   const [baldes, setBaldes] = useState<Record<string, Balde>>({})
 
@@ -566,6 +567,55 @@ export function AberturaEstoquePage() {
     return lista
   }, [insumos, baldes, recipientesPorInsumo])
 
+  /**
+   * Desfaz a abertura de um insumo para que ela seja lançada de novo.
+   *
+   * A trava existe porque a tela soma ao que já está lá: sem ela, voltar e
+   * digitar de novo dobra o estoque em silêncio. Refazer é a única porta, e é
+   * uma porta que o banco fecha sozinho assim que o lote se mexe — daí em
+   * diante quem corrige é a Contagem, que ajusta sem apagar história.
+   */
+  async function refazerInsumo(insumo: Insumo) {
+    if (!profile) return
+    if (refazendo) return
+    if (
+      !confirm(
+        `Apagar a abertura de ${insumo.nome} e lançar de novo?
+
+` +
+        `O que já foi registrado deste insumo sai, inclusive o conteúdo dos potes dele. ` +
+        `Nada de outro insumo é tocado.`,
+      )
+    ) return
+
+    setRefazendo(insumo.id)
+    setErro('')
+
+    const { data, error } = await supabase.rpc('refazer_abertura_do_insumo', {
+      p_empresa_id: profile.empresa_id,
+      p_insumo_id: insumo.id,
+    })
+    const res = data as { ok: boolean; erro?: string } | null
+
+    setRefazendo(null)
+
+    if (error || !res?.ok) {
+      setErro(error?.message ?? res?.erro ?? 'Não foi possível refazer.')
+      return
+    }
+
+    // Sem saldo registrado, o insumo destrava sozinho: é a presença do saldo
+    // que fecha a trava, e não um estado separado que poderia divergir dela.
+    setSaldoAtual(prev => {
+      const r = { ...prev }
+      delete r[insumo.id]
+      return r
+    })
+    for (const r of recipientesPorInsumo[insumo.id] ?? []) {
+      setBaldes(prev => ({ ...prev, [r.id]: { modo: 'vazio', peso_bruto: '', linha_key: '' } }))
+    }
+  }
+
   async function aplicar() {
     if (!profile) return
     setErro('')
@@ -746,6 +796,8 @@ export function AberturaEstoquePage() {
           marcasPorInsumo={marcasPorInsumo}
           fornecedores={fornecedores}
           saldoAtual={saldoAtual}
+          refazendo={refazendo}
+          onRefazer={refazerInsumo}
           guardarTamanho={guardarTamanho}
           onGuardarTamanho={(id, v) => setGuardarTamanho(prev => ({ ...prev, [id]: v }))}
           onAlterar={alterarLinha}
@@ -765,6 +817,7 @@ export function AberturaEstoquePage() {
           baldes={baldes}
           setBaldes={setBaldes}
           conteudoDoBalde={conteudoDoBalde}
+          saldoAtual={saldoAtual}
           onCriarRecipiente={criarRecipiente}
           onExcluirRecipiente={excluirRecipiente}
           onSalvarTara={salvarTara}
@@ -840,6 +893,8 @@ function EtapaPrateleira({
   marcasPorInsumo,
   fornecedores,
   saldoAtual,
+  refazendo,
+  onRefazer,
   guardarTamanho,
   onGuardarTamanho,
   onAlterar,
@@ -854,6 +909,8 @@ function EtapaPrateleira({
   marcasPorInsumo: Record<string, Marca[]>
   fornecedores: Fornecedor[]
   saldoAtual: Record<string, SaldoAtual>
+  refazendo: string | null
+  onRefazer: (insumo: Insumo) => void
   guardarTamanho: Record<string, boolean>
   onGuardarTamanho: (insumoId: string, valor: boolean) => void
   onAlterar: (insumoId: string, key: string, campo: keyof Linha, valor: string | boolean) => void
@@ -887,17 +944,36 @@ function EtapaPrateleira({
 
             {/* Segunda ida: o que já foi registrado antes fica à vista, senão
                 é fácil somar de novo o mesmo saco. */}
+            {/* Insumo já lançado fica FECHADO. A tela soma ao que existe, então
+                um campo aberto aqui convida a contar o mesmo saco duas vezes —
+                e o estoque dobra sem ninguém perceber. Para mexer, refaz. */}
             {saldoAtual[insumo.id] && (
-              <div className="mb-3 rounded-lg bg-gray-50 px-3 py-2 text-xs text-gray-600">
-                Já registrado: <strong className="text-gray-900">
-                  {saldoAtual[insumo.id].total.toFixed(3)} {insumo.unidade_medida}
-                </strong>{' '}
-                em {saldoAtual[insumo.id].lotes} lote
-                {saldoAtual[insumo.id].lotes === 1 ? '' : 's'}. Preencha abaixo só o que
-                ainda <strong>não</strong> foi lançado.
+              <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-3
+                              dark:border-emerald-500/30 dark:bg-emerald-500/10">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <p className="text-sm text-emerald-900 dark:text-emerald-200">
+                    <strong>Já lançado:</strong>{' '}
+                    {saldoAtual[insumo.id].total.toFixed(3)} {insumo.unidade_medida} em{' '}
+                    {saldoAtual[insumo.id].lotes} lote
+                    {saldoAtual[insumo.id].lotes === 1 ? '' : 's'}.
+                  </p>
+                  <Button
+                    size="sm"
+                    variant="secondary"
+                    loading={refazendo === insumo.id}
+                    onClick={() => onRefazer(insumo)}
+                  >
+                    Refazer
+                  </Button>
+                </div>
+                <p className="text-xs text-emerald-700 dark:text-emerald-300/80 mt-1.5">
+                  Refazer apaga o que foi lançado deste insumo — inclusive o conteúdo dos
+                  potes dele — e abre os campos para contar de novo.
+                </p>
               </div>
             )}
 
+            {!saldoAtual[insumo.id] && (
             <div className="space-y-3">
               {ls.map((l, idx) => (
                 <div key={l.key} className={idx > 0 ? 'border-t border-gray-100 pt-3' : ''}>
@@ -1060,13 +1136,16 @@ function EtapaPrateleira({
                 </div>
               ))}
             </div>
+            )}
 
-            <button
-              onClick={() => onDesdobrar(insumo.id)}
-              className="mt-3 text-xs font-medium text-brand-700 hover:underline"
-            >
-              + Tenho mais de uma marca ou validade
-            </button>
+            {!saldoAtual[insumo.id] && (
+              <button
+                onClick={() => onDesdobrar(insumo.id)}
+                className="mt-3 text-xs font-medium text-brand-700 hover:underline"
+              >
+                + Tenho mais de uma marca ou validade
+              </button>
+            )}
           </Card>
         )
       })}
@@ -1290,6 +1369,7 @@ function EtapaBaldes({
   baldes,
   setBaldes,
   conteudoDoBalde,
+  saldoAtual,
   onCriarRecipiente,
   onExcluirRecipiente,
   onSalvarTara,
@@ -1301,6 +1381,7 @@ function EtapaBaldes({
   baldes: Record<string, Balde>
   setBaldes: React.Dispatch<React.SetStateAction<Record<string, Balde>>>
   conteudoDoBalde: (rec: Recipiente, insumo: Insumo) => number
+  saldoAtual: Record<string, SaldoAtual>
   onCriarRecipiente: (
     insumo: Insumo,
     dados: { nome: string; capacidade: string; tara: string },
@@ -1349,6 +1430,20 @@ function EtapaBaldes({
               <span className="text-xs font-medium text-gray-400 shrink-0">{insumo.codigo}</span>
             </div>
 
+            {/* Mesma trava da etapa 1, pelo mesmo motivo: o conteúdo digitado
+                aqui SOMA ao que o pote já tem. Destrava refazendo o insumo,
+                lá na etapa 1 — que limpa a prateleira e os potes juntos. */}
+            {saldoAtual[insumo.id] && (
+              <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-sm
+                              text-emerald-900 dark:border-emerald-500/30
+                              dark:bg-emerald-500/10 dark:text-emerald-200">
+                <strong>Já lançado.</strong> Os potes deste insumo entraram na abertura
+                anterior. Para contar de novo, use <strong>Refazer</strong> na etapa 1 —
+                ele limpa a prateleira e os potes de uma vez.
+              </div>
+            )}
+
+            {!saldoAtual[insumo.id] && (
             <div className="space-y-3">
               {(recipientesPorInsumo[insumo.id] ?? []).map(rec => {
                 const est = baldes[rec.id]
@@ -1458,8 +1553,11 @@ function EtapaBaldes({
                 )
               })}
             </div>
+            )}
 
-            <NovoRecipiente insumo={insumo} onCriar={onCriarRecipiente} />
+            {!saldoAtual[insumo.id] && (
+              <NovoRecipiente insumo={insumo} onCriar={onCriarRecipiente} />
+            )}
           </Card>
         )
       })}
