@@ -1,5 +1,5 @@
 import { useEffect, useState, type FormEvent } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useNavigate } from 'react-router-dom'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../contexts/AuthContext'
 import type { CategoriaInsumo, Empresa, Usuario } from '../../types/database.types'
@@ -117,7 +117,12 @@ export function ConfiguracoesPage() {
           {activeTab === 'etiquetas' && <EtiquetasTab />}
           {activeTab === 'armazenamento' && <ArmazenamentoTab />}
           {activeTab === 'travas' && isAdmin && <TravasTab />}
-          {activeTab === 'abertura' && isAdmin && <AberturaTab />}
+          {activeTab === 'abertura' && isAdmin && (
+            <div className="space-y-4">
+              <AberturaTab />
+              <EtiquetasAberturaTab />
+            </div>
+          )}
           {activeTab === 'anterior' && isAdmin && <ProducaoAnteriorTab />}
         </div>
       </div>
@@ -222,6 +227,125 @@ function AberturaTab() {
       <Link to="/configuracoes/abertura-estoque">
         <Button size="lg">Começar abertura de estoque</Button>
       </Link>
+    </Card>
+  )
+}
+
+/**
+ * As etiquetas da abertura, para imprimir quando der — e quantas vezes precisar.
+ *
+ * Separada do assistente de propósito. Conta-se com o celular na mão, andando
+ * pela fábrica; a impressora está no computador. E a etiqueta hoje é marcada
+ * como impressa no clique, antes de o papel sair: quem clicou no celular sem
+ * imprimir, ou cujo rolo picotou errado, precisa de uma lista que **não**
+ * dependa desse estado. Por isso aqui aparece tudo, impresso ou não.
+ *
+ * SÓ O QUE ESTÁ NA PRATELEIRA. O conteúdo dos baldes também vira lote, mas
+ * nasce zerado — o açúcar está no pote, não na embalagem. Etiqueta para ele
+ * seria papel colado em nada.
+ */
+type LoteAbertura = {
+  lote_id: string
+  codigo: string
+  qr_code: string
+  quantidade: number
+  insumo_id: string
+  insumo: string
+}
+
+function EtiquetasAberturaTab() {
+  const { profile } = useAuth()
+  const navigate = useNavigate()
+  const [lotes, setLotes] = useState<LoteAbertura[]>([])
+  const [carregando, setCarregando] = useState(true)
+
+  useEffect(() => {
+    if (!profile) return
+    supabase
+      .from('lotes')
+      .select('id, codigo, qr_code, quantidade_recebida, insumo_id, insumo:insumos(nome)')
+      .eq('empresa_id', profile.empresa_id)
+      .eq('origem', 'inventario_inicial')
+      .eq('status', 'ativo')          // zerado para compor balde já sai daqui
+      .order('codigo')
+      .then(({ data }) => {
+        setLotes(
+          (data ?? []).map(l => {
+            const r = l as unknown as {
+              id: string; codigo: string; qr_code: string | null
+              quantidade_recebida: number; insumo_id: string; insumo: { nome: string } | null
+            }
+            return {
+              lote_id: r.id,
+              codigo: r.codigo,
+              qr_code: r.qr_code ?? '',
+              quantidade: r.quantidade_recebida,
+              insumo_id: r.insumo_id,
+              insumo: r.insumo?.nome ?? '—',
+            }
+          }),
+        )
+        setCarregando(false)
+      })
+  }, [profile])
+
+  const imprimir = (ls: LoteAbertura[]) =>
+    navigate('/recebimento/imprimir-lotes', { state: { lotes: ls } })
+
+  const porInsumo = new Map<string, LoteAbertura[]>()
+  for (const l of lotes) porInsumo.set(l.insumo_id, [...(porInsumo.get(l.insumo_id) ?? []), l])
+  const grupos = [...porInsumo.values()].sort((a, b) => a[0].insumo.localeCompare(b[0].insumo))
+
+  return (
+    <Card className="p-5">
+      <h2 className="font-semibold text-gray-900 mb-1">Etiquetas da abertura</h2>
+      <p className="text-sm text-gray-600 mb-4">
+        Tudo que a abertura criou e está na prateleira. Pode imprimir quantas vezes
+        precisar — clicar aqui não &ldquo;gasta&rdquo; a etiqueta.
+      </p>
+
+      {carregando ? (
+        <p className="text-sm text-gray-500">Carregando…</p>
+      ) : lotes.length === 0 ? (
+        <p className="text-sm text-gray-500">
+          Nada ainda. As etiquetas aparecem aqui assim que você lançar o primeiro insumo.
+        </p>
+      ) : (
+        <>
+          <div className="flex flex-wrap items-center justify-between gap-3 mb-3">
+            <p className="text-sm text-gray-700">
+              <strong>{lotes.length}</strong> etiqueta{lotes.length === 1 ? '' : 's'} em{' '}
+              {grupos.length} insumo{grupos.length === 1 ? '' : 's'}
+            </p>
+            <Button size="sm" onClick={() => imprimir(lotes)}>Imprimir todas</Button>
+          </div>
+
+          <ul className="divide-y divide-gray-100 text-sm">
+            {grupos.map(g => (
+              <li key={g[0].insumo_id} className="flex items-center justify-between gap-3 py-2">
+                <span className="min-w-0 truncate text-gray-700">{g[0].insumo}</span>
+                <span className="flex items-center gap-3 shrink-0">
+                  <span className="text-xs text-gray-500 tabular-nums">
+                    {g.length} etiqueta{g.length === 1 ? '' : 's'}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => imprimir(g)}
+                    className="text-xs font-medium text-brand-700 hover:underline"
+                  >
+                    imprimir
+                  </button>
+                </span>
+              </li>
+            ))}
+          </ul>
+
+          <p className="text-xs text-gray-500 mt-3">
+            O conteúdo dos baldes não entra nesta lista: ele também vira lote, mas nasce
+            zerado, porque o insumo está no pote e não numa embalagem para colar etiqueta.
+          </p>
+        </>
+      )}
     </Card>
   )
 }
