@@ -94,6 +94,16 @@ pedir centenas de potes, é isto.
   a fábrica tem.
 - **`NULL` ≠ zero** em `formas_realizadas`, `quantidade_perdida` e afins. NULL é
   "ainda não aconteceu" ou "não sei"; zero afirma que aconteceu e deu nada.
+- **A embalagem externa do fardo só vai para o lixo quando o fardo zera.**
+  O fardo é o lote e o QR colado nele é o nome do lote; enquanto sobrar
+  conteúdo, o plástico precisa existir para haver o que escanear. Prática do
+  Lucca, descoberta por ele na bancada em 23/08/2026 depois de sofrer o
+  problema oposto — pacotes de 1 kg órfãos na prateleira.
+- **O que é durável leva etiqueta; quantos cabem dentro é conta, não cadastro**
+  (migration 074). A tabela `lotes_unidades` existe e está **vazia de
+  propósito**: granel se controla por peso. Antes de propor rastreio por
+  sub-unidade, lembrar que 15 "recipientes" de saco de confeitar já foram
+  criados e desfeitos por esse motivo.
 
 ## Datas
 
