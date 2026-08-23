@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState } from 'react'
-import { NavLink, useLocation, useNavigate } from 'react-router-dom'
+import { NavLink, useLocation } from 'react-router-dom'
 import { useAuth } from '../../contexts/AuthContext'
 import { canAccess } from '../../lib/permissions'
+import { BlocoUsuario } from './BlocoUsuario'
 import { LogoUnno } from '../ui/LogoUnno'
 import {
   gruposNav, itemDashboard, itemConfiguracoes,
@@ -110,10 +111,8 @@ function GrupoSuspenso({ grupo, ativo }: { grupo: GrupoNav; ativo: boolean }) {
 }
 
 export function Header({ onMenuToggle, darkMode, colapsado, onExpandir }: HeaderProps) {
-  const { profile, logout, permissoes } = useAuth()
-  const navigate = useNavigate()
+  const { profile, permissoes } = useAuth()
   const location = useLocation()
-  const [showMenu, setShowMenu] = useState(false)
   const tira = useRef<HTMLDivElement>(null)
 
   const papel = profile?.papel ?? 'producao'
@@ -124,20 +123,14 @@ export function Header({ onMenuToggle, darkMode, colapsado, onExpandir }: Header
   const mostrarConfig = canAccess(papel, itemConfiguracoes.to, permissoes)
   const configAcesa = location.pathname.startsWith(itemConfiguracoes.to)
 
-  async function handleLogout() {
-    await logout()
-    navigate('/login')
-  }
-
-  const papelLabels: Record<string, string> = {
-    admin: 'Administrador',
-    gestao: 'Gestão',
-    producao: 'Produção',
-    compras: 'Compras',
-  }
-
   return (
-    <header className="shrink-0 px-3 pt-3">
+    <header className={[
+        'shrink-0 px-3 pt-3',
+        // Com o menu aberto no computador ele nao tem funcao: a navegacao esta
+        // na coluna e o usuario, no rodape dela. Barra vazia rouba altura da
+        // tela para nao dizer nada.
+        colapsado ? '' : 'lg:hidden',
+      ].join(' ')}>
       <div className="flex items-center gap-2 h-14 px-2.5 rounded-bloco
                       bg-card border border-border shadow-bloco">
 
@@ -234,75 +227,7 @@ export function Header({ onMenuToggle, darkMode, colapsado, onExpandir }: Header
           </nav>
         )}
 
-        <div className="flex items-center gap-1 ml-auto shrink-0">
-          {/* Claro ou escuro */}
-          <button
-            onClick={darkMode.toggle}
-            className="w-10 h-10 rounded-controle flex items-center justify-center
-                       text-muted-foreground hover:bg-accent hover:text-accent-foreground
-                       transition-colors"
-            title={darkMode.isDark ? 'Modo claro' : 'Modo escuro'}
-          >
-            {darkMode.isDark ? (
-              <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
-                <path strokeLinecap="round" strokeLinejoin="round" d="M12 3v2.25m6.364.386l-1.591 1.591M21 12h-2.25m-.386 6.364l-1.591-1.591M12 18.75V21m-4.773-4.227l-1.591 1.591M5.25 12H3m4.227-4.773L5.636 5.636M15.75 12a3.75 3.75 0 11-7.5 0 3.75 3.75 0 017.5 0z" />
-              </svg>
-            ) : (
-              <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
-                <path strokeLinecap="round" strokeLinejoin="round" d="M21.752 15.002A9.718 9.718 0 0118 15.75c-5.385 0-9.75-4.365-9.75-9.75 0-1.33.266-2.597.748-3.752A9.753 9.753 0 003 11.25C3 16.635 7.365 21 12.75 21a9.753 9.753 0 009.002-5.998z" />
-              </svg>
-            )}
-          </button>
-
-          {/* Quem está usando */}
-          <div className="relative">
-            <button
-              onClick={() => setShowMenu(!showMenu)}
-              className="flex items-center gap-2 px-2 py-1.5 rounded-controle
-                         hover:bg-accent transition-colors"
-            >
-              <div className="w-7 h-7 rounded-full bg-brand-500/15 border border-brand-500/25 flex items-center justify-center shrink-0">
-                <span className="font-display text-xs font-bold text-brand-700 dark:text-brand-400">
-                  {profile?.nome?.[0]?.toUpperCase() ?? '?'}
-                </span>
-              </div>
-              <div className="hidden sm:block text-left">
-                <p className="text-sm font-medium text-foreground leading-none whitespace-nowrap">
-                  {profile?.nome ?? '—'}
-                </p>
-                <p className="text-[0.65rem] uppercase tracking-[1px] text-muted-foreground/70 mt-0.5 whitespace-nowrap">
-                  {papelLabels[profile?.papel ?? ''] ?? profile?.papel}
-                </p>
-              </div>
-              <svg className="w-4 h-4 text-muted-foreground/60 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
-              </svg>
-            </button>
-
-            {showMenu && (
-              <>
-                <div className="fixed inset-0 z-10" onClick={() => setShowMenu(false)} />
-                <div className="absolute right-0 top-full mt-2 w-52 z-20 overflow-hidden
-                                rounded-bloco bg-popover border border-border shadow-bloco">
-                  <div className="px-4 py-3 border-b border-border">
-                    <p className="text-sm font-medium text-foreground">{profile?.nome}</p>
-                    <p className="text-xs text-muted-foreground">{profile?.email}</p>
-                  </div>
-                  <button
-                    onClick={handleLogout}
-                    className="w-full flex items-center gap-2 px-4 py-3 text-[0.7rem] font-semibold uppercase
-                               tracking-[1px] text-destructive hover:bg-accent transition-colors"
-                  >
-                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                      <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 9V5.25A2.25 2.25 0 0013.5 3h-6a2.25 2.25 0 00-2.25 2.25v13.5A2.25 2.25 0 007.5 21h6a2.25 2.25 0 002.25-2.25V15M12 9l-3 3m0 0l3 3m-3-3h12.75" />
-                    </svg>
-                    Sair
-                  </button>
-                </div>
-              </>
-            )}
-          </div>
-        </div>
+        <BlocoUsuario darkMode={darkMode} className="ml-auto shrink-0" />
       </div>
     </header>
   )

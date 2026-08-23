@@ -46,7 +46,7 @@ export function Layout() {
     <div className="flex h-screen h-[100dvh] overflow-hidden bg-ground">
       {/* Recolhido, o menu não é renderizado: quem navega é a tira do
           cabeçalho. Esconder por CSS deixaria os links no caminho do Tab. */}
-      {!colapsado && <Sidebar onRecolher={alternar} />}
+      {!colapsado && <Sidebar onRecolher={alternar} darkMode={darkMode} />}
 
       <div className="flex flex-col flex-1 min-w-0 overflow-hidden">
         <Header

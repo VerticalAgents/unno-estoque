@@ -4,6 +4,7 @@ import type { ReactNode } from 'react'
 import { useAuth } from '../../contexts/AuthContext'
 import { canAccess } from '../../lib/permissions'
 import { LogoUnno } from '../ui/LogoUnno'
+import { BlocoUsuario } from './BlocoUsuario'
 
 export interface NavItem {
   to: string
@@ -303,7 +304,10 @@ export function itemAceso(item: NavItem, caminho: string): boolean {
  * topo e a coluna rolava. Agora só Dashboard e Configurações ficam soltos; o
  * resto mora nos quatro grupos, e o grupo da rota atual abre sozinho.
  */
-export function Sidebar({ onRecolher }: { onRecolher?: () => void }) {
+export function Sidebar({ onRecolher, darkMode }: {
+  onRecolher?: () => void
+  darkMode: { isDark: boolean; toggle: () => void }
+}) {
   const location = useLocation()
   const { profile, permissoes } = useAuth()
   const papel = profile?.papel ?? 'producao'
@@ -478,10 +482,17 @@ export function Sidebar({ onRecolher }: { onRecolher?: () => void }) {
         )}
       </div>
 
-      {/* Footer */}
-      <div className="px-5 py-4 border-t border-border">
-        <p className="text-[0.65rem] uppercase tracking-[1.5px] text-muted-foreground/70">Unno</p>
-        <p className="text-[0.65rem] uppercase tracking-[1.5px] text-muted-foreground/60/60">Porto Alegre · RS</p>
+      {/* Quem está usando.
+          Sai daqui o "Unno · Porto Alegre · RS", que ocupava o melhor lugar do
+          menu para dizer o que ninguém precisa ler duas vezes por dia. Com o
+          usuário aqui, o cabeçalho fica sem função no computador e some.
+
+          Sub-bloco com canto próprio, recuado do bloco do menu: é uma coisa
+          dentro de outra, e a moldura conta isso sem precisar de rótulo. */}
+      <div className="p-2 border-t border-border">
+        <div className="rounded-controle bg-muted p-1">
+          <BlocoUsuario darkMode={darkMode} paraCima largo />
+        </div>
       </div>
     </div>
   )
