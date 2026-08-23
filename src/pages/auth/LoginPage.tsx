@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { supabase } from '../../lib/supabase'
 import { Button } from '../../components/ui/Button'
 import { Input } from '../../components/ui/Input'
+import { LogoUnno } from '../../components/ui/LogoUnno'
 
 export function LoginPage() {
   const navigate = useNavigate()
@@ -40,9 +41,7 @@ export function LoginPage() {
       <div className="relative z-10 w-full max-w-sm">
         {/* Logo */}
         <div className="text-center mb-8">
-          <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-brand-500 shadow-lg dark:shadow-glow mb-4">
-            <span className="font-display text-white text-2xl font-extrabold">U</span>
-          </div>
+          <LogoUnno className="inline-block w-16 h-16 mb-4" />
           <h1 className="font-display text-3xl font-extrabold uppercase tracking-[6px] text-gray-900 dark:text-unno-text">
             Unno
           </h1>

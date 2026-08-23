@@ -3,6 +3,7 @@ import { useState } from 'react'
 import type { ReactNode } from 'react'
 import { useAuth } from '../../contexts/AuthContext'
 import { canAccess } from '../../lib/permissions'
+import { LogoUnno } from '../ui/LogoUnno'
 
 export interface NavItem {
   to: string
@@ -354,9 +355,7 @@ export function Sidebar({ onRecolher }: { onRecolher?: () => void }) {
       {/* Logo */}
       <div className="px-5 py-5 border-b border-border">
         <div className="flex items-center gap-2.5">
-          <div className="w-8 h-8 rounded-controle bg-primary flex items-center justify-center shadow-tema">
-            <span className="font-display text-primary-foreground text-sm font-extrabold">U</span>
-          </div>
+          <LogoUnno />
           <div className="min-w-0">
             <p className="font-display text-sm font-extrabold uppercase tracking-[3px] text-foreground leading-none">
               Unno

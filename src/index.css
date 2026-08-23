@@ -22,19 +22,19 @@
    ficou reservado para ação irreversível, por decisão do usuário. */
 :root {
   --card: #fcfcfc;
-  --ring: #72e3ad;
+  --ring: #25d98d;
   --input: #f6f6f6;
   --muted: #ededed;
   --accent: #ededed;
   --border: #dfdfdf;
   --radius: 0.5rem;
-  --chart-1: #72e3ad;
+  --chart-1: #25d98d;
   --chart-2: #3b82f6;
   --chart-3: #8b5cf6;
   --chart-4: #f59e0b;
   --chart-5: #10b981;
   --popover: #fcfcfc;
-  --primary: #72e3ad;
+  --primary: #25d98d;
   --sidebar: #fcfcfc;
   --secondary: #fdfdfd;
   --background: #fcfcfc;
@@ -42,7 +42,7 @@
   --destructive: #ca3214;
   --shadow-blur: 3px;
   --shadow-color: #000000;
-  --sidebar-ring: #72e3ad;
+  --sidebar-ring: #25d98d;
   --shadow-spread: 0px;
   --letter-spacing: 0.025em;
   --shadow-opacity: 0.17;
@@ -51,7 +51,7 @@
   --card-foreground: #171717;
   --shadow-offset-x: 0px;
   --shadow-offset-y: 1px;
-  --sidebar-primary: #72e3ad;
+  --sidebar-primary: #25d98d;
   --muted-foreground: #202020;
   --accent-foreground: #202020;
   --popover-foreground: #525252;

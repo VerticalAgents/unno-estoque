@@ -98,21 +98,21 @@ export default {
         // ── Escalas: hexadecimal fixo, aceitam opacidade ──
         //
         // `brand` é a menta do tema em rampa. O 400 é exatamente o --primary
-        // claro (#72e3ad) e o 900 é o --primary escuro (#006239): os dois
+        // claro (#25d98d) e o 900 é o --primary escuro (#006239): os dois
         // extremos do tema são pontos reais da escala, não aproximações.
         //
         // Menta é clara: superfície de menta pede texto ESCURO, nunca branco.
         // É o que o tema diz em --primary-foreground (#1e2723).
         brand: {
-          50:  '#eefbf5',
-          100: '#d6f5e8',
-          200: '#aeead1',
-          300: '#8ee7bf',
-          400: '#72e3ad',
-          500: '#4fd196',
-          600: '#2fb27a',
-          700: '#1e8c60',
-          800: '#14704c',
+          50:  '#e8fbf2',
+          100: '#c7f5e0',
+          200: '#93ecc4',
+          300: '#57e2a5',
+          400: '#25d98d',
+          500: '#16bd79',
+          600: '#0f9d64',
+          700: '#0b7d50',
+          800: '#097046',
           900: '#006239',
         },
 
@@ -184,8 +184,8 @@ export default {
         'tactil-escuro': '0 1px 3px 0 rgb(0 0 0 / 0.5)',
         botao: '0 1px 2px 0 rgb(0 0 0 / 0.14)',
         'botao-press': 'inset 0 1px 2px 0 rgb(0 0 0 / 0.2)',
-        glow: '0 0 30px rgb(114 227 173 / 0.28)',
-        'glow-sm': '0 0 20px rgb(114 227 173 / 0.14)',
+        glow: '0 0 30px rgb(37 217 141 / 0.28)',
+        'glow-sm': '0 0 20px rgb(37 217 141 / 0.14)',
         'glow-amber': '0 0 30px rgb(251 191 36 / 0.3)',
       },
 

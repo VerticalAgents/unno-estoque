@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { NavLink, useLocation, useNavigate } from 'react-router-dom'
 import { useAuth } from '../../contexts/AuthContext'
 import { canAccess } from '../../lib/permissions'
+import { LogoUnno } from '../ui/LogoUnno'
 import {
   gruposNav, itemDashboard, itemConfiguracoes,
   grupoAceso, itemAceso,
@@ -158,9 +159,7 @@ export function Header({ onMenuToggle, darkMode, colapsado, onExpandir }: Header
           'flex items-center gap-2 shrink-0 pl-1',
           colapsado ? 'flex' : 'lg:hidden',
         ].join(' ')}>
-          <div className="hidden lg:flex w-8 h-8 rounded-controle bg-primary items-center justify-center shadow-tema">
-            <span className="font-display text-primary-foreground text-sm font-extrabold">U</span>
-          </div>
+          <LogoUnno className="hidden lg:block w-8 h-8" />
           <span className="font-display text-sm font-extrabold uppercase tracking-[3px] text-brand-600 dark:text-brand-400 lg:hidden">
             Unno
           </span>
