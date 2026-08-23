@@ -26,9 +26,8 @@ Já feito: produção anterior ao sistema importada (17 dias, 28/06 a 13/08,
 
 **Falta, nesta ordem:**
 
-1. **Salvar os dossiês de 10, 11 e 12/08 antes de resetar.** São as únicas três
-   sessões com rastreabilidade de insumo real (22, 14 e 8 linhas de pesagem).
-   O reset apaga `sessoes_producao_locais` e isso não volta.
+1. ~~Salvar os dossiês de 10, 11 e 12/08~~ — **feito em 23/08**, em
+   `docs/rastreabilidade/` (44 pesagens, versionadas no Git).
 2. **Consertar o texto do dossiê.** A 097 faz sessão importada dizer "este dia
    foi produzido antes de o sistema existir" — falso para produção de agosto
    registrada em atraso. São duas ausências diferentes e o documento precisa
@@ -37,7 +36,8 @@ Já feito: produção anterior ao sistema importada (17 dias, 28/06 a 13/08,
 4. ~~Lançar a produção de 17 a 21/08~~ — **feito em 23/08** (SESS-0021 a 0024).
    **Falta o dia 14/08**, que nunca foi perguntado nem respondido. 15 e 16 são
    fim de semana; 21 o Lucca confirmou que não houve produção.
-5. Resetar, contar fisicamente, lançar pela Abertura, reetiquetar.
+5. ~~Resetar o estoque~~ — **feito em 23/08**. Falta a parte física: contar
+   baldes e estoque, lançar pela Abertura, reetiquetar.
 
 **Respondido em 23/08:** os 5.022 brownies pendurados no estoque de produto
 acabado (SESS-0001 e 0002) são exatamente 1.438 + 3.584 — a produção dos dias
@@ -125,6 +125,38 @@ seguidas.** Não é acaso de um dia ruim. Como esta semana ele fechou redondo, a
 perda de 126 da semana passada não era doce de leite parado em estoque — era
 quebra mesmo, concentrada no 12 e no 13. Aponta para a desenforma. Não
 investigado.
+
+---
+
+## O reset — feito em 23/08
+
+Antes, as 44 linhas de pesagem foram salvas em `docs/rastreabilidade/` (folha
+legível, dado cru e os dossiês como o sistema os desenha). São a única
+rastreabilidade de insumo que o sistema chegou a ter.
+
+Usada a `dev_limpar_estoque` da migration 062, **não** a "Limpar tudo" da tela
+`/dev`: a primeira preserva as sessões de produção, a segunda levaria as 24
+junto. Depois, os 3 lotes de produto com saldo (LPROD-0001, 0002 e 0003 — os
+5.022) tiveram o saldo zerado e o status virou `esgotado`; o lote fica, porque
+é o rastro da produção.
+
+| | Antes | Depois |
+|---|---:|---:|
+| Lotes de insumo | 153 | 0 |
+| Baldes com conteúdo | 26 | 0 |
+| Movimentações | 94 | 0 |
+| Produto acabado com saldo | 3 | 0 |
+| Sessões de produção | 24 | **24** |
+| Linhas de produção (51.809 un.) | 27 | **27** |
+
+Backup do que foi apagado em `backup_antes_do_reset.json`, no scratchpad da
+sessão — transitório, some com a pasta temporária.
+
+**A trava salvou a operação uma vez.** A primeira execução exigia 28 linhas de
+produção, número que eu havia contado de cabeça; são 27. Ela desfez tudo e nada
+foi apagado. Reescrita para medir o histórico antes e exigir que sessões, linhas
+e unidades fiquem idênticas — **conferência não deve depender de número chutado
+por quem escreve o script**.
 
 ---
 
