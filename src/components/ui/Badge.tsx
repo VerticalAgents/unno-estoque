@@ -10,11 +10,10 @@ type BadgeVariant = 'default' | 'success' | 'warning' | 'danger' | 'info' | 'pur
  * vermelho-escuro num "Vencido", ilegível a um metro da tela. No escuro a
  * fórmula se inverte: fundo cheio e escuro, texto claro.
  *
- * OS TONS FORAM ESCOLHIDOS PARA NÃO COLIDIR com o bloco legado de modo escuro
- * do `index.css`, que ainda sobrescreve `bg-*-50`, `border-*-200` e
- * `border-blue-300` com seletor de especificidade maior (`html.dark .classe`
- * vence `.dark .dark\:classe`). Usar `-100` no claro e `-950` no escuro passa
- * ao largo dessas regras — se um dia elas saírem, os tons podem voltar ao 50.
+ * O `dark:` daqui manda mais que a rede de segurança do `index.css`. Isso não
+ * era verdade até o bloco legado ser rebaixado de `html.dark .x` para
+ * `.dark .x`: com a especificidade antiga, uma regra genérica de lá vencia o
+ * escuro declarado aqui, e o componente não mandava na própria cor.
  */
 const variantClasses: Record<BadgeVariant, string> = {
   default:
