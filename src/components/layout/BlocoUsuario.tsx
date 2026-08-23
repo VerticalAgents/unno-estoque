@@ -56,7 +56,7 @@ export function BlocoUsuario({ darkMode, paraCima = false, largo = false, classN
           type="button"
           onClick={() => setAberto(a => !a)}
           className={[
-            'flex items-center gap-2 px-2 py-1.5 rounded-controle min-w-0',
+            'flex items-center gap-2 pl-1.5 pr-2 py-1.5 rounded-full min-w-0 h-10',
             'hover:bg-accent hover:text-accent-foreground transition-colors',
             largo ? 'flex-1' : '',
           ].join(' ')}
@@ -89,7 +89,7 @@ export function BlocoUsuario({ darkMode, paraCima = false, largo = false, classN
           onClick={darkMode.toggle}
           title={darkMode.isDark ? 'Modo claro' : 'Modo escuro'}
           aria-label={darkMode.isDark ? 'Modo claro' : 'Modo escuro'}
-          className="w-9 h-9 shrink-0 rounded-controle flex items-center justify-center
+          className="w-10 h-10 shrink-0 rounded-full flex items-center justify-center
                      text-muted-foreground hover:bg-accent hover:text-accent-foreground transition-colors"
         >
           {darkMode.isDark ? (

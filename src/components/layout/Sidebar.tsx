@@ -491,7 +491,7 @@ export function Sidebar({ onRecolher, darkMode }: {
           que é uma coisa dentro de outra é o recuo e a mudança de superfície,
           não um traço. Traço mais moldura mais recuo seria dizer três vezes. */}
       <div className="p-2">
-        <div className="rounded-bloco bg-muted p-1">
+        <div className="rounded-bloco bg-muted p-1.5">
           <BlocoUsuario darkMode={darkMode} paraCima largo />
         </div>
       </div>
