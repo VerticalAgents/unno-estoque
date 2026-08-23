@@ -15,12 +15,14 @@ export function Card({ children, className = '', onClick, accent }: CardProps) {
       className={[
         // .glass-card do design system: no escuro é vidro fosco sobre o fundo;
         // no claro segue cartão branco, para não prejudicar a leitura na cozinha.
-        'rounded-2xl border transition-all duration-500 ease-out-expo',
-        'bg-white border-gray-200 shadow-sm',
-        'dark:bg-white/[.04] dark:border-white/10 dark:backdrop-blur-xl dark:shadow-none',
+        // O cartão é uma superfície táctil: luz no topo, contato embaixo.
+        // A borda quase não aparece — quem separa o cartão do fundo é a sombra.
+        'rounded-bloco border transition-all duration-300 ease-out-expo',
+        'bg-white border-areia-200 shadow-tactil',
+        'dark:bg-unno-raised dark:border-white/[.06] dark:shadow-tactil-escuro',
         accent ? 'border-l-4' : '',
         onClick
-          ? 'cursor-pointer hover:-translate-y-1.5 hover:shadow-lg dark:hover:border-white/[.15] dark:hover:bg-white/[.06]'
+          ? 'cursor-pointer hover:-translate-y-1 hover:shadow-tactil-hover dark:hover:border-white/[.12] dark:hover:bg-unno-elevated'
           : '',
         className,
       ].join(' ')}
@@ -38,10 +40,10 @@ interface CardHeaderProps {
 
 export function CardHeader({ title, subtitle, action }: CardHeaderProps) {
   return (
-    <div className="flex items-start justify-between px-5 pt-5 pb-3 border-b border-gray-100 dark:border-[#1a1a24]">
+    <div className="flex items-start justify-between px-5 pt-5 pb-3 border-b border-areia-200 dark:border-white/[.06]">
       <div>
-        <h2 className="text-base font-semibold text-gray-900 dark:text-gray-100">{title}</h2>
-        {subtitle && <p className="text-sm text-gray-500 mt-0.5">{subtitle}</p>}
+        <h2 className="text-base font-semibold text-areia-950 dark:text-unno-text">{title}</h2>
+        {subtitle && <p className="text-sm text-areia-600 dark:text-unno-muted mt-0.5">{subtitle}</p>}
       </div>
       {action && <div className="shrink-0 ml-3">{action}</div>}
     </div>
@@ -66,7 +68,7 @@ export function StatCard({
   accent?: string
 }) {
   const colorMap = {
-    gray:   'text-gray-900',
+    gray:   'text-areia-950 dark:text-unno-text',
     red:    'text-red-600',
     yellow: 'text-yellow-600',
     green:  'text-emerald-600',
@@ -74,9 +76,9 @@ export function StatCard({
   }
   return (
     <Card accent={accent} className="p-5">
-      <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">{label}</p>
+      <p className="text-xs font-medium text-areia-600 dark:text-unno-muted uppercase tracking-wide">{label}</p>
       <p className={`mt-1 text-2xl font-bold ${colorMap[color]}`}>{value}</p>
-      {sub && <p className="text-xs text-gray-400 mt-1">{sub}</p>}
+      {sub && <p className="text-xs text-areia-500 dark:text-unno-dim mt-1">{sub}</p>}
     </Card>
   )
 }

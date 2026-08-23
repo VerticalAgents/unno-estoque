@@ -271,10 +271,18 @@
 
   /* Scrollbar */
   html.dark ::-webkit-scrollbar { width: 8px; }
-  html.dark ::-webkit-scrollbar-track { background: #0a0a0f; }
-  html.dark ::-webkit-scrollbar-thumb { background: #2a2a34; border-radius: 4px; }
-  html.dark ::-webkit-scrollbar-thumb:hover { background: #3a3a44; }
+  html.dark ::-webkit-scrollbar-track { background: #131311; }
+  html.dark ::-webkit-scrollbar-thumb { background: #3d3c35; border-radius: 4px; }
+  html.dark ::-webkit-scrollbar-thumb:hover { background: #5a594f; }
 }
+
+/* A tira de navegação do cabeçalho recolhido rola na horizontal, e a barra de
+   rolagem em cima dela cortaria os itens num cabeçalho de 56px de altura. */
+.tira-rolavel {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+.tira-rolavel::-webkit-scrollbar { display: none; }
 
 @media print {
   body * {

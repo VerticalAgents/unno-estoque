@@ -12,14 +12,40 @@ interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
   fullWidth?: boolean
 }
 
-// Variantes espelhando .btn-primary / .btn-secondary / .btn-ghost do
-// unno-design-system.html. No escuro o hover ganha o brilho teal (shadow-glow).
+/**
+ * PRIMARY É LARANJA, e essa é a mudança que importa.
+ *
+ * O verde da marca diz quem o sistema é; o laranja diz o que ele está pedindo
+ * que você faça. Antes as duas coisas eram a mesma cor, e numa tela com o menu
+ * verde aceso ao lado de um botão verde nada chamava mais atenção que o resto.
+ *
+ * `success` continua verde-esmeralda, separado do verde da marca de propósito:
+ * "deu certo" e "é o Unno" não podem ser o mesmo sinal.
+ *
+ * A SUPERFÍCIE É TÁCTIL. Luz interna no topo, sombra interna embaixo, sombra de
+ * contato fora — e ao pressionar a luz some e a sombra interna se aprofunda, em
+ * 80ms. É o que faz o botão parecer afundar em vez de piscar.
+ */
 const variantClasses: Record<Variant, string> = {
-  primary:   'bg-brand-500 text-white hover:bg-brand-600 hover:shadow-glow focus:ring-brand-500 disabled:bg-brand-300 dark:text-unno-bg dark:disabled:bg-brand-800',
-  secondary: 'bg-transparent text-brand-600 border border-brand-500 hover:bg-brand-50 hover:shadow-glow-sm focus:ring-brand-500 dark:text-brand-400 dark:hover:bg-brand-500/10',
-  danger:    'bg-red-600 text-white hover:bg-red-700 focus:ring-red-500 disabled:bg-red-300 dark:bg-unno-danger dark:hover:brightness-110',
-  ghost:     'bg-transparent text-gray-600 border border-gray-300 hover:bg-gray-100 hover:border-gray-400 focus:ring-gray-400 dark:text-unno-muted dark:border-white/[.08] dark:hover:text-unno-text dark:hover:border-white/[.15] dark:hover:bg-white/[.03]',
-  success:   'bg-emerald-600 text-white hover:bg-emerald-700 focus:ring-emerald-500',
+  primary:
+    'bg-acao-500 text-white shadow-botao hover:bg-acao-600 focus:ring-acao-500 ' +
+    'active:shadow-botao-press disabled:bg-acao-200 disabled:shadow-none ' +
+    'dark:disabled:bg-acao-900 dark:disabled:text-white/40',
+  secondary:
+    'bg-transparent text-brand-700 border border-brand-500/60 hover:bg-brand-50 hover:border-brand-500 ' +
+    'focus:ring-brand-500 dark:text-brand-400 dark:hover:bg-brand-500/10 dark:border-brand-500/40',
+  danger:
+    'bg-red-600 text-white shadow-botao hover:bg-red-700 focus:ring-red-500 ' +
+    'active:shadow-botao-press disabled:bg-red-300 disabled:shadow-none ' +
+    'dark:bg-unno-danger dark:hover:brightness-110',
+  ghost:
+    'bg-transparent text-areia-600 border border-areia-300 hover:bg-areia-100 hover:border-areia-400 ' +
+    'hover:text-areia-950 focus:ring-areia-400 ' +
+    'dark:text-unno-muted dark:border-white/[.08] dark:hover:text-unno-text ' +
+    'dark:hover:border-white/[.15] dark:hover:bg-white/[.04]',
+  success:
+    'bg-emerald-600 text-white shadow-botao hover:bg-emerald-700 focus:ring-emerald-500 ' +
+    'active:shadow-botao-press',
 }
 
 // O design system usa maiúsculas com espaçamento entre letras, então os
@@ -51,13 +77,16 @@ export function Button({
       {...props}
       disabled={disabled || loading}
       className={[
-        'inline-flex items-center justify-center gap-2 rounded font-display font-semibold',
+        'inline-flex items-center justify-center gap-2 rounded-controle font-display font-semibold',
         'uppercase tracking-[1.5px]',
-        'focus:outline-none focus:ring-2 focus:ring-offset-2 dark:focus:ring-offset-[#0a0a0f]',
+        'focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-areia-100 dark:focus:ring-offset-unno-bg',
         // O "levantar" no hover é para mouse. Em tela de toque não existe
         // hover de verdade: o iOS aplica o estado ao tocar e o deixa grudado
         // até o próximo toque em outro lugar.
-        'transition-all duration-300 ease-out-expo [@media(hover:hover)]:hover:-translate-y-0.5',
+        'transition-all duration-200 ease-out-expo [@media(hover:hover)]:hover:-translate-y-0.5',
+        // O afundar, esse vale para os dois: no toque é o retorno imediato de
+        // que o dedo foi registrado.
+        'active:translate-y-px active:duration-press',
         'disabled:cursor-not-allowed disabled:opacity-60 disabled:hover:translate-y-0 disabled:hover:shadow-none',
         variantClasses[variant],
         sizeClasses[size],

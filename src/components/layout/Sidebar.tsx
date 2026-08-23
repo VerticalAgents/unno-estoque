@@ -207,9 +207,9 @@ export const estoqueItems: NavItem[] = [
   },
 ]
 
-const estoqueRoutes = ['/estoque/insumos', '/estoque/produtos', '/estoque/historico']
+export const estoqueRoutes = ['/estoque/insumos', '/estoque/produtos', '/estoque/historico']
 
-const cadastrosRoutes = ['/insumos', '/fornecedores', '/fichas', '/produtos', '/recipientes']
+export const cadastrosRoutes = ['/insumos', '/fornecedores', '/fichas', '/produtos', '/recipientes']
 
 /**
  * A barra lateral, agora só do computador.
@@ -218,7 +218,7 @@ const cadastrosRoutes = ['/insumos', '/fornecedores', '/fichas', '/produtos', '/
  * hoje é o `MenuInferior`, que sobe de baixo — perto do polegar e de onde o
  * toque acontece.
  */
-export function Sidebar() {
+export function Sidebar({ onRecolher }: { onRecolher?: () => void }) {
   const location = useLocation()
   const { profile, permissoes } = useAuth()
   const papel = profile?.papel ?? 'producao'
@@ -235,21 +235,41 @@ export function Sidebar() {
   const [cadastrosOpen, setCadastrosOpen] = useState(isCadastrosActive)
 
   const content = (
-    <nav className="flex flex-col h-full">
+    // <div> e não <nav>: o <nav> agora é o bloco que envolve isto, e um
+    // dentro do outro daria dois marcos de navegação para o leitor de tela.
+    <div className="flex flex-col h-full">
       {/* Logo */}
-      <div className="px-5 py-5 border-b border-gray-100 dark:border-white/[.08]">
+      <div className="px-5 py-5 border-b border-areia-200 dark:border-white/[.06]">
         <div className="flex items-center gap-2.5">
-          <div className="w-8 h-8 rounded-lg bg-brand-500 flex items-center justify-center dark:shadow-glow-sm">
+          <div className="w-8 h-8 rounded-controle bg-brand-500 flex items-center justify-center shadow-botao">
             <span className="font-display text-white text-sm font-extrabold">U</span>
           </div>
-          <div>
-            <p className="font-display text-sm font-extrabold uppercase tracking-[3px] text-gray-900 dark:text-brand-400 leading-none">
+          <div className="min-w-0">
+            <p className="font-display text-sm font-extrabold uppercase tracking-[3px] text-areia-950 dark:text-brand-400 leading-none">
               Unno
             </p>
-            <p className="text-[0.65rem] uppercase tracking-[1.5px] text-gray-400 dark:text-unno-dim mt-1">
+            <p className="text-[0.65rem] uppercase tracking-[1.5px] text-areia-500 dark:text-unno-dim mt-1">
               Estoque
             </p>
           </div>
+
+          {/* Recolher: o menu vira cabeçalho e a tela ganha a largura toda. */}
+          {onRecolher && (
+            <button
+              type="button"
+              onClick={onRecolher}
+              title="Recolher o menu"
+              aria-label="Recolher o menu"
+              className="ml-auto shrink-0 w-8 h-8 rounded-controle flex items-center justify-center
+                         text-areia-500 hover:text-areia-950 hover:bg-areia-100
+                         dark:text-unno-dim dark:hover:text-unno-text dark:hover:bg-white/[.04]
+                         transition-colors"
+            >
+              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M18.75 19.5l-7.5-7.5 7.5-7.5M11.25 19.5l-7.5-7.5 7.5-7.5" />
+              </svg>
+            </button>
+          )}
         </div>
       </div>
 
@@ -266,10 +286,10 @@ export function Sidebar() {
               key={item.to}
               to={item.to}
               className={[
-                'flex items-center gap-3 px-3 py-2.5 rounded-lg text-[0.7rem] font-semibold uppercase tracking-[1px] transition-all duration-300',
+                'flex items-center gap-3 px-3 py-2.5 rounded-controle text-[0.7rem] font-semibold uppercase tracking-[1px] transition-all duration-200 ease-out-expo',
                 isActive
-                  ? 'bg-brand-500/10 text-brand-700 dark:text-brand-400'
-                  : 'text-gray-500 hover:bg-gray-100 hover:text-gray-900 dark:text-unno-muted dark:hover:bg-white/[.03] dark:hover:text-unno-text',
+                  ? 'bg-brand-500/12 text-brand-700 shadow-[inset_0_1px_0_#ffffffb3] dark:text-brand-400 dark:shadow-[inset_0_1px_0_#ffffff0f]'
+                  : 'text-areia-600 hover:bg-areia-100 hover:text-areia-950 dark:text-unno-muted dark:hover:bg-white/[.04] dark:hover:text-unno-text',
               ].join(' ')}
             >
               <span className={isActive ? 'text-brand-600' : 'text-gray-400'}>{item.icon}</span>
@@ -283,10 +303,10 @@ export function Sidebar() {
           <button
             onClick={() => setEstoqueOpen(o => !o)}
             className={[
-              'w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-[0.7rem] font-semibold uppercase tracking-[1px] transition-all duration-300',
+              'w-full flex items-center gap-3 px-3 py-2.5 rounded-controle text-[0.7rem] font-semibold uppercase tracking-[1px] transition-all duration-200 ease-out-expo',
               isEstoqueActive
-                ? 'bg-brand-500/10 text-brand-700 dark:text-brand-400'
-                : 'text-gray-500 hover:bg-gray-100 hover:text-gray-900 dark:text-unno-muted dark:hover:bg-white/[.03] dark:hover:text-unno-text',
+                ? 'bg-brand-500/12 text-brand-700 shadow-[inset_0_1px_0_#ffffffb3] dark:text-brand-400 dark:shadow-[inset_0_1px_0_#ffffff0f]'
+                : 'text-areia-600 hover:bg-areia-100 hover:text-areia-950 dark:text-unno-muted dark:hover:bg-white/[.04] dark:hover:text-unno-text',
             ].join(' ')}
           >
             <span className={isEstoqueActive ? 'text-brand-600' : 'text-gray-400'}>
@@ -312,10 +332,10 @@ export function Sidebar() {
                     key={item.to}
                     to={item.to}
                           className={[
-                      'flex items-center gap-2.5 px-3 py-2 rounded-lg text-[0.7rem] font-semibold uppercase tracking-[1px] transition-all duration-300',
+                      'flex items-center gap-2.5 px-3 py-2 rounded-controle text-[0.7rem] font-semibold uppercase tracking-[1px] transition-all duration-200 ease-out-expo',
                       isActive
-                        ? 'bg-brand-500/10 text-brand-700 dark:text-brand-400'
-                        : 'text-gray-500 hover:bg-gray-100 hover:text-gray-900 dark:text-unno-muted dark:hover:bg-white/[.03] dark:hover:text-unno-text',
+                        ? 'bg-brand-500/12 text-brand-700 shadow-[inset_0_1px_0_#ffffffb3] dark:text-brand-400 dark:shadow-[inset_0_1px_0_#ffffff0f]'
+                        : 'text-areia-600 hover:bg-areia-100 hover:text-areia-950 dark:text-unno-muted dark:hover:bg-white/[.04] dark:hover:text-unno-text',
                     ].join(' ')}
                   >
                     <span className={isActive ? 'text-brand-600' : 'text-gray-400'}>{item.icon}</span>
@@ -332,10 +352,10 @@ export function Sidebar() {
           <button
             onClick={() => setCadastrosOpen(o => !o)}
             className={[
-              'w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-[0.7rem] font-semibold uppercase tracking-[1px] transition-all duration-300',
+              'w-full flex items-center gap-3 px-3 py-2.5 rounded-controle text-[0.7rem] font-semibold uppercase tracking-[1px] transition-all duration-200 ease-out-expo',
               isCadastrosActive
-                ? 'bg-brand-500/10 text-brand-700 dark:text-brand-400'
-                : 'text-gray-500 hover:bg-gray-100 hover:text-gray-900 dark:text-unno-muted dark:hover:bg-white/[.03] dark:hover:text-unno-text',
+                ? 'bg-brand-500/12 text-brand-700 shadow-[inset_0_1px_0_#ffffffb3] dark:text-brand-400 dark:shadow-[inset_0_1px_0_#ffffff0f]'
+                : 'text-areia-600 hover:bg-areia-100 hover:text-areia-950 dark:text-unno-muted dark:hover:bg-white/[.04] dark:hover:text-unno-text',
             ].join(' ')}
           >
             <span className={isCadastrosActive ? 'text-brand-600' : 'text-gray-400'}>
@@ -361,10 +381,10 @@ export function Sidebar() {
                     key={item.to}
                     to={item.to}
                           className={[
-                      'flex items-center gap-2.5 px-3 py-2 rounded-lg text-[0.7rem] font-semibold uppercase tracking-[1px] transition-all duration-300',
+                      'flex items-center gap-2.5 px-3 py-2 rounded-controle text-[0.7rem] font-semibold uppercase tracking-[1px] transition-all duration-200 ease-out-expo',
                       isActive
-                        ? 'bg-brand-500/10 text-brand-700 dark:text-brand-400'
-                        : 'text-gray-500 hover:bg-gray-100 hover:text-gray-900 dark:text-unno-muted dark:hover:bg-white/[.03] dark:hover:text-unno-text',
+                        ? 'bg-brand-500/12 text-brand-700 shadow-[inset_0_1px_0_#ffffffb3] dark:text-brand-400 dark:shadow-[inset_0_1px_0_#ffffff0f]'
+                        : 'text-areia-600 hover:bg-areia-100 hover:text-areia-950 dark:text-unno-muted dark:hover:bg-white/[.04] dark:hover:text-unno-text',
                     ].join(' ')}
                   >
                     <span className={isActive ? 'text-brand-600' : 'text-gray-400'}>{item.icon}</span>
@@ -380,10 +400,10 @@ export function Sidebar() {
         {showConfig && <NavLink
           to="/configuracoes"
           className={[
-            'flex items-center gap-3 px-3 py-2.5 rounded-lg text-[0.7rem] font-semibold uppercase tracking-[1px] transition-all duration-300',
+            'flex items-center gap-3 px-3 py-2.5 rounded-controle text-[0.7rem] font-semibold uppercase tracking-[1px] transition-all duration-200 ease-out-expo',
             location.pathname.startsWith('/configuracoes')
-              ? 'bg-brand-500/10 text-brand-700 dark:text-brand-400'
-              : 'text-gray-500 hover:bg-gray-100 hover:text-gray-900 dark:text-unno-muted dark:hover:bg-white/[.03] dark:hover:text-unno-text',
+              ? 'bg-brand-500/12 text-brand-700 shadow-[inset_0_1px_0_#ffffffb3] dark:text-brand-400 dark:shadow-[inset_0_1px_0_#ffffff0f]'
+              : 'text-areia-600 hover:bg-areia-100 hover:text-areia-950 dark:text-unno-muted dark:hover:bg-white/[.04] dark:hover:text-unno-text',
           ].join(' ')}
         >
           <span className={location.pathname.startsWith('/configuracoes') ? 'text-brand-600' : 'text-gray-400'}>
@@ -400,7 +420,7 @@ export function Sidebar() {
           <NavLink
             to="/dev"
               className={[
-              'flex items-center gap-3 px-3 py-2.5 rounded-lg text-[0.7rem] font-semibold uppercase tracking-[1px] transition-all duration-300',
+              'flex items-center gap-3 px-3 py-2.5 rounded-controle text-[0.7rem] font-semibold uppercase tracking-[1px] transition-all duration-200 ease-out-expo',
               location.pathname.startsWith('/dev')
                 ? 'bg-amber-50 text-amber-700'
                 : 'text-amber-600 hover:bg-amber-50 hover:text-amber-700',
@@ -417,21 +437,28 @@ export function Sidebar() {
       </div>
 
       {/* Footer */}
-      <div className="px-5 py-4 border-t border-gray-100 dark:border-white/[.08]">
-        <p className="text-[0.65rem] uppercase tracking-[1.5px] text-gray-400 dark:text-unno-dim">Unno</p>
-        <p className="text-[0.65rem] uppercase tracking-[1.5px] text-gray-300 dark:text-unno-dim/60">Porto Alegre · RS</p>
+      <div className="px-5 py-4 border-t border-areia-200 dark:border-white/[.06]">
+        <p className="text-[0.65rem] uppercase tracking-[1.5px] text-areia-500 dark:text-unno-dim">Unno</p>
+        <p className="text-[0.65rem] uppercase tracking-[1.5px] text-areia-400 dark:text-unno-dim/60">Porto Alegre · RS</p>
       </div>
-    </nav>
+    </div>
   )
 
   return (
-    <>
-      {/* Só no computador: no celular quem abre é o MenuInferior. */}
-      {/* w-60 (e não w-56): os rótulos em maiúsculas ocupam mais largura */}
-      <aside className="hidden lg:flex flex-col w-60 bg-white dark:bg-unno-raised border-r border-gray-200 dark:border-white/[.08] shrink-0 h-full">
+    // Só no computador: no celular quem abre é o MenuInferior.
+    //
+    // O <aside> é a moldura e não tem visual próprio; quem desenha é o bloco
+    // de dentro. Separar os dois é o que permite ao bloco ter os quatro cantos
+    // arredondados e uma sombra em volta — encostado na borda da tela, um
+    // painel só mostra dois cantos e a sombra não tem para onde cair.
+    //
+    // w-60 (e não w-56): os rótulos em maiúsculas ocupam mais largura.
+    <aside className="hidden lg:flex flex-col shrink-0 h-full py-3 pl-3">
+      <nav className="flex flex-col h-full w-60 overflow-hidden rounded-bloco
+                      bg-white border border-areia-200 shadow-bloco
+                      dark:bg-unno-raised dark:border-white/[.06] dark:shadow-tactil-escuro">
         {content}
-      </aside>
-
-    </>
+      </nav>
+    </aside>
   )
 }

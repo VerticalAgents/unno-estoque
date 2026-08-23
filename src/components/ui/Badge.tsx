@@ -5,8 +5,8 @@ type BadgeVariant = 'default' | 'success' | 'warning' | 'danger' | 'info' | 'pur
 // Espelha .tag-* do unno-design-system.html: fundo tingido + borda da
 // mesma cor, texto em maiúsculas.
 const variantClasses: Record<BadgeVariant, string> = {
-  default: 'bg-gray-100 text-gray-600 border border-gray-200 dark:bg-white/[.03] dark:text-unno-muted dark:border-white/[.08]',
-  success: 'bg-brand-500/[.12] text-brand-700 border border-brand-500/20 dark:text-brand-400',
+  default: 'bg-areia-200 text-areia-700 border border-areia-300 dark:bg-white/[.04] dark:text-unno-muted dark:border-white/[.08]',
+  success: 'bg-emerald-500/[.12] text-emerald-700 border border-emerald-500/20 dark:text-emerald-400',
   warning: 'bg-unno-amber/[.12] text-amber-700 border border-unno-amber/20 dark:text-unno-amber',
   danger:  'bg-unno-danger/[.12] text-red-700 border border-unno-danger/20 dark:text-unno-danger',
   info:    'bg-blue-500/[.12] text-blue-700 border border-blue-500/20 dark:text-blue-400',
