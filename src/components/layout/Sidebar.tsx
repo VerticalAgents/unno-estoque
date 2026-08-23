@@ -487,10 +487,11 @@ export function Sidebar({ onRecolher, darkMode }: {
           menu para dizer o que ninguém precisa ler duas vezes por dia. Com o
           usuário aqui, o cabeçalho fica sem função no computador e some.
 
-          Sub-bloco com canto próprio, recuado do bloco do menu: é uma coisa
-          dentro de outra, e a moldura conta isso sem precisar de rótulo. */}
-      <div className="p-2 border-t border-border">
-        <div className="rounded-controle bg-muted p-1">
+          Sub-bloco com o MESMO canto do menu e sem linha separando: quem conta
+          que é uma coisa dentro de outra é o recuo e a mudança de superfície,
+          não um traço. Traço mais moldura mais recuo seria dizer três vezes. */}
+      <div className="p-2">
+        <div className="rounded-bloco bg-muted p-1">
           <BlocoUsuario darkMode={darkMode} paraCima largo />
         </div>
       </div>
