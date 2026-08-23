@@ -34,8 +34,9 @@ Já feito: produção anterior ao sistema importada (17 dias, 28/06 a 13/08,
    registrada em atraso. São duas ausências diferentes e o documento precisa
    distinguir.
 3. ~~Perdas do 12 e 13/08~~ — **feito em 23/08**, ver abaixo.
-4. Lançar a produção de 14 a 21/08 (dias livres). A tela existe:
-   Configurações → Produção anterior ao sistema, com colagem em massa.
+4. ~~Lançar a produção de 17 a 21/08~~ — **feito em 23/08** (SESS-0021 a 0024).
+   **Falta o dia 14/08**, que nunca foi perguntado nem respondido. 15 e 16 são
+   fim de semana; 21 o Lucca confirmou que não houve produção.
 5. Resetar, contar fisicamente, lançar pela Abertura, reetiquetar.
 
 **Respondido em 23/08:** os 5.022 brownies pendurados no estoque de produto
@@ -88,6 +89,42 @@ anterior: a tela pede o motivo da perda, o que seria melhor, mas também **cria
 estoque de produto acabado** — 2.558 brownies que já foram vendidos. Preferido o
 número certo sem motivo a um motivo com estoque falso. Dá para refazer pela tela
 depois do reset.
+
+---
+
+## Semana de 17 a 21/08 — lançada em 23/08
+
+44 formas Tradicional no 17; 24 Tradicional + 20 Doce de Leite no 18; 48
+Tradicional no 19; 44 Doce de Leite no 20; nada no 21. Faturamento da semana:
+**6.957 Tradicional e 3.842 Doce de Leite**.
+
+Tradicional assou 6.960 e vendeu 6.957 → **3 de perda**, uma por dia produzido.
+Doce de Leite assou 3.840 e vendeu **3.842** — dois a mais do que produziu.
+Perda negativa não existe; gravado como zero e os 2 deixados de lado. Podem ser
+sobra da semana anterior, uma forma que rendeu 61, ou contagem do faturamento.
+
+Importado por `importar_producao_historica` (SESS-0021 a 0024), que converte
+unidades em formas arredondando — as 5 linhas devolveram 44, 24, 20, 48 e 44,
+exatamente o que o Lucca contou. Depois `quantidade_planejada` foi corrigida
+para o bruto assado e `quantidade_perdida` recebeu o número conhecido.
+
+**`sessoes_producao` TEM campo de observação** — `observacoes_abertura` e
+`observacoes_fechamento`. A sessão anterior concluiu que não tinha, procurando
+pelos nomes errados (`observacoes`, `notas`). A nota de que a perda é estimada
+foi gravada nas sessões desta semana **e** nas do 12 e 13, que tinham ficado sem.
+
+### As duas semanas juntas
+
+| | Assado | Vendido | Perda | % |
+|---|---:|---:|---:|---:|
+| Tradicional | 13.200 | 13.175 | 25 | 0,19% |
+| Doce de Leite | 7.920 | 7.796 | 124 | 1,57% |
+
+**O doce de leite perde oito vezes mais que o tradicional, em duas semanas
+seguidas.** Não é acaso de um dia ruim. Como esta semana ele fechou redondo, a
+perda de 126 da semana passada não era doce de leite parado em estoque — era
+quebra mesmo, concentrada no 12 e no 13. Aponta para a desenforma. Não
+investigado.
 
 ---
 
