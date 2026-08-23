@@ -205,6 +205,16 @@ export function AberturaEstoquePage() {
 
   const [retomado, setRetomado] = useState(false)
   const [refazendo, setRefazendo] = useState<string | null>(null)
+
+  /**
+   * Insumos que o operador reabriu para SOMAR ao que já existe.
+   *
+   * A trava protege do engano mais caro — contar o mesmo saco duas vezes —, mas
+   * ela não pode ser a única porta. Achar um balde esquecido no meio do galpão
+   * é normal, e obrigar a refazer 25 lotes por causa de um balde é pior que o
+   * problema. Aqui a soma volta a existir, mas como escolha declarada.
+   */
+  const [somando, setSomando] = useState<Record<string, boolean>>({})
   const [linhas, setLinhas] = useState<Record<string, Linha[]>>({})
   const [baldes, setBaldes] = useState<Record<string, Balde>>({})
 
@@ -853,6 +863,8 @@ export function AberturaEstoquePage() {
           marcasPorInsumo={marcasPorInsumo}
           fornecedores={fornecedores}
           saldoAtual={saldoAtual}
+          somando={somando}
+          onSomar={id => setSomando(prev => ({ ...prev, [id]: true }))}
           refazendo={refazendo}
           onRefazer={refazerInsumo}
           guardarTamanho={guardarTamanho}
@@ -875,6 +887,8 @@ export function AberturaEstoquePage() {
           setBaldes={setBaldes}
           conteudoDoBalde={conteudoDoBalde}
           saldoAtual={saldoAtual}
+          somando={somando}
+          onSomar={id => setSomando(prev => ({ ...prev, [id]: true }))}
           onCriarRecipiente={criarRecipiente}
           onExcluirRecipiente={excluirRecipiente}
           onSalvarTara={salvarTara}
@@ -950,6 +964,8 @@ function EtapaPrateleira({
   marcasPorInsumo,
   fornecedores,
   saldoAtual,
+  somando,
+  onSomar,
   refazendo,
   onRefazer,
   guardarTamanho,
@@ -966,6 +982,8 @@ function EtapaPrateleira({
   marcasPorInsumo: Record<string, Marca[]>
   fornecedores: Fornecedor[]
   saldoAtual: Record<string, SaldoAtual>
+  somando: Record<string, boolean>
+  onSomar: (insumoId: string) => void
   refazendo: string | null
   onRefazer: (insumo: Insumo) => void
   guardarTamanho: Record<string, boolean>
@@ -1027,25 +1045,33 @@ function EtapaPrateleira({
                       </>
                     )}
                   </p>
-                  <Button
-                    size="sm"
-                    variant="secondary"
-                    loading={refazendo === insumo.id}
-                    onClick={() => onRefazer(insumo)}
-                  >
-                    Refazer
-                  </Button>
+                  <span className="flex gap-2 shrink-0">
+                    {!somando[insumo.id] && (
+                      <Button size="sm" variant="secondary" onClick={() => onSomar(insumo.id)}>
+                        Lançar mais
+                      </Button>
+                    )}
+                    <Button
+                      size="sm"
+                      variant="secondary"
+                      loading={refazendo === insumo.id}
+                      onClick={() => onRefazer(insumo)}
+                    >
+                      Refazer
+                    </Button>
+                  </span>
                 </div>
                 <p className="text-xs text-emerald-700 dark:text-emerald-300/80 mt-1.5">
-                  Refazer apaga <strong>tudo</strong> o que foi lançado deste insumo — a
-                  prateleira e o conteúdo dos potes — e abre os campos para contar de novo.
+                  <strong>Lançar mais</strong> soma ao que já existe — para o balde que
+                  apareceu depois. <strong>Refazer</strong> apaga tudo o que foi lançado
+                  deste insumo, prateleira e potes, e recomeça do zero.
                   {saldoAtual[insumo.id].baldes && !saldoAtual[insumo.id].prateleira &&
                     ' Use se o conteúdo dos potes entrou errado ou em duplicidade.'}
                 </p>
               </div>
             )}
 
-            {!saldoAtual[insumo.id]?.prateleira && (
+            {(!saldoAtual[insumo.id]?.prateleira || somando[insumo.id]) && (
             <div className="space-y-3">
               {ls.map((l, idx) => (
                 <div key={l.key} className={idx > 0 ? 'border-t border-gray-100 pt-3' : ''}>
@@ -1210,7 +1236,7 @@ function EtapaPrateleira({
             </div>
             )}
 
-            {!saldoAtual[insumo.id]?.prateleira && (
+            {(!saldoAtual[insumo.id]?.prateleira || somando[insumo.id]) && (
               <button
                 onClick={() => onDesdobrar(insumo.id)}
                 className="mt-3 text-xs font-medium text-brand-700 hover:underline"
@@ -1442,6 +1468,8 @@ function EtapaBaldes({
   setBaldes,
   conteudoDoBalde,
   saldoAtual,
+  somando,
+  onSomar,
   onCriarRecipiente,
   onExcluirRecipiente,
   onSalvarTara,
@@ -1454,6 +1482,8 @@ function EtapaBaldes({
   setBaldes: React.Dispatch<React.SetStateAction<Record<string, Balde>>>
   conteudoDoBalde: (rec: Recipiente, insumo: Insumo) => number
   saldoAtual: Record<string, SaldoAtual>
+  somando: Record<string, boolean>
+  onSomar: (insumoId: string) => void
   onCriarRecipiente: (
     insumo: Insumo,
     dados: { nome: string; capacidade: string; tara: string },
@@ -1511,12 +1541,22 @@ function EtapaBaldes({
                               dark:bg-emerald-500/10 dark:text-emerald-200">
                 <strong>Potes já lançados:</strong>{' '}
                 {saldoAtual[insumo.id].totalBaldes.toFixed(3)} {insumo.unidade_medida} no total.
-                Para contar de novo, use <strong>Refazer</strong> na etapa 1 — ele limpa a
-                prateleira e os potes de uma vez.
+                {somando[insumo.id]
+                  ? ' O que você digitar abaixo SOMA a isso.'
+                  : ' Para contar de novo do zero, use Refazer na etapa 1.'}
+                {!somando[insumo.id] && (
+                  <button
+                    type="button"
+                    onClick={() => onSomar(insumo.id)}
+                    className="ml-2 font-semibold underline"
+                  >
+                    lançar mais
+                  </button>
+                )}
               </div>
             )}
 
-            {!saldoAtual[insumo.id]?.baldes && (
+            {(!saldoAtual[insumo.id]?.baldes || somando[insumo.id]) && (
             <div className="space-y-3">
               {(recipientesPorInsumo[insumo.id] ?? []).map(rec => {
                 const est = baldes[rec.id]
@@ -1628,7 +1668,7 @@ function EtapaBaldes({
             </div>
             )}
 
-            {!saldoAtual[insumo.id]?.baldes && (
+            {(!saldoAtual[insumo.id]?.baldes || somando[insumo.id]) && (
               <NovoRecipiente insumo={insumo} onCriar={onCriarRecipiente} />
             )}
           </Card>
