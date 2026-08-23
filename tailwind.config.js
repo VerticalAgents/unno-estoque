@@ -1,28 +1,29 @@
 /** @type {import('tailwindcss').Config} */
 
 /**
- * O sistema visual, depois da virada de 23/08/2026.
+ * O sistema visual.
  *
- * A referência é o design system do HYVE Lab (lab.hyve.company), do qual saem
- * três ideias e não a paleta inteira:
+ * As cores vivem como variáveis CSS no `index.css` (`:root` e `.dark`) e são
+ * apontadas daqui. É o equivalente, no Tailwind 3, ao `@theme inline` que o
+ * Tailwind 4 traz — mesma ideia, sintaxe da versão que este projeto usa.
  *
- * 1. NEUTRO QUENTE. Nenhum cinza é neutro de verdade — todos puxam para o
- *    oliva/areia, e o "preto" é #1a1a17. Cinza puro ao lado disso parece
- *    descolorido, então a escala `areia` substitui o `gray` onde encostamos.
- * 2. CANTO GRANDE. 28px em painel e cartão. É o que faz um bloco parecer
- *    flutuar em vez de estar encaixado na borda da tela.
- * 3. SUPERFÍCIE TÁCTIL. Luz interna em cima, sombra interna embaixo, sombra de
- *    contato fora. Dá volume ao objeto sem depender de borda desenhada.
+ * DOIS RAIOS, DE PROPÓSITO. Painel e cartão em 28px; botão, campo e chip no
+ * `--radius` do tema, 8px. O contraste entre o bloco muito redondo e o controle
+ * quase reto é o que faz o bloco parecer solto — se tudo tem o mesmo canto, o
+ * painel vira só um retângulo grande.
  *
- * DUAS CORES, DOIS PAPÉIS. O verde continua sendo quem o sistema é — logo,
- * item aceso no menu. O laranja é o que o sistema pede que você faça — botão
- * principal, chamada. Eles nunca disputam o mesmo lugar. E o verde de "deu
- * certo" (emerald) segue separado do verde da marca, senão sucesso e
- * identidade viram a mesma coisa.
+ * DUAS FAMÍLIAS DE COR, e a diferença importa na hora de escrever classe:
  *
- * A paleta `unno` teve os VALORES trocados e os NOMES mantidos de propósito:
- * `dark:bg-unno-raised` aparece em centenas de lugares, e reescrever o hex
- * esquenta o tema escuro inteiro sem tocar em nenhuma tela.
+ *   • SEMÂNTICAS (`bg-card`, `text-foreground`, `border-border`) apontam para
+ *     variável e trocam sozinhas entre claro e escuro. **Não aceitam opacidade**
+ *     — `bg-primary/50` não funciona, porque a variável guarda hexadecimal e
+ *     não os canais separados. Para transparência, use a escala numérica.
+ *
+ *   • ESCALAS (`brand-500`, `areia-200`, `acao-500`) são hexadecimais fixos e
+ *     aceitam `/10`, `/12`, `/25`. `brand` é a mesma menta do tema, em rampa.
+ *
+ * O LARANJA (`acao-*`) não pertence ao tema. Ficou reservado para ação
+ * irreversível — decisão do usuário quando o menta virou a cor primária.
  */
 export default {
   content: ['./index.html', './src/**/*.{ts,tsx}'],
@@ -31,25 +32,91 @@ export default {
     extend: {
       fontFamily: {
         // Outfit para títulos, botões e números; Inter para o corpo do texto.
+        // O tema pede Outfit como `--font-sans`; mantivemos Inter no corpo
+        // porque é ela que segura texto pequeno de tabela sem cansar.
         display: ['Outfit', 'ui-sans-serif', 'system-ui', 'sans-serif'],
         sans: ['Inter', 'ui-sans-serif', 'system-ui', 'sans-serif'],
+        mono: ['ui-monospace', 'SFMono-Regular', 'Menlo', 'monospace'],
       },
+
       colors: {
-        // ── Identidade: quem o sistema é ──────────────────────
-        brand: {
-          50: '#e8f7ef',
-          100: '#c9edda',
-          200: '#95dcb8',
-          300: '#5fc994',
-          400: '#34b877',
-          500: '#17a860',
-          600: '#128a4f',
-          700: '#0e6d3f',
-          800: '#0a5030',
-          900: '#073622',
+        // ── Semânticas: trocam sozinhas entre claro e escuro ──
+        background: 'var(--background)',
+        foreground: 'var(--foreground)',
+        border: 'var(--border)',
+        input: 'var(--input)',
+        ring: 'var(--ring)',
+        /** O chão da aplicação. Meio tom abaixo do cartão, para o bloco
+         *  flutuante ter de onde descolar. Ver a nota no index.css. */
+        ground: 'var(--app-ground)',
+        card: {
+          DEFAULT: 'var(--card)',
+          foreground: 'var(--card-foreground)',
+        },
+        popover: {
+          DEFAULT: 'var(--popover)',
+          foreground: 'var(--popover-foreground)',
+        },
+        primary: {
+          DEFAULT: 'var(--primary)',
+          foreground: 'var(--primary-foreground)',
+        },
+        secondary: {
+          DEFAULT: 'var(--secondary)',
+          foreground: 'var(--secondary-foreground)',
+        },
+        muted: {
+          DEFAULT: 'var(--muted)',
+          foreground: 'var(--muted-foreground)',
+        },
+        accent: {
+          DEFAULT: 'var(--accent)',
+          foreground: 'var(--accent-foreground)',
+        },
+        destructive: {
+          DEFAULT: 'var(--destructive)',
+          foreground: 'var(--destructive-foreground)',
+        },
+        sidebar: {
+          DEFAULT: 'var(--sidebar)',
+          foreground: 'var(--sidebar-foreground)',
+          border: 'var(--sidebar-border)',
+          accent: 'var(--sidebar-accent)',
+          'accent-foreground': 'var(--sidebar-accent-foreground)',
+          primary: 'var(--sidebar-primary)',
+          'primary-foreground': 'var(--sidebar-primary-foreground)',
+          ring: 'var(--sidebar-ring)',
+        },
+        chart: {
+          1: 'var(--chart-1)',
+          2: 'var(--chart-2)',
+          3: 'var(--chart-3)',
+          4: 'var(--chart-4)',
+          5: 'var(--chart-5)',
         },
 
-        // ── Ação: o que o sistema pede que você faça ──────────
+        // ── Escalas: hexadecimal fixo, aceitam opacidade ──
+        //
+        // `brand` é a menta do tema em rampa. O 400 é exatamente o --primary
+        // claro (#72e3ad) e o 900 é o --primary escuro (#006239): os dois
+        // extremos do tema são pontos reais da escala, não aproximações.
+        //
+        // Menta é clara: superfície de menta pede texto ESCURO, nunca branco.
+        // É o que o tema diz em --primary-foreground (#1e2723).
+        brand: {
+          50:  '#eefbf5',
+          100: '#d6f5e8',
+          200: '#aeead1',
+          300: '#8ee7bf',
+          400: '#72e3ad',
+          500: '#4fd196',
+          600: '#2fb27a',
+          700: '#1e8c60',
+          800: '#14704c',
+          900: '#006239',
+        },
+
+        // Laranja: fora do tema, reservado para ação irreversível.
         acao: {
           50:  '#fff4f0',
           100: '#ffe4da',
@@ -63,63 +130,70 @@ export default {
           900: '#6b2009',
         },
 
-        // ── Neutro quente: substitui o `gray` onde encostamos ─
+        // Neutros do tema — cinza puro, sem viés de cor. O nome `areia` ficou
+        // do sistema anterior; renomear custaria varrer todas as telas para
+        // ganhar só o nome certo.
         areia: {
-          50:  '#fbfcf3',
-          100: '#f7f7f2',
-          200: '#eeede5',
-          300: '#dddcd2',
-          400: '#c4c3b8',
-          500: '#a09f95',
-          600: '#7a7970',
-          700: '#5a594f',
-          800: '#3d3c35',
-          900: '#2a2a24',
-          950: '#1a1a17',
+          50:  '#fdfdfd',
+          100: '#f6f6f6',
+          200: '#ededed',
+          300: '#dfdfdf',
+          400: '#c4c4c4',
+          500: '#909090',
+          600: '#707070',
+          700: '#525252',
+          800: '#3a3a3a',
+          900: '#202020',
+          950: '#171717',
         },
 
-        // ── Superfícies do tema escuro (nomes antigos, tons quentes) ──
+        // Superfícies do tema escuro. Nomes antigos, valores do tema novo:
+        // `dark:bg-unno-raised` aparece em centenas de lugares, e trocar o
+        // hexadecimal vira o tema escuro inteiro sem tocar em nenhuma tela.
         unno: {
-          bg: '#131311',
-          raised: '#1a1a17',
-          elevated: '#22221e',
-          sunken: '#0e0e0c',
-          text: '#e8e6df',
-          muted: '#a09f95',
-          dim: '#5a594f',
-          amber: '#e8a317',
-          danger: '#d93025',
-          lime: '#7ba656',
+          bg: '#121212',
+          raised: '#171717',
+          elevated: '#242424',
+          sunken: '#0d0d0d',
+          text: '#e2e8f0',
+          muted: '#a2a2a2',
+          dim: '#898989',
+          amber: '#fbbf24',
+          danger: '#ca3214',
+          lime: '#4ade80',
         },
       },
 
       borderRadius: {
-        // Painel e cartão: o canto que faz o bloco flutuar.
+        // O bloco flutuante: menu, cabeçalho, cartão, painel suspenso.
         bloco: '28px',
-        // Botão, campo e chip: grande o bastante para conversar com o bloco,
-        // pequeno o bastante para não virar cápsula num campo de texto.
-        controle: '14px',
+        // Botão, campo, chip — segue o `--radius` do tema.
+        controle: 'var(--radius)',
       },
 
       boxShadow: {
-        // Superfície táctil no claro: luz em cima, contato embaixo.
-        tactil: 'inset 0 1px 0 #ffffffeb, inset 0 -1px 0 #281e161a, 0 1px 2px #281e1614, 0 6px 18px -6px #281e1629',
-        'tactil-hover': 'inset 0 1px 0 #fffffff5, inset 0 -1px 0 #281e1624, 0 2px 6px #281e161a, 0 12px 28px -8px #281e1633',
-        // O bloco flutuante do menu, que precisa descolar do fundo.
-        bloco: '0 4px 10px #281e161a, 0 18px 40px -12px #281e1629',
-        // Botão: a luz interna é mais forte porque a superfície é colorida.
-        botao: 'inset 0 1px 0 #ffffff4d, inset 0 -1px 0 #0000002e, 0 1px 2px #281e1626',
-        'botao-press': 'inset 0 2px 4px #0000004d, inset 0 1px 1px #0003',
-        // O escuro não usa luz branca — usa uma quente, quase imperceptível.
-        'tactil-escuro': 'inset 0 1px 0 #ffc8a014, inset 0 -1px 0 #0000004d, 0 2px 16px #0000005c',
-        // Herdados do tema antigo, ainda usados em telas que não tocamos.
-        glow: '0 0 30px rgba(23, 168, 96, 0.28)',
-        'glow-sm': '0 0 20px rgba(23, 168, 96, 0.14)',
-        'glow-amber': '0 0 30px rgba(232, 163, 23, 0.3)',
+        // A sombra do tema: deslocamento 0 1px, desfoque 3px, opacidade .17.
+        tema: '0 1px 3px 0 rgb(0 0 0 / 0.17)',
+        'tema-md': '0 2px 6px -1px rgb(0 0 0 / 0.17), 0 1px 3px -1px rgb(0 0 0 / 0.12)',
+        // O bloco flutuante precisa de mais alcance que a sombra base para
+        // descolar de um chão que está a meio tom de distância.
+        bloco: '0 1px 3px 0 rgb(0 0 0 / 0.14), 0 12px 28px -12px rgb(0 0 0 / 0.22)',
+        // Herdadas: telas que ainda não foram revisadas usam estes nomes.
+        tactil: '0 1px 3px 0 rgb(0 0 0 / 0.17)',
+        'tactil-hover': '0 2px 6px -1px rgb(0 0 0 / 0.2), 0 8px 20px -8px rgb(0 0 0 / 0.18)',
+        'tactil-escuro': '0 1px 3px 0 rgb(0 0 0 / 0.5)',
+        botao: '0 1px 2px 0 rgb(0 0 0 / 0.14)',
+        'botao-press': 'inset 0 1px 2px 0 rgb(0 0 0 / 0.2)',
+        glow: '0 0 30px rgb(114 227 173 / 0.28)',
+        'glow-sm': '0 0 20px rgb(114 227 173 / 0.14)',
+        'glow-amber': '0 0 30px rgb(251 191 36 / 0.3)',
+      },
+
+      letterSpacing: {
+        tema: 'var(--letter-spacing)',
       },
 
       transitionTimingFunction: {
-        // A curva do HYVE: sai rápido, chega devagar. Dá peso ao movimento.
         'out-expo': 'cubic-bezier(.16, 1, .3, 1)',
         'out-quart': 'cubic-bezier(.25, 1, .5, 1)',
         mola: 'cubic-bezier(.34, 1.56, .64, 1)',

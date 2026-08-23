@@ -341,27 +341,27 @@ export function Sidebar({ onRecolher }: { onRecolher?: () => void }) {
     'uppercase tracking-[1px] transition-all duration-200 ease-out-expo',
     aceso
       ? 'bg-brand-500/12 text-brand-700 shadow-[inset_0_1px_0_#ffffffb3] dark:text-brand-400 dark:shadow-[inset_0_1px_0_#ffffff0f]'
-      : 'text-areia-600 hover:bg-areia-100 hover:text-areia-950 dark:text-unno-muted dark:hover:bg-white/[.04] dark:hover:text-unno-text',
+      : 'text-sidebar-foreground hover:bg-accent hover:text-accent-foreground',
   ].join(' ')
 
   const classeIcone = (aceso: boolean) =>
-    aceso ? 'text-brand-600 dark:text-brand-400' : 'text-areia-400 dark:text-unno-dim'
+    aceso ? 'text-brand-600 dark:text-brand-400' : 'text-muted-foreground/60'
 
   const content = (
     // <div> e não <nav>: o <nav> agora é o bloco que envolve isto, e um
     // dentro do outro daria dois marcos de navegação para o leitor de tela.
     <div className="flex flex-col h-full">
       {/* Logo */}
-      <div className="px-5 py-5 border-b border-areia-200 dark:border-white/[.06]">
+      <div className="px-5 py-5 border-b border-border">
         <div className="flex items-center gap-2.5">
-          <div className="w-8 h-8 rounded-controle bg-brand-500 flex items-center justify-center shadow-botao">
-            <span className="font-display text-white text-sm font-extrabold">U</span>
+          <div className="w-8 h-8 rounded-controle bg-primary flex items-center justify-center shadow-tema">
+            <span className="font-display text-primary-foreground text-sm font-extrabold">U</span>
           </div>
           <div className="min-w-0">
-            <p className="font-display text-sm font-extrabold uppercase tracking-[3px] text-areia-950 dark:text-brand-400 leading-none">
+            <p className="font-display text-sm font-extrabold uppercase tracking-[3px] text-foreground leading-none">
               Unno
             </p>
-            <p className="text-[0.65rem] uppercase tracking-[1.5px] text-areia-500 dark:text-unno-dim mt-1">
+            <p className="text-[0.65rem] uppercase tracking-[1.5px] text-muted-foreground/70 mt-1">
               Estoque
             </p>
           </div>
@@ -374,8 +374,7 @@ export function Sidebar({ onRecolher }: { onRecolher?: () => void }) {
               title="Recolher o menu"
               aria-label="Recolher o menu"
               className="ml-auto shrink-0 w-8 h-8 rounded-controle flex items-center justify-center
-                         text-areia-500 hover:text-areia-950 hover:bg-areia-100
-                         dark:text-unno-dim dark:hover:text-unno-text dark:hover:bg-white/[.04]
+                         text-muted-foreground hover:text-foreground hover:bg-accent
                          transition-colors"
             >
               <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
@@ -423,7 +422,7 @@ export function Sidebar({ onRecolher }: { onRecolher?: () => void }) {
               </button>
 
               {aberto && (
-                <div className="mt-1 ml-4 pl-3 border-l border-areia-200 dark:border-white/[.06] space-y-1">
+                <div className="mt-1 ml-4 pl-3 border-l border-border space-y-1">
                   {grupo.itens.map(item => {
                     const filhoAceso = itemAceso(item, location.pathname)
                     return (
@@ -458,7 +457,7 @@ export function Sidebar({ onRecolher }: { onRecolher?: () => void }) {
 
         {/* Dev tools */}
         {papel === 'admin' && (
-          <div className="pt-2 mt-2 border-t border-areia-200 dark:border-white/[.06]">
+          <div className="pt-2 mt-2 border-t border-border">
             <NavLink
               to="/dev"
               className={[
@@ -481,9 +480,9 @@ export function Sidebar({ onRecolher }: { onRecolher?: () => void }) {
       </div>
 
       {/* Footer */}
-      <div className="px-5 py-4 border-t border-areia-200 dark:border-white/[.06]">
-        <p className="text-[0.65rem] uppercase tracking-[1.5px] text-areia-500 dark:text-unno-dim">Unno</p>
-        <p className="text-[0.65rem] uppercase tracking-[1.5px] text-areia-400 dark:text-unno-dim/60">Porto Alegre · RS</p>
+      <div className="px-5 py-4 border-t border-border">
+        <p className="text-[0.65rem] uppercase tracking-[1.5px] text-muted-foreground/70">Unno</p>
+        <p className="text-[0.65rem] uppercase tracking-[1.5px] text-muted-foreground/60/60">Porto Alegre · RS</p>
       </div>
     </div>
   )
@@ -499,8 +498,7 @@ export function Sidebar({ onRecolher }: { onRecolher?: () => void }) {
     // w-60 (e não w-56): os rótulos em maiúsculas ocupam mais largura.
     <aside className="hidden lg:flex flex-col shrink-0 h-full py-3 pl-3">
       <nav className="flex flex-col h-full w-60 overflow-hidden rounded-bloco
-                      bg-white border border-areia-200 shadow-bloco
-                      dark:bg-unno-raised dark:border-white/[.06] dark:shadow-tactil-escuro">
+                      bg-card border border-border shadow-bloco">
         {content}
       </nav>
     </aside>

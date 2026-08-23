@@ -2,6 +2,108 @@
 @tailwind components;
 @tailwind utilities;
 
+/* ── O tema ───────────────────────────────────────────
+   Aplicado em 23/08/2026, a partir do conjunto de tokens que o usuário
+   trouxe (formato shadcn/tweakcn).
+
+   Duas adaptações conscientes, e a razão de cada uma:
+
+   1. O `@theme inline` do original é sintaxe do Tailwind 4. Este projeto
+      está no 3.4, onde o equivalente é o mapeamento em tailwind.config.js
+      — que existe lá, apontando para estas mesmas variáveis.
+
+   2. `--app-ground` não vem do tema: no original, fundo, cartão e barra
+      lateral são todos #fcfcfc. Com o chão igual ao bloco, nada flutua e
+      quem separa vira só a borda. O chão da aplicação usa o `--muted`,
+      meio tom abaixo, para o bloco continuar descolando. No escuro o
+      próprio tema já separa (#121212 de fundo, #171717 de cartão).
+
+   O laranja não faz parte deste tema e vive à parte, em `acao-*`:
+   ficou reservado para ação irreversível, por decisão do usuário. */
+:root {
+  --card: #fcfcfc;
+  --ring: #72e3ad;
+  --input: #f6f6f6;
+  --muted: #ededed;
+  --accent: #ededed;
+  --border: #dfdfdf;
+  --radius: 0.5rem;
+  --chart-1: #72e3ad;
+  --chart-2: #3b82f6;
+  --chart-3: #8b5cf6;
+  --chart-4: #f59e0b;
+  --chart-5: #10b981;
+  --popover: #fcfcfc;
+  --primary: #72e3ad;
+  --sidebar: #fcfcfc;
+  --secondary: #fdfdfd;
+  --background: #fcfcfc;
+  --foreground: #171717;
+  --destructive: #ca3214;
+  --shadow-blur: 3px;
+  --shadow-color: #000000;
+  --sidebar-ring: #72e3ad;
+  --shadow-spread: 0px;
+  --letter-spacing: 0.025em;
+  --shadow-opacity: 0.17;
+  --sidebar-accent: #ededed;
+  --sidebar-border: #dfdfdf;
+  --card-foreground: #171717;
+  --shadow-offset-x: 0px;
+  --shadow-offset-y: 1px;
+  --sidebar-primary: #72e3ad;
+  --muted-foreground: #202020;
+  --accent-foreground: #202020;
+  --popover-foreground: #525252;
+  --primary-foreground: #1e2723;
+  --sidebar-foreground: #707070;
+  --secondary-foreground: #171717;
+  --destructive-foreground: #fffcfc;
+  --sidebar-accent-foreground: #202020;
+  --sidebar-primary-foreground: #1e2723;
+
+  /* Fora do tema: ver nota 2 acima. */
+  --app-ground: var(--muted);
+}
+
+.dark {
+  --card: #171717;
+  --ring: #4ade80;
+  --input: #242424;
+  --muted: #1f1f1f;
+  --accent: #313131;
+  --border: #292929;
+  --chart-1: #4ade80;
+  --chart-2: #60a5fa;
+  --chart-3: #a78bfa;
+  --chart-4: #fbbf24;
+  --chart-5: #2dd4bf;
+  --popover: #242424;
+  --primary: #006239;
+  --sidebar: #121212;
+  --secondary: #242424;
+  --background: #121212;
+  --foreground: #e2e8f0;
+  --destructive: #541c15;
+  --sidebar-ring: #4ade80;
+  --sidebar-accent: #313131;
+  --sidebar-border: #292929;
+  --card-foreground: #e2e8f0;
+  --sidebar-primary: #006239;
+  --muted-foreground: #a2a2a2;
+  --accent-foreground: #fafafa;
+  --popover-foreground: #a9a9a9;
+  --primary-foreground: #dde8e3;
+  --sidebar-foreground: #898989;
+  --secondary-foreground: #fafafa;
+  --destructive-foreground: #ede9e8;
+  --sidebar-accent-foreground: #fafafa;
+  --sidebar-primary-foreground: #dde8e3;
+
+  --app-ground: var(--background);
+}
+
+
 /* ── Tokens do UNNO Design System ─────────────────────
    Espelham as variáveis do unno-design-system.html.
    Use as classes do Tailwind (brand-*, unno-*) sempre que
@@ -27,6 +129,11 @@
 }
 
 @layer base {
+  /* O tema define um respiro entre letras; sem isto ele fica so no token. */
+  body {
+    letter-spacing: var(--letter-spacing);
+  }
+
   html {
     -webkit-tap-highlight-color: transparent;
   }

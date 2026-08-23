@@ -41,8 +41,7 @@ const CLASSE_ATIVO =
   'dark:text-brand-400 dark:shadow-[inset_0_1px_0_#ffffff0f]'
 
 const CLASSE_INATIVO =
-  'text-areia-600 hover:bg-areia-100 hover:text-areia-950 ' +
-  'dark:text-unno-muted dark:hover:bg-white/[.04] dark:hover:text-unno-text'
+  'text-sidebar-foreground hover:bg-accent hover:text-accent-foreground'
 
 /** Um grupo (Estoque, Cadastros) recolhido num botão que abre para baixo. */
 function GrupoSuspenso({ grupo, ativo }: { grupo: GrupoNav; ativo: boolean }) {
@@ -69,7 +68,7 @@ function GrupoSuspenso({ grupo, ativo }: { grupo: GrupoNav; ativo: boolean }) {
         onClick={() => setAberto(a => !a)}
         className={[CLASSE_ITEM, ativo ? CLASSE_ATIVO : CLASSE_INATIVO].join(' ')}
       >
-        <span className={ativo ? 'text-brand-600 dark:text-brand-400' : 'text-areia-400 dark:text-unno-dim'}>
+        <span className={ativo ? 'text-brand-600 dark:text-brand-400' : 'text-muted-foreground/60'}>
           {grupo.icone}
         </span>
         {grupo.titulo}
@@ -83,8 +82,7 @@ function GrupoSuspenso({ grupo, ativo }: { grupo: GrupoNav; ativo: boolean }) {
 
       {aberto && (
         <div className="absolute left-0 top-full mt-2 w-56 z-30 p-1.5 overflow-hidden
-                        rounded-bloco bg-white border border-areia-200 shadow-bloco
-                        dark:bg-unno-elevated dark:border-white/[.08] dark:shadow-tactil-escuro">
+                        rounded-bloco bg-popover border border-border shadow-bloco">
           {grupo.itens.map(item => {
             const aceso = location.pathname.startsWith(item.to)
             return (
@@ -97,7 +95,7 @@ function GrupoSuspenso({ grupo, ativo }: { grupo: GrupoNav; ativo: boolean }) {
                   aceso ? CLASSE_ATIVO : CLASSE_INATIVO,
                 ].join(' ')}
               >
-                <span className={aceso ? 'text-brand-600 dark:text-brand-400' : 'text-areia-400 dark:text-unno-dim'}>
+                <span className={aceso ? 'text-brand-600 dark:text-brand-400' : 'text-muted-foreground/60'}>
                   {item.icon}
                 </span>
                 {item.label}
@@ -140,15 +138,14 @@ export function Header({ onMenuToggle, darkMode, colapsado, onExpandir }: Header
   return (
     <header className="shrink-0 px-3 pt-3">
       <div className="flex items-center gap-2 h-14 px-2.5 rounded-bloco
-                      bg-white/85 backdrop-blur-xl border border-areia-200 shadow-bloco
-                      dark:bg-unno-raised/85 dark:border-white/[.06] dark:shadow-tactil-escuro">
+                      bg-card/90 backdrop-blur-xl border border-border shadow-bloco">
 
         {/* Abrir o menu de baixo — só no celular. */}
         <button
           onClick={onMenuToggle}
           aria-label="Abrir o menu"
           className="lg:hidden shrink-0 w-10 h-10 rounded-controle flex items-center justify-center
-                     text-areia-600 hover:bg-areia-100 dark:text-unno-muted dark:hover:bg-white/[.04]"
+                     text-muted-foreground hover:bg-accent hover:text-accent-foreground"
         >
           <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
             <path strokeLinecap="round" strokeLinejoin="round" d="M4 6h16M4 12h16M4 18h16" />
@@ -161,13 +158,13 @@ export function Header({ onMenuToggle, darkMode, colapsado, onExpandir }: Header
           'flex items-center gap-2 shrink-0 pl-1',
           colapsado ? 'flex' : 'lg:hidden',
         ].join(' ')}>
-          <div className="hidden lg:flex w-8 h-8 rounded-controle bg-brand-500 items-center justify-center shadow-botao">
-            <span className="font-display text-white text-sm font-extrabold">U</span>
+          <div className="hidden lg:flex w-8 h-8 rounded-controle bg-primary items-center justify-center shadow-tema">
+            <span className="font-display text-primary-foreground text-sm font-extrabold">U</span>
           </div>
           <span className="font-display text-sm font-extrabold uppercase tracking-[3px] text-brand-600 dark:text-brand-400 lg:hidden">
             Unno
           </span>
-          <span className="text-[0.65rem] uppercase tracking-[1.5px] text-areia-500 dark:text-unno-dim lg:hidden">
+          <span className="text-[0.65rem] uppercase tracking-[1.5px] text-muted-foreground/70 lg:hidden">
             Estoque
           </span>
         </div>
@@ -180,9 +177,7 @@ export function Header({ onMenuToggle, darkMode, colapsado, onExpandir }: Header
             title="Abrir o menu lateral"
             aria-label="Abrir o menu lateral"
             className="hidden lg:flex shrink-0 w-9 h-9 rounded-controle items-center justify-center
-                       text-areia-500 hover:text-areia-950 hover:bg-areia-100
-                       dark:text-unno-dim dark:hover:text-unno-text dark:hover:bg-white/[.04]
-                       transition-colors"
+                       text-muted-foreground hover:text-foreground hover:bg-accent transition-colors"
           >
             <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
               <path strokeLinecap="round" strokeLinejoin="round" d="M5.25 4.5l7.5 7.5-7.5 7.5M12.75 4.5l7.5 7.5-7.5 7.5" />
@@ -199,7 +194,7 @@ export function Header({ onMenuToggle, darkMode, colapsado, onExpandir }: Header
           <nav
             ref={tira}
             className="hidden lg:flex items-center gap-1 flex-1 min-w-0
-                       border-l border-areia-200 dark:border-white/[.06] pl-2 ml-1"
+                       border-l border-border pl-2 ml-1"
           >
             {mostrarDashboard && (
               <NavLink
@@ -210,7 +205,7 @@ export function Header({ onMenuToggle, darkMode, colapsado, onExpandir }: Header
                 ].join(' ')}
               >
                 <span className={itemAceso(itemDashboard, location.pathname)
-                  ? 'text-brand-600 dark:text-brand-400' : 'text-areia-400 dark:text-unno-dim'}>
+                  ? 'text-brand-600 dark:text-brand-400' : 'text-muted-foreground/60'}>
                   {itemDashboard.icon}
                 </span>
                 {itemDashboard.label}
@@ -231,7 +226,7 @@ export function Header({ onMenuToggle, darkMode, colapsado, onExpandir }: Header
                 className={[CLASSE_ITEM, configAcesa ? CLASSE_ATIVO : CLASSE_INATIVO].join(' ')}
               >
                 <span className={configAcesa
-                  ? 'text-brand-600 dark:text-brand-400' : 'text-areia-400 dark:text-unno-dim'}>
+                  ? 'text-brand-600 dark:text-brand-400' : 'text-muted-foreground/60'}>
                   {itemConfiguracoes.icon}
                 </span>
                 Config
@@ -245,8 +240,7 @@ export function Header({ onMenuToggle, darkMode, colapsado, onExpandir }: Header
           <button
             onClick={darkMode.toggle}
             className="w-10 h-10 rounded-controle flex items-center justify-center
-                       text-areia-500 hover:bg-areia-100 hover:text-areia-950
-                       dark:text-unno-muted dark:hover:bg-white/[.04] dark:hover:text-unno-text
+                       text-muted-foreground hover:bg-accent hover:text-accent-foreground
                        transition-colors"
             title={darkMode.isDark ? 'Modo claro' : 'Modo escuro'}
           >
@@ -266,7 +260,7 @@ export function Header({ onMenuToggle, darkMode, colapsado, onExpandir }: Header
             <button
               onClick={() => setShowMenu(!showMenu)}
               className="flex items-center gap-2 px-2 py-1.5 rounded-controle
-                         hover:bg-areia-100 dark:hover:bg-white/[.04] transition-colors"
+                         hover:bg-accent transition-colors"
             >
               <div className="w-7 h-7 rounded-full bg-brand-500/15 border border-brand-500/25 flex items-center justify-center shrink-0">
                 <span className="font-display text-xs font-bold text-brand-700 dark:text-brand-400">
@@ -274,14 +268,14 @@ export function Header({ onMenuToggle, darkMode, colapsado, onExpandir }: Header
                 </span>
               </div>
               <div className="hidden sm:block text-left">
-                <p className="text-sm font-medium text-areia-950 dark:text-unno-text leading-none whitespace-nowrap">
+                <p className="text-sm font-medium text-foreground leading-none whitespace-nowrap">
                   {profile?.nome ?? '—'}
                 </p>
-                <p className="text-[0.65rem] uppercase tracking-[1px] text-areia-500 dark:text-unno-dim mt-0.5 whitespace-nowrap">
+                <p className="text-[0.65rem] uppercase tracking-[1px] text-muted-foreground/70 mt-0.5 whitespace-nowrap">
                   {papelLabels[profile?.papel ?? ''] ?? profile?.papel}
                 </p>
               </div>
-              <svg className="w-4 h-4 text-areia-400 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <svg className="w-4 h-4 text-muted-foreground/60 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                 <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
               </svg>
             </button>
@@ -290,17 +284,15 @@ export function Header({ onMenuToggle, darkMode, colapsado, onExpandir }: Header
               <>
                 <div className="fixed inset-0 z-10" onClick={() => setShowMenu(false)} />
                 <div className="absolute right-0 top-full mt-2 w-52 z-20 overflow-hidden
-                                rounded-bloco bg-white border border-areia-200 shadow-bloco
-                                dark:bg-unno-elevated dark:border-white/[.08] dark:shadow-tactil-escuro">
-                  <div className="px-4 py-3 border-b border-areia-200 dark:border-white/[.06]">
-                    <p className="text-sm font-medium text-areia-950 dark:text-unno-text">{profile?.nome}</p>
-                    <p className="text-xs text-areia-500 dark:text-unno-muted">{profile?.email}</p>
+                                rounded-bloco bg-popover border border-border shadow-bloco">
+                  <div className="px-4 py-3 border-b border-border">
+                    <p className="text-sm font-medium text-foreground">{profile?.nome}</p>
+                    <p className="text-xs text-muted-foreground">{profile?.email}</p>
                   </div>
                   <button
                     onClick={handleLogout}
                     className="w-full flex items-center gap-2 px-4 py-3 text-[0.7rem] font-semibold uppercase
-                               tracking-[1px] text-acao-700 hover:bg-acao-50
-                               dark:text-unno-danger dark:hover:bg-unno-danger/10 transition-colors"
+                               tracking-[1px] text-destructive hover:bg-accent transition-colors"
                   >
                     <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                       <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 9V5.25A2.25 2.25 0 0013.5 3h-6a2.25 2.25 0 00-2.25 2.25v13.5A2.25 2.25 0 007.5 21h6a2.25 2.25 0 002.25-2.25V15M12 9l-3 3m0 0l3 3m-3-3h12.75" />

@@ -18,10 +18,10 @@ export function Layout() {
 
   if (loading) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-areia-100 dark:bg-unno-bg">
+      <div className="min-h-screen flex items-center justify-center bg-ground">
         <div className="flex flex-col items-center gap-3">
           <div className="w-8 h-8 border-2 border-brand-600 border-t-transparent rounded-full animate-spin" />
-          <p className="text-sm text-areia-600 dark:text-unno-muted">Carregando...</p>
+          <p className="text-sm text-muted-foreground">Carregando...</p>
         </div>
       </div>
     )
@@ -43,7 +43,7 @@ export function Layout() {
     // reserva para navegador antigo que não conheça dvh.
     // O fundo é areia e não branco: os blocos flutuantes precisam de um chão
     // mais escuro que eles para a sombra ter onde cair.
-    <div className="flex h-screen h-[100dvh] overflow-hidden bg-areia-100 dark:bg-unno-bg">
+    <div className="flex h-screen h-[100dvh] overflow-hidden bg-ground">
       {/* Recolhido, o menu não é renderizado: quem navega é a tira do
           cabeçalho. Esconder por CSS deixaria os links no caminho do Tab. */}
       {!colapsado && <Sidebar onRecolher={alternar} />}
