@@ -84,8 +84,32 @@ const novaLinha = (tamanhoPadrao?: number | null, validadePadrao?: string): Linh
   aberta: '',
 })
 
-/** O que o insumo já tem de saldo registrado, para a abertura em duas idas. */
-type SaldoAtual = { total: number; lotes: number; validade: string | null }
+/**
+ * O que o insumo já tem de saldo registrado, para a abertura em duas idas.
+ *
+ * PRATELEIRA E BALDE SÃO CONTADOS SEPARADAMENTE, e isso não é detalhe.
+ *
+ * A primeira versão desta trava olhava só os lotes ativos. Mas o conteúdo que
+ * está no balde nasce em lote ZERADO — o insumo está no pote, não na
+ * prateleira. Então insumo que só tinha balde parecia nunca lançado, e a tela
+ * deixava lançar de novo: a glicerina e o extrato de alecrim entraram duas
+ * vezes nas garrafas em 23/08/2026.
+ *
+ * E travar o insumo inteiro quebrava o caminho contrário, que a tela sempre
+ * teve: contar a prateleira num dia e os baldes no outro. Cada metade tranca
+ * sozinha.
+ */
+type SaldoAtual = {
+  total: number
+  lotes: number
+  validade: string | null
+  /** Já lançou o que está fora dos baldes? */
+  prateleira: boolean
+  /** Já lançou o que está dentro deles? */
+  baldes: boolean
+  /** Quanto há nos baldes, para mostrar sem precisar de outra consulta. */
+  totalBaldes: number
+}
 
 /**
  * O tipo físico do pote, deduzido do nome.
@@ -210,45 +234,70 @@ export function AberturaEstoquePage() {
       // A mesma consulta serve a duas coisas: o saldo por insumo e a fila de
       // etiquetas por imprimir. Quem conta pelo celular nao consegue imprimir
       // dali — precisa achar o que ficou pendente ao sentar no computador.
+      // TODOS os lotes de abertura, inclusive os zerados. O lote do conteúdo
+      // que já está no balde nasce zerado, e ignorá-lo foi o que deixou lançar
+      // glicerina duas vezes.
       supabase
         .from('lotes')
-        .select('id, codigo, qr_code, insumo_id, quantidade_recebida, quantidade_disponivel, validade_original, etiqueta_impressa')
-        .eq('empresa_id', profile.empresa_id)
-        .eq('status', 'ativo'),
+        .select('id, codigo, insumo_id, quantidade_recebida, quantidade_disponivel, validade_original, status, origem')
+        .eq('empresa_id', profile.empresa_id),
+      // E o que está dentro dos potes, que é a outra metade da resposta.
+      supabase
+        .from('locais_lotes')
+        .select('quantidade, local:locais!inner(insumo_id, empresa_id)')
+        .eq('local.empresa_id', profile.empresa_id),
       supabase
         .from('fornecedores')
         .select('id, nome')
         .eq('empresa_id', profile.empresa_id)
         .eq('ativo', true)
         .order('nome'),
-    ]).then(([ins, loc, vinc, lot, forn]) => {
+    ]).then(([ins, loc, vinc, lot, conteudo, forn]) => {
       const listaInsumos = (ins.data ?? []) as Insumo[]
       setInsumos(listaInsumos)
       setRecipientes((loc.data ?? []) as Recipiente[])
       setFornecedores((forn.data ?? []) as Fornecedor[])
 
-      const lotesAtivos = (lot.data ?? []) as {
+      const todosLotes = (lot.data ?? []) as {
         id: string
         codigo: string
-        qr_code: string | null
         insumo_id: string
         quantidade_recebida: number
         quantidade_disponivel: number
         validade_original: string | null
-        etiqueta_impressa: boolean
+        status: string
+        origem: string | null
       }[]
-      setJaTemLotes(lotesAtivos.length > 0)
+      setJaTemLotes(todosLotes.some(l => l.status === 'ativo'))
+
+      const novo = (): SaldoAtual => ({
+        total: 0, lotes: 0, validade: null,
+        prateleira: false, baldes: false, totalBaldes: 0,
+      })
 
       const saldos: Record<string, SaldoAtual> = {}
-      for (const l of lotesAtivos) {
-        const s = (saldos[l.insumo_id] ??= { total: 0, lotes: 0, validade: null })
+      for (const l of todosLotes) {
+        if (l.status !== 'ativo') continue
+        const s = (saldos[l.insumo_id] ??= novo())
         s.total += Number(l.quantidade_disponivel) || 0
         s.lotes += 1
+        s.prateleira = true
         // A mais próxima: é a que descreve o que já está aberto e em uso.
         if (l.validade_original && (!s.validade || l.validade_original < s.validade)) {
           s.validade = l.validade_original
         }
       }
+
+      for (const linha of (conteudo.data ?? []) as unknown as {
+        quantidade: number; local: { insumo_id: string } | { insumo_id: string }[]
+      }[]) {
+        const loc = Array.isArray(linha.local) ? linha.local[0] : linha.local
+        if (!loc?.insumo_id) continue
+        const s = (saldos[loc.insumo_id] ??= novo())
+        s.baldes = true
+        s.totalBaldes += Number(linha.quantidade) || 0
+      }
+
       setSaldoAtual(saldos)
 
       const porInsumo: Record<string, Marca[]> = {}
@@ -955,15 +1004,28 @@ function EtapaPrateleira({
             {/* Insumo já lançado fica FECHADO. A tela soma ao que existe, então
                 um campo aberto aqui convida a contar o mesmo saco duas vezes —
                 e o estoque dobra sem ninguém perceber. Para mexer, refaz. */}
-            {saldoAtual[insumo.id] && (
+            {/* O cartão aparece se QUALQUER das duas metades já foi lançada —
+                senão o insumo que só tem balde ficaria sem o botão de refazer,
+                que é justamente o que precisa dele quando entrou duplicado. */}
+            {(saldoAtual[insumo.id]?.prateleira || saldoAtual[insumo.id]?.baldes) && (
               <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-3
                               dark:border-emerald-500/30 dark:bg-emerald-500/10">
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <p className="text-sm text-emerald-900 dark:text-emerald-200">
-                    <strong>Já lançado:</strong>{' '}
-                    {saldoAtual[insumo.id].total.toFixed(3)} {insumo.unidade_medida} em{' '}
-                    {saldoAtual[insumo.id].lotes} lote
-                    {saldoAtual[insumo.id].lotes === 1 ? '' : 's'}.
+                    {saldoAtual[insumo.id].prateleira ? (
+                      <>
+                        <strong>Prateleira já lançada:</strong>{' '}
+                        {saldoAtual[insumo.id].total.toFixed(3)} {insumo.unidade_medida} em{' '}
+                        {saldoAtual[insumo.id].lotes} lote
+                        {saldoAtual[insumo.id].lotes === 1 ? '' : 's'}.
+                      </>
+                    ) : (
+                      <>
+                        <strong>Só os potes foram lançados:</strong>{' '}
+                        {saldoAtual[insumo.id].totalBaldes.toFixed(3)} {insumo.unidade_medida}.
+                        A prateleira segue aberta abaixo.
+                      </>
+                    )}
                   </p>
                   <Button
                     size="sm"
@@ -975,13 +1037,15 @@ function EtapaPrateleira({
                   </Button>
                 </div>
                 <p className="text-xs text-emerald-700 dark:text-emerald-300/80 mt-1.5">
-                  Refazer apaga o que foi lançado deste insumo — inclusive o conteúdo dos
-                  potes dele — e abre os campos para contar de novo.
+                  Refazer apaga <strong>tudo</strong> o que foi lançado deste insumo — a
+                  prateleira e o conteúdo dos potes — e abre os campos para contar de novo.
+                  {saldoAtual[insumo.id].baldes && !saldoAtual[insumo.id].prateleira &&
+                    ' Use se o conteúdo dos potes entrou errado ou em duplicidade.'}
                 </p>
               </div>
             )}
 
-            {!saldoAtual[insumo.id] && (
+            {!saldoAtual[insumo.id]?.prateleira && (
             <div className="space-y-3">
               {ls.map((l, idx) => (
                 <div key={l.key} className={idx > 0 ? 'border-t border-gray-100 pt-3' : ''}>
@@ -1146,7 +1210,7 @@ function EtapaPrateleira({
             </div>
             )}
 
-            {!saldoAtual[insumo.id] && (
+            {!saldoAtual[insumo.id]?.prateleira && (
               <button
                 onClick={() => onDesdobrar(insumo.id)}
                 className="mt-3 text-xs font-medium text-brand-700 hover:underline"
@@ -1441,17 +1505,18 @@ function EtapaBaldes({
             {/* Mesma trava da etapa 1, pelo mesmo motivo: o conteúdo digitado
                 aqui SOMA ao que o pote já tem. Destrava refazendo o insumo,
                 lá na etapa 1 — que limpa a prateleira e os potes juntos. */}
-            {saldoAtual[insumo.id] && (
+            {saldoAtual[insumo.id]?.baldes && (
               <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-sm
                               text-emerald-900 dark:border-emerald-500/30
                               dark:bg-emerald-500/10 dark:text-emerald-200">
-                <strong>Já lançado.</strong> Os potes deste insumo entraram na abertura
-                anterior. Para contar de novo, use <strong>Refazer</strong> na etapa 1 —
-                ele limpa a prateleira e os potes de uma vez.
+                <strong>Potes já lançados:</strong>{' '}
+                {saldoAtual[insumo.id].totalBaldes.toFixed(3)} {insumo.unidade_medida} no total.
+                Para contar de novo, use <strong>Refazer</strong> na etapa 1 — ele limpa a
+                prateleira e os potes de uma vez.
               </div>
             )}
 
-            {!saldoAtual[insumo.id] && (
+            {!saldoAtual[insumo.id]?.baldes && (
             <div className="space-y-3">
               {(recipientesPorInsumo[insumo.id] ?? []).map(rec => {
                 const est = baldes[rec.id]
@@ -1563,7 +1628,7 @@ function EtapaBaldes({
             </div>
             )}
 
-            {!saldoAtual[insumo.id] && (
+            {!saldoAtual[insumo.id]?.baldes && (
               <NovoRecipiente insumo={insumo} onCriar={onCriarRecipiente} />
             )}
           </Card>
