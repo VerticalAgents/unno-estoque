@@ -1,16 +1,90 @@
-# MischaFlex — Handoff de Contexto
+# MischaFlex — estado do projeto
 
-Arquivo atualizado ao fim de cada sessão. Sempre leia antes de continuar.
+> Diário do projeto: o que está acontecendo, o que foi feito, o que falta.
+> Atualizado ao fim de cada sessão.
+>
+> **As regras que não mudam estão no `CLAUDE.md`** — convenções, armadilhas
+> conhecidas, regras de negócio, como aplicar migration. Não repetir aqui.
+
+**Última atualização:** 23/08/2026
 
 ---
 
-## Stack
-- React 18 + TypeScript + Vite + TailwindCSS
-- Supabase (projeto `axwepvqpzsrfhrigryqt` — "Rastreabilidade Mischas", org "Mischas Org", região sa-east-1)
-- Caminho local: `C:\Users\lucca\OneDrive\Área de Trabalho\IA\Projetos\MischaFlex`
+## Onde paramos
+
+### A virada do estoque (em curso desde 17/08)
+
+Tirar o sistema do estado de teste e colocá-lo contando estoque de verdade.
+Plano publicado em https://claude.ai/code/artifact/fbc17036-c89a-4faa-bce4-6fcf75e05ef5
+
+**A decisão de fundo (21/08):** os 153 lotes de 09/08 eram reais, mas várias
+produções aconteceram sem a transferência ser registrada. O saldo virou ficção.
+Decidido **resetar tudo, recontar baldes e estoque físico, e reetiquetar**.
+
+Já feito: produção anterior ao sistema importada (17 dias, 28/06 a 13/08,
+33.480 unidades) e 58 das 73 taras de recipiente.
+
+**Falta, nesta ordem:**
+
+1. **Salvar os dossiês de 10, 11 e 12/08 antes de resetar.** São as únicas três
+   sessões com rastreabilidade de insumo real (22, 14 e 8 linhas de pesagem).
+   O reset apaga `sessoes_producao_locais` e isso não volta.
+2. **Consertar o texto do dossiê.** A 097 faz sessão importada dizer "este dia
+   foi produzido antes de o sistema existir" — falso para produção de agosto
+   registrada em atraso. São duas ausências diferentes e o documento precisa
+   distinguir.
+3. **Perda do 13/08 (SESS-0020), por sabor** — pendente do Lucca. Junto:
+   confirmar se os 1.200 (Tradicional) e 1.440 (Doce de Leite) eram teóricos
+   (formas × 60) ou já vinham com a quebra descontada.
+4. **12/08 (SESS-0003) pela tela de Pós-produção**, não pelo banco — assim a
+   perda entra com motivo e o painel de Perdas sabe a causa.
+5. Lançar a produção de 14 a 21/08 (dias livres).
+6. Resetar, contar fisicamente, lançar pela Abertura, reetiquetar.
+
+**Pergunta em aberto:** os 5.022 brownies em estoque de produto acabado
+(SESS-0001 e 0002) ainda existem fisicamente? Se já foram vendidos, precisam
+ser zerados junto com o reset.
+
+### Pendências laterais, sem pressa
+
+- **7 insumos sem `tamanho_embalagem`** (INS028 a INS034). O Lucca deixou para
+  depois de propósito; só atrapalha o lançamento daqueles insumos.
+- **`Sidebar.tsx` exporta dados e componente** — o Vite avisa que não consegue
+  hot-reload. Mover os itens de navegação para arquivo próprio resolve.
+- **A tela `/dev` apaga estoque e não tem trava de admin.** Combinado: trancar
+  quando o primeiro funcionário for cadastrado, não antes.
+- **`SECURITY DEFINER` não confere a empresa de quem chama** (ver `CLAUDE.md`).
+- **17 commits não enviados ao GitHub** (de `8698e0e` a `669df39`).
 
 ---
 
+## Sessão de 23/08/2026
+
+As mensagens de commit explicam o porquê de cada decisão; não repito aqui.
+
+**Dados** — `8698e0e`, `345bc10`
+Importação de 17 dias de produção anterior ao sistema, sem tocar no estoque
+(migrations 096/097). `sessoes_producao.importada` marca esses dias; o dossiê
+diz o que não sabe em vez de fingir rastreabilidade. `quantidade_perdida` fica
+**NULL** de propósito — zero afirmaria que não quebrou nenhum.
+
+**Segurança** — `d6d1ab5`, `7ada5c0`
+Descoberto que 52 funções `SECURITY DEFINER` atendiam visitante sem login, num
+repositório público. Provado chamando `dossie_rastreabilidade` com a chave
+publicável (voltou dado real de lote) e re-testado depois da 098 (401). Também
+removido `apply_migrations.ps1`, que tinha um token do Supabase em texto puro
+— o token foi verificado morto antes.
+
+**Visual** — `6bb720d` até `669df39`
+Sessões de produção em ordem de data mais visão de calendário; menu lateral
+virou bloco flutuante que vira cabeçalho ao recolher; 19 itens reorganizados em
+4 grupos; aplicado o tema de tokens; logo do Unno; e uma série de correções de
+contraste no modo escuro. Detalhe do sistema visual na memória
+`project_design_system.md` e as armadilhas de CSS no `CLAUDE.md`.
+
+---
+
+## Histórico
 ## ⚠️ Migração de conta Supabase (01/08/2026)
 
 O projeto antigo (`outunfdtwgsmdqtphzgf`) foi pausado — o plano grátis permite
@@ -44,45 +118,6 @@ Como a empresa nasce depois, rode `select inicializar_permissoes_padrao(id) from
 ao criar uma empresa nova. (O front tem fallback em `src/lib/permissions.ts`.)
 
 ---
-
-## Convenção das fichas técnicas (importante)
-
-`fichas_tecnicas_itens.quantidade` = consumo **por fornada**, na **unidade de
-medida do próprio insumo** (kg, ml…). Padronizado na migration 029.
-
-O banco tinha duas convenções conflitantes: a migration 023 gravou por
-*unidade* enquanto `abrir_sessao_producao` (016) sempre leu por *fornada* —
-o que faria o consumo teórico sair 60× menor. Ao criar ficha nova, seguir a 029.
-
-Nas fichas Odara, **1 fornada = 1 forma = 60 unidades** de ~67,5 g.
-
-**Esta convenção já se perdeu duas vezes**, sempre do mesmo jeito: alguém
-multiplica também pelo rendimento e a demanda sai 60× maior. Foi o que a 029
-consertou e o que a 074 refez sem querer (ver abaixo). Se o planejador pedir
-centenas de potes, é isto.
-
----
-
-## ⚠️ Reescrever função: parta do banco, não da migration antiga (migration 081)
-
-A 074 recriou `planejar_recipientes` copiando o texto da **028**, que era a
-versão de dois passos atrás. Com isso desfez, em silêncio, a correção da **029**
-(demanda por forma) e a ordenação da **031** (por código do insumo). O defeito
-só apareceu meses depois, quando o Lucca planejou 44 formas e o sistema pediu
-1.445 recipientes.
-
-**Antes de `CREATE OR REPLACE` numa função que já existe**, obtenha a definição
-vigente e edite ela:
-
-```sql
-select pg_get_functiondef(oid) from pg_proc where proname = 'nome_da_funcao';
-```
-
-Migrations são camadas. O texto de uma migration antiga é o passado da função,
-não o presente dela.
-
----
-
 ## Planejamento (migrations 028-030)
 
 - `planejar_recipientes(empresa, [{ficha_id, formas}])` — substitui a planilha
@@ -94,20 +129,6 @@ não o presente dela.
   antes de vincular os recipientes (senão violaria
   `UNIQUE(sessao_id, local_id, lote_id)`).
 - Tela: `src/pages/producao/PlanejadorRecipientesPage.tsx` (`/producao/planejador`).
-
-## ⚠️ Views vazavam sem login (migration 050)
-
-Tabela com RLS recusa leitura anônima; **view não**. No Postgres a view roda com
-as permissões de quem a criou (postgres), e dono de tabela ignora RLS. Bastava a
-chave publicável — que vai no JavaScript da tela — para ler estoque, fichas e
-plano de produção **sem login**. Verificado com `curl` sem token.
-
-Corrigido com `security_invoker = true` nas 7 views. **Ao criar view nova,
-repetir a linha** — o padrão do Postgres é o inseguro.
-
-Testado depois com papel `authenticated` simulado: as views e as RPCs
-(`planejar_abastecimento`, `sugerir_lotes_transferencia`, `planejar_recipientes`)
-continuam devolvendo dados para quem está logado.
 
 ## Planejador Semanal (migration 049)
 
@@ -243,24 +264,20 @@ comentários — não foram editadas para não mexer em migration já aplicada.
 
 ---
 
-## Últimas migrations aplicadas
+## Migrations
 
-| # | Nome | O que faz |
-|---|------|-----------|
-| 009 | lote_grupo_multi_transfer | `lote_grupo_id` em lotes; RPC `realizar_transferencia_multipla` |
-| 010 | formato_sublotes | Formato `INS014-0001.1/3`; `gerar_proximo_codigo` usa regex |
-| 011 | lote_prefixo_insumo | Prefixo do lote = código do insumo (ex: `INS014-0001`) |
-| 012 | marcas | Tabelas `marcas`, `insumos_marcas`, `fornecedores_insumos_marcas`; `marca_id` em `lotes` e `locais`; RPCs atualizados |
-| 013 | insumo_recipiente_modelo | modelo de recipiente por insumo |
-| 014 | rls_yield_perdas | policies faltantes (fichas/sessões) + colunas de rendimento e perdas |
-| 015-016 | rpcs_producao_v2 / fix_consumo_teorico | RPCs de produção reescritos |
-| 017-018 | produtos_expedicao / rpcs_expedicao | módulo de produtos e expedição |
-| 019 | contagem | módulo de contagem (EC e EP) |
-| 020 | permissoes_papel | permissões por papel configuráveis |
-| 021-022 | fichas_insumo / nutrientes_insumo | fichas de insumo e tabela nutricional |
-| 023 | brownies_morena_cacau | INS028-034 + fichas FT-001 e FT-002 |
-| 024 | fix_versao_ativa_constraint | corrige constraint de versão ativa |
-| 025 | rls_empresas_configuracoes | policies em `empresas` e `configuracoes_sistema` |
+A lista viva é a própria pasta `supabase/migrations/` — os nomes dizem o que
+cada uma faz. Estamos na **098**; todas aplicadas no banco.
+
+As que importam para o trabalho de agora:
+
+| # | O que faz |
+|---|---|
+| 093-094 | Dossiê de rastreabilidade, com o descarte da desenforma |
+| 095 | Perdas por dia e metas |
+| 096 | Produção anterior ao sistema (`importada`, `importar_producao_historica`) |
+| 097 | Rastreabilidade da produção importada (lotes nascem `esgotado`) |
+| 098 | RPC só para quem fez login |
 
 ---
 
@@ -362,29 +379,3 @@ sem necessidade.
   **Não mexe em `quantidade_inicial`** — é a foto do pote na abertura e é dela
   que sai o consumo real.
 
-## Regras de negócio importantes
-
-- ~~**RO-002**: transferência é sempre total~~ — **REVOGADA** (migration 035).
-  Transferência parcial liberada; o lote só vira `esgotado` se realmente zerar.
-- ~~**RO-003**: recipiente deve estar vazio~~ — **REVOGADA** (migration 035).
-  Um recipiente pode ter vários lotes do mesmo insumo misturados.
-- **Marca é a trava que ficou**: não se mistura marcas no mesmo recipiente.
-  Validado contra a marca configurada no recipiente E contra a marca do
-  conteúdo atual.
-- **Mistura**: `locais_lotes` guarda o conteúdo lote a lote;
-  `locais_estado_atual` virou o resumo, mantido por trigger
-  (`recalcular_estado_local`). Nunca escrever no resumo direto.
-- **Rateio**: a balança pesa o pote, não cada lote. O consumo é dividido entre
-  os lotes na proporção do que cada um tinha — em `fechar_sessao_producao`,
-  `aplicar_contagem` e no consumo teórico de `abrir_sessao_producao_v2`.
-- **Esgotar** (`esgotar_recipiente`): com rateio o saldo nunca zera exato;
-  o botão baixa a sobra como `ajuste_inventario` e encerra a mistura.
-- **Bug corrigido na 036**: `fechar_sessao_producao` baixava o consumo em
-  `lotes.quantidade_disponivel` (estoque central) em vez do recipiente —
-  contagem dupla. Ficava escondido porque o fluxo de sublotes zerava o lote no
-  EC ao transferir. Com transferência parcial isso comeria estoque real.
-- **FIFO**: aviso se há lote mais antigo do mesmo insumo disponível
-- **Marcas**: lote e recipiente devem ser da mesma marca (se ambos definidos)
-- ~~**Sublotes**: só sublotes do mesmo `lote_grupo_id` juntos~~ — **REVOGADA**
-  (migration 045). Agora basta mesmo insumo e mesma marca.
-- Insumos com reembalagem (`INS027` Nutella, `INS014` DDL, `INS023` Stikadinho) usam fluxo próprio
