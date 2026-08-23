@@ -84,6 +84,23 @@ const novaLinha = (tamanhoPadrao?: number | null, validadePadrao?: string): Linh
   aberta: '',
 })
 
+/**
+ * Etiqueta gerada e ainda não impressa.
+ *
+ * A contagem acontece com o celular na mão, andando pela fábrica; a impressora
+ * está no computador. Sem uma fila que sobreviva à troca de aparelho, o que foi
+ * lançado no celular fica sem etiqueta e ninguém sabe o que faltou.
+ */
+type EtiquetaPendente = {
+  lote_id: string
+  codigo: string
+  qr_code: string
+  quantidade: number
+  insumo_id: string
+  insumo: string
+  unidade: string
+}
+
 /** O que o insumo já tem de saldo registrado, para a abertura em duas idas. */
 type SaldoAtual = { total: number; lotes: number; validade: string | null }
 
@@ -181,6 +198,7 @@ export function AberturaEstoquePage() {
 
   const [retomado, setRetomado] = useState(false)
   const [refazendo, setRefazendo] = useState<string | null>(null)
+  const [pendentes, setPendentes] = useState<EtiquetaPendente[]>([])
   const [linhas, setLinhas] = useState<Record<string, Linha[]>>({})
   const [baldes, setBaldes] = useState<Record<string, Balde>>({})
 
@@ -207,9 +225,12 @@ export function AberturaEstoquePage() {
       // O que já existe de saldo. Serve a duas coisas: avisar quem volta para
       // uma segunda ida (o caso de quem cadastrou a prateleira num dia e os
       // baldes no outro) e herdar a validade do que já foi registrado.
+      // A mesma consulta serve a duas coisas: o saldo por insumo e a fila de
+      // etiquetas por imprimir. Quem conta pelo celular nao consegue imprimir
+      // dali — precisa achar o que ficou pendente ao sentar no computador.
       supabase
         .from('lotes')
-        .select('insumo_id, quantidade_disponivel, validade_original')
+        .select('id, codigo, qr_code, insumo_id, quantidade_recebida, quantidade_disponivel, validade_original, etiqueta_impressa')
         .eq('empresa_id', profile.empresa_id)
         .eq('status', 'ativo'),
       supabase
@@ -225,9 +246,14 @@ export function AberturaEstoquePage() {
       setFornecedores((forn.data ?? []) as Fornecedor[])
 
       const lotesAtivos = (lot.data ?? []) as {
+        id: string
+        codigo: string
+        qr_code: string | null
         insumo_id: string
+        quantidade_recebida: number
         quantidade_disponivel: number
         validade_original: string | null
+        etiqueta_impressa: boolean
       }[]
       setJaTemLotes(lotesAtivos.length > 0)
 
@@ -242,6 +268,22 @@ export function AberturaEstoquePage() {
         }
       }
       setSaldoAtual(saldos)
+
+      const nomeDo = new Map(listaInsumos.map(i => [i.id, i]))
+      setPendentes(
+        lotesAtivos
+          .filter(l => !l.etiqueta_impressa)
+          .map(l => ({
+            lote_id: l.id,
+            codigo: l.codigo,
+            qr_code: l.qr_code ?? '',
+            quantidade: l.quantidade_recebida,
+            insumo_id: l.insumo_id,
+            insumo: nomeDo.get(l.insumo_id)?.nome ?? '—',
+            unidade: nomeDo.get(l.insumo_id)?.unidade_medida ?? '',
+          }))
+          .sort((a, b) => a.codigo.localeCompare(b.codigo)),
+      )
 
       const porInsumo: Record<string, Marca[]> = {}
       for (const v of (vinc.data ?? []) as { insumo_id: string; marca: Marca | Marca[] | null }[]) {
@@ -567,6 +609,17 @@ export function AberturaEstoquePage() {
     return lista
   }, [insumos, baldes, recipientesPorInsumo])
 
+  /** A fila agrupada, para a pessoa achar o insumo em vez de ler código de lote. */
+  const porInsumo = useMemo(() => {
+    const mapa = new Map<string, { insumo_id: string; insumo: string; lotes: EtiquetaPendente[] }>()
+    for (const p of pendentes) {
+      const g = mapa.get(p.insumo_id) ?? { insumo_id: p.insumo_id, insumo: p.insumo, lotes: [] }
+      g.lotes.push(p)
+      mapa.set(p.insumo_id, g)
+    }
+    return [...mapa.values()].sort((a, b) => a.insumo.localeCompare(b.insumo))
+  }, [pendentes])
+
   /**
    * Desfaz a abertura de um insumo para que ela seja lançada de novo.
    *
@@ -769,6 +822,60 @@ export function AberturaEstoquePage() {
       </div>
 
       <Passos etapa={etapa} />
+
+      {/* A fila de etiquetas vem ANTES de começar ou continuar: quem chega ao
+          computador depois de contar no celular vem para imprimir, não para
+          contar de novo. */}
+      {pendentes.length > 0 && (
+        <Card className="p-4 mb-4">
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div className="min-w-0">
+              <p className="font-semibold text-gray-900">
+                {pendentes.length} etiqueta{pendentes.length === 1 ? '' : 's'} esperando impressão
+              </p>
+              <p className="text-sm text-gray-600 mt-0.5">
+                De tudo que já foi lançado, aqui ou em outro aparelho.
+              </p>
+            </div>
+            <Button
+              size="sm"
+              onClick={() =>
+                navigate('/recebimento/imprimir-lotes', { state: { lotes: pendentes } })
+              }
+            >
+              Imprimir todas
+            </Button>
+          </div>
+
+          <ul className="mt-3 divide-y divide-gray-100 text-sm">
+            {porInsumo.map(g => (
+              <li key={g.insumo_id} className="flex items-center justify-between gap-3 py-2">
+                <span className="min-w-0 truncate text-gray-700">{g.insumo}</span>
+                <span className="flex items-center gap-3 shrink-0">
+                  <span className="text-xs text-gray-500 tabular-nums">
+                    {g.lotes.length} etiqueta{g.lotes.length === 1 ? '' : 's'}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() =>
+                      navigate('/recebimento/imprimir-lotes', { state: { lotes: g.lotes } })
+                    }
+                    className="text-xs font-medium text-brand-700 hover:underline"
+                  >
+                    imprimir
+                  </button>
+                </span>
+              </li>
+            ))}
+          </ul>
+
+          <p className="text-xs text-gray-500 mt-3">
+            A etiqueta sai desta lista quando a impressão é confirmada. Se o papel picotar
+            errado e você precisar imprimir de novo, use Recebimento — lá elas continuam
+            disponíveis mesmo depois de impressas.
+          </p>
+        </Card>
+      )}
 
       {jaTemLotes && (
         <div className="mb-4 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">
