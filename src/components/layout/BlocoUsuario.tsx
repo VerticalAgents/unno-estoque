@@ -13,12 +13,18 @@ import { useAuth } from '../../contexts/AuthContext'
  * espaço abaixo — abrir para baixo jogaria as opções para fora da tela.
  */
 
+// Rótulos curtos: no rodapé do menu sobram uns 110px depois do avatar, da seta
+// e do botão de tema. "Administrador" não cabe e vira "ADMINISTRA…", que informa
+// menos que "Admin" e ainda parece defeito.
 const PAPEIS: Record<string, string> = {
-  admin: 'Administrador',
+  admin: 'Admin',
   gestao: 'Gestão',
   producao: 'Produção',
   compras: 'Compras',
 }
+
+/** Só o primeiro nome. O nome inteiro está no painel que abre. */
+const primeiroNome = (nome?: string) => (nome ?? '').trim().split(/\s+/)[0] || '—'
 
 interface Props {
   darkMode: { isDark: boolean; toggle: () => void }
@@ -68,7 +74,7 @@ export function BlocoUsuario({ darkMode, paraCima = false, largo = false, classN
           </span>
           <span className="hidden sm:block text-left min-w-0">
             <span className="block text-sm font-medium text-foreground leading-none truncate">
-              {profile?.nome ?? '—'}
+              {primeiroNome(profile?.nome)}
             </span>
             <span className="block text-[0.65rem] uppercase tracking-[1px] text-muted-foreground mt-0.5 truncate">
               {PAPEIS[profile?.papel ?? ''] ?? profile?.papel}
