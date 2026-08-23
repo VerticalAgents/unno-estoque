@@ -123,6 +123,40 @@ function etiquetasLinha(l: Linha): number {
   return fechadas + (num(l.aberta) > 0 ? 1 : 0)
 }
 
+/**
+ * O rascunho da contagem, guardado no proprio navegador.
+ *
+ * Contar estoque leva meia hora andando pela fabrica, e ate aqui tudo isso
+ * vivia so na memoria da aba: um refresh sem querer, um erro do servidor, e a
+ * pessoa recomecava do zero. Aconteceu de verdade em 23/08/2026.
+ *
+ * Guarda so o que foi digitado. O cadastro vem do banco a cada carga, entao
+ * um rascunho antigo nunca ressuscita insumo ou pote que nao existe mais.
+ */
+const RASCUNHO = 'abertura-estoque-rascunho-v1'
+
+type Rascunho = {
+  etapa: 1 | 2 | 3
+  linhas: Record<string, Linha[]>
+  baldes: Record<string, Balde>
+  guardarTamanho: Record<string, boolean>
+}
+
+function lerRascunho(): Rascunho | null {
+  try {
+    const cru = localStorage.getItem(RASCUNHO)
+    if (!cru) return null
+    const r = JSON.parse(cru) as Rascunho
+    return r && r.linhas && r.baldes ? r : null
+  } catch {
+    return null
+  }
+}
+
+function apagarRascunho() {
+  try { localStorage.removeItem(RASCUNHO) } catch { /* aba anonima, paciencia */ }
+}
+
 export function AberturaEstoquePage() {
   const { profile } = useAuth()
   const navigate = useNavigate()
@@ -145,6 +179,7 @@ export function AberturaEstoquePage() {
   // agora, com o pacote na mão, e seria perdida ao fim do assistente.
   const [guardarTamanho, setGuardarTamanho] = useState<Record<string, boolean>>({})
 
+  const [retomado, setRetomado] = useState(false)
   const [linhas, setLinhas] = useState<Record<string, Linha[]>>({})
   const [baldes, setBaldes] = useState<Record<string, Balde>>({})
 
@@ -235,9 +270,39 @@ export function AberturaEstoquePage() {
         b[r.id] = { modo: 'vazio', peso_bruto: '', linha_key: '' }
       }
       setBaldes(b)
+
+      // O rascunho manda no que foi digitado, mas so nas chaves que ainda
+      // existem: pote apagado no cadastro nao volta pela porta dos fundos.
+      const rasc = lerRascunho()
+      if (rasc) {
+        const validos: Record<string, Linha[]> = { ...iniciais }
+        for (const [insumoId, ls] of Object.entries(rasc.linhas ?? {})) {
+          if (insumoId in iniciais && Array.isArray(ls) && ls.length) validos[insumoId] = ls
+        }
+        setLinhas(validos)
+
+        const baldesValidos: Record<string, Balde> = { ...b }
+        for (const [localId, bal] of Object.entries(rasc.baldes ?? {})) {
+          if (localId in b && bal) baldesValidos[localId] = bal
+        }
+        setBaldes(baldesValidos)
+
+        if (rasc.guardarTamanho) setGuardarTamanho(g => ({ ...g, ...rasc.guardarTamanho }))
+        if (rasc.etapa === 2 || rasc.etapa === 3) setEtapa(rasc.etapa)
+        setRetomado(true)
+      }
+
       setCarregando(false)
     })
   }, [profile])
+
+  // Salva a cada tecla. E barato, e o custo de nao salvar ja foi medido.
+  useEffect(() => {
+    if (carregando) return
+    try {
+      localStorage.setItem(RASCUNHO, JSON.stringify({ etapa, linhas, baldes, guardarTamanho }))
+    } catch { /* sem espaco ou aba anonima: seguir sem rascunho e melhor que quebrar */ }
+  }, [carregando, etapa, linhas, baldes, guardarTamanho])
 
   // ── Cadastros feitos sem sair da abertura ───────────────────
   //
@@ -440,7 +505,13 @@ export function AberturaEstoquePage() {
     return { totalPrateleira, totalBaldes, insumosComSaldo, etiquetas, potesCheios }
   }, [insumos, linhas, baldes, recipientesPorInsumo])
 
-  /** Erros que travam o envio, apontando o insumo pelo nome. */
+  /**
+   * Erros que travam o envio, apontando o insumo pelo nome.
+   *
+   * Só entra aqui o que o sistema não consegue gravar. Discordar da bancada
+   * não é erro: se coube no pote, coube — a capacidade cadastrada é uma
+   * estimativa nossa, e o peso na balança é o fato. Isso vive em `avisos`.
+   */
   const problemas = useMemo(() => {
     const lista: string[] = []
     for (const insumo of insumos) {
@@ -463,11 +534,6 @@ export function AberturaEstoquePage() {
         }
         const q = conteudoDoBalde(r, insumo)
         if (q <= 0) continue
-        if (r.capacidade_max != null && q > r.capacidade_max) {
-          lista.push(
-            `${r.nome}: ${q} ${insumo.unidade_medida} passa da capacidade de ${r.capacidade_max}.`,
-          )
-        }
         const ls = (linhas[insumo.id] ?? []).filter(l => totalLinha(l) > 0)
         if (ls.length > 1 && !baldes[r.id]?.linha_key) {
           lista.push(`${r.nome}: escolha de qual embalagem veio o conteúdo.`)
@@ -476,6 +542,29 @@ export function AberturaEstoquePage() {
     }
     return lista
   }, [insumos, linhas, baldes, recipientesPorInsumo])
+
+  /**
+   * O que merece um olhar e não trava nada.
+   *
+   * Pote acima da capacidade cadastrada é o caso típico: 19 kg num pote de
+   * açúcar anotado como 15 significa que a estimativa está velha, não que a
+   * contagem está errada. Travar aqui obrigaria a mentir o peso para conseguir
+   * salvar — e é o peso que vira estoque.
+   */
+  const avisos = useMemo(() => {
+    const lista: string[] = []
+    for (const insumo of insumos) {
+      for (const r of recipientesPorInsumo[insumo.id] ?? []) {
+        const q = conteudoDoBalde(r, insumo)
+        if (q <= 0 || r.capacidade_max == null || q <= r.capacidade_max) continue
+        lista.push(
+          `${r.nome}: ${q} ${insumo.unidade_medida} passa da capacidade cadastrada ` +
+          `de ${r.capacidade_max}. Vai ser gravado assim mesmo.`,
+        )
+      }
+    }
+    return lista
+  }, [insumos, baldes, recipientesPorInsumo])
 
   async function aplicar() {
     if (!profile) return
@@ -595,6 +684,10 @@ export function AberturaEstoquePage() {
       return
     }
 
+    // Gravou: o rascunho cumpriu o papel e sai de cena. Deixá-lo aqui faria a
+    // próxima abertura nascer com a contagem antiga já preenchida.
+    apagarRascunho()
+
     // O ciclo só fecha com a etiqueta colada: é ela que dá QR ao que já existia.
     if (res.lotes && res.lotes.length > 0) {
       navigate('/recebimento/imprimir-lotes', { state: { lotes: res.lotes } })
@@ -636,6 +729,16 @@ export function AberturaEstoquePage() {
         </div>
       )}
 
+      {retomado && (
+        <div className="rounded-lg border border-brand-200 bg-brand-50 p-3 mb-3
+                        dark:border-brand-500/30 dark:bg-brand-500/10">
+          <p className="text-sm text-brand-800 dark:text-brand-200">
+            <strong>Retomamos de onde você parou.</strong> O que estava digitado ficou
+            guardado neste aparelho. Se preferir recomeçar do zero, é só limpar os campos.
+          </p>
+        </div>
+      )}
+
       {etapa === 1 && (
         <EtapaPrateleira
           insumos={insumos}
@@ -670,7 +773,7 @@ export function AberturaEstoquePage() {
       )}
 
       {etapa === 3 && (
-        <EtapaConferir resumo={resumo} problemas={problemas} insumos={insumos} />
+        <EtapaConferir resumo={resumo} problemas={problemas} avisos={avisos} insumos={insumos} />
       )}
 
       {erro && (
@@ -1459,6 +1562,7 @@ function NovoRecipiente({
 function EtapaConferir({
   resumo,
   problemas,
+  avisos,
   insumos,
 }: {
   resumo: {
@@ -1469,6 +1573,7 @@ function EtapaConferir({
     potesCheios: number
   }
   problemas: string[]
+  avisos: string[]
   insumos: Insumo[]
 }) {
   return (
@@ -1490,6 +1595,17 @@ function EtapaConferir({
           fechamento de perdas.
         </p>
       </Card>
+
+      {avisos.length > 0 && (
+        <div className="rounded-lg border border-amber-200 bg-amber-50 p-3">
+          <p className="text-sm font-semibold text-amber-800 mb-1.5">Confira, mas pode seguir:</p>
+          <ul className="list-disc pl-5 space-y-1 text-sm text-amber-700">
+            {avisos.map((a, i) => (
+              <li key={i}>{a}</li>
+            ))}
+          </ul>
+        </div>
+      )}
 
       {problemas.length > 0 ? (
         <div className="rounded-lg border border-red-200 bg-red-50 p-3">
