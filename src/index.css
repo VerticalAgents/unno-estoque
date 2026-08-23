@@ -109,10 +109,10 @@
    Use as classes do Tailwind (brand-*, unno-*) sempre que
    possível; estas variáveis existem para CSS solto. */
 :root {
-  --unno-bg: #0a0a0f;
+  --unno-bg: #121212;
   --unno-bg-raised: #111118;
-  --unno-bg-elevated: #1a1a24;
-  --unno-text: #eef0f4;
+  --unno-bg-elevated: #292929;
+  --unno-text: #e2e8f0;
   --unno-text-muted: #8a8fa0;
   --unno-text-dim: #4a4e5c;
   --unno-accent: #17a860;
@@ -228,8 +228,8 @@
     padding: 0.75rem 1rem;
   }
   html.dark .acoes-fixas {
-    background-color: #0e0e16;
-    border-top-color: #1a1a24;
+    background-color: #1f1f1f;
+    border-top-color: #292929;
   }
   @media (min-width: 1024px) {
     /* No computador o botão volta a ser o fim do formulário: a tela é alta,
@@ -286,76 +286,76 @@
     color-scheme: dark;
   }
   html.dark ::selection {
-    background: rgba(0, 212, 170, 0.9);
-    color: #0a0a0f;
+    background: rgba(37, 217, 141, 0.9);
+    color: #121212;
   }
   html.dark body {
     @apply text-gray-100;
-    background-color: #0a0a0f;
+    background-color: #121212;
   }
 
   /* ── Global dark overrides ─────────────────────────── */
 
   /* Headings & strong text */
-  html.dark .text-gray-900 { color: #eef0f4; }
+  html.dark .text-gray-900 { color: #e2e8f0; }
   html.dark .text-gray-800 { color: #d1d5db; }
   html.dark .text-gray-700 { color: #9ca3af; }
 
   /* Backgrounds */
-  html.dark .bg-white { background-color: #12121a; }
-  html.dark .bg-gray-50 { background-color: #0e0e16; }
-  html.dark .bg-gray-100 { background-color: #1a1a24; }
+  html.dark .bg-white { background-color: #171717; }
+  html.dark .bg-gray-50 { background-color: #1f1f1f; }
+  html.dark .bg-gray-100 { background-color: #292929; }
 
   /* Borders */
-  html.dark .border-gray-200 { border-color: #1a1a24; }
-  html.dark .border-gray-100 { border-color: #16161e; }
-  html.dark .border-gray-300 { border-color: #2a2a34; }
+  html.dark .border-gray-200 { border-color: #292929; }
+  html.dark .border-gray-100 { border-color: #242424; }
+  html.dark .border-gray-300 { border-color: #3a3a3a; }
 
   /* Dividers */
-  html.dark .divide-gray-100 > * + * { border-color: #16161e; }
-  html.dark .divide-gray-200 > * + * { border-color: #1a1a24; }
+  html.dark .divide-gray-100 > * + * { border-color: #242424; }
+  html.dark .divide-gray-200 > * + * { border-color: #292929; }
 
   /* Hover states */
-  html.dark .hover\:bg-gray-50:hover { background-color: #16161e; }
-  html.dark .hover\:bg-gray-100:hover { background-color: #1a1a24; }
+  html.dark .hover\:bg-gray-50:hover { background-color: #242424; }
+  html.dark .hover\:bg-gray-100:hover { background-color: #292929; }
 
   /* Semi-transparent whites */
   html.dark .bg-white\/60 { background-color: rgba(18, 18, 26, 0.6); }
   html.dark .bg-gray-50\/60 { background-color: rgba(14, 14, 22, 0.6); }
 
   /* Dashed borders (label previews etc) */
-  html.dark .border-dashed { border-color: #2a2a34; }
+  html.dark .border-dashed { border-color: #3a3a3a; }
 
   /* Table specifics */
   html.dark th { color: #9ca3af; }
-  html.dark td { border-color: #16161e; }
-  html.dark tr:hover { background-color: #16161e; }
-  html.dark thead { background-color: #0e0e16; }
-  html.dark .border-b { border-bottom-color: #16161e; }
-  html.dark .border-t { border-top-color: #16161e; }
-  html.dark .border-l { border-left-color: #16161e; }
-  html.dark .border-r { border-right-color: #16161e; }
+  html.dark td { border-color: #242424; }
+  html.dark tr:hover { background-color: #242424; }
+  html.dark thead { background-color: #1f1f1f; }
+  html.dark .border-b { border-bottom-color: #242424; }
+  html.dark .border-t { border-top-color: #242424; }
+  html.dark .border-l { border-left-color: #242424; }
+  html.dark .border-r { border-right-color: #242424; }
 
   /* Badges & pills */
   html.dark .bg-gray-100.text-gray-600,
   html.dark .bg-gray-100.text-gray-500,
   html.dark .bg-gray-100.text-gray-700 {
-    background-color: #1a1a24;
+    background-color: #292929;
     color: #9ca3af;
   }
 
   /* Focus ring offset */
-  html.dark .focus\:ring-offset-2 { --tw-ring-offset-color: #0a0a0f; }
+  html.dark .focus\:ring-offset-2 { --tw-ring-offset-color: #121212; }
 
   /* Disabled inputs */
-  html.dark .disabled\:bg-gray-50:disabled { background-color: #0e0e16; }
+  html.dark .disabled\:bg-gray-50:disabled { background-color: #1f1f1f; }
   html.dark .disabled\:text-gray-500:disabled { color: #4b5563; }
 
   /* Brand overrides for dark - ensure brand-100 bg is dark */
-  html.dark .bg-brand-100 { background-color: rgba(23, 168, 96, 0.18); }
-  html.dark .bg-brand-50 { background-color: rgba(23, 168, 96, 0.08); }
-  html.dark .text-brand-600 { color: #34b877; }
-  html.dark .text-brand-700 { color: #34b877; }
+  html.dark .bg-brand-100 { background-color: rgba(37, 217, 141, 0.18); }
+  html.dark .bg-brand-50 { background-color: rgba(37, 217, 141, 0.08); }
+  html.dark .text-brand-600 { color: #25d98d; }
+  html.dark .text-brand-700 { color: #25d98d; }
 
   /* Alert backgrounds */
   html.dark .bg-red-50 { background-color: rgba(239, 68, 68, 0.1); }

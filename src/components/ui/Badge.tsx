@@ -2,15 +2,38 @@ import type { ReactNode } from 'react'
 
 type BadgeVariant = 'default' | 'success' | 'warning' | 'danger' | 'info' | 'purple'
 
-// Espelha .tag-* do unno-design-system.html: fundo tingido + borda da
-// mesma cor, texto em maiúsculas.
+/**
+ * A etiqueta de estado.
+ *
+ * CADA VARIANTE DECLARA OS DOIS TEMAS. A versão anterior só tingia o fundo a
+ * 12% e trocava a cor do texto no escuro — o que produzia vermelho-escuro sobre
+ * vermelho-escuro num "Vencido", ilegível a um metro da tela. No escuro a
+ * fórmula se inverte: fundo cheio e escuro, texto claro.
+ *
+ * OS TONS FORAM ESCOLHIDOS PARA NÃO COLIDIR com o bloco legado de modo escuro
+ * do `index.css`, que ainda sobrescreve `bg-*-50`, `border-*-200` e
+ * `border-blue-300` com seletor de especificidade maior (`html.dark .classe`
+ * vence `.dark .dark\:classe`). Usar `-100` no claro e `-950` no escuro passa
+ * ao largo dessas regras — se um dia elas saírem, os tons podem voltar ao 50.
+ */
 const variantClasses: Record<BadgeVariant, string> = {
-  default: 'bg-muted text-muted-foreground border border-border',
-  success: 'bg-emerald-500/[.12] text-emerald-700 border border-emerald-500/20 dark:text-emerald-400',
-  warning: 'bg-unno-amber/[.12] text-amber-700 border border-unno-amber/20 dark:text-unno-amber',
-  danger:  'bg-unno-danger/[.12] text-red-700 border border-unno-danger/20 dark:text-unno-danger',
-  info:    'bg-blue-500/[.12] text-blue-700 border border-blue-500/20 dark:text-blue-400',
-  purple:  'bg-purple-500/[.12] text-purple-700 border border-purple-500/20 dark:text-purple-400',
+  default:
+    'bg-muted text-muted-foreground border border-border',
+  success:
+    'bg-emerald-100 text-emerald-800 border border-emerald-300 ' +
+    'dark:bg-emerald-950 dark:text-emerald-200 dark:border-emerald-800',
+  warning:
+    'bg-amber-100 text-amber-900 border border-amber-300 ' +
+    'dark:bg-amber-950 dark:text-amber-200 dark:border-amber-800',
+  danger:
+    'bg-red-100 text-red-800 border border-red-300 ' +
+    'dark:bg-red-950 dark:text-red-200 dark:border-red-800',
+  info:
+    'bg-blue-100 text-blue-800 border border-blue-400 ' +
+    'dark:bg-blue-950 dark:text-blue-200 dark:border-blue-800',
+  purple:
+    'bg-purple-100 text-purple-800 border border-purple-300 ' +
+    'dark:bg-purple-950 dark:text-purple-200 dark:border-purple-800',
 }
 
 interface BadgeProps {
