@@ -139,7 +139,7 @@ export function Header({ onMenuToggle, darkMode, colapsado, onExpandir }: Header
   return (
     <header className="shrink-0 px-3 pt-3">
       <div className="flex items-center gap-2 h-14 px-2.5 rounded-bloco
-                      bg-card/90 backdrop-blur-xl border border-border shadow-bloco">
+                      bg-card border border-border shadow-bloco">
 
         {/* Abrir o menu de baixo — só no celular. */}
         <button
