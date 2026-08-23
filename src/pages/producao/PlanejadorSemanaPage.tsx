@@ -300,8 +300,19 @@ export function PlanejadorSemanaPage({
   const [semana, setSemana] = useState(semanaDeTrabalho)
   const [diasAtivos, setDiasAtivos] = useState<string[]>([])
   const [grade, setGrade] = useState<Grade>({})
-  // Mexeu num dia na mão: o auto-distribuir para de rodar, senão desfaria o
-  // ajuste na próxima tecla digitada na meta.
+  /**
+   * Mexeu num dia na mão: o auto-distribuir para de rodar, senão desfaria o
+   * ajuste na próxima tecla digitada na meta.
+   *
+   * MUDAR A META NÃO DESLIGA ISTO. Antes desligava, e o efeito era o pior
+   * possível: quem tinha arrumado a semana dia a dia — ou tinha aberto um
+   * plano já salvo, que nasce ajustado — perdia tudo ao corrigir o total de um
+   * sabor em 60 unidades. A meta nova aparece como saldo em "Falta distribuir",
+   * e refazer a divisão é uma escolha, no botão "Auto distribuir".
+   *
+   * Continua desligando o que muda a FORMA da distribuição, não a quantidade:
+   * trocar a prioridade dos produtos e marcar ou desmarcar um dia.
+   */
   const [ajustado, setAjustado] = useState(false)
 
   /**
@@ -342,6 +353,15 @@ export function PlanejadorSemanaPage({
   const [salvoEm, setSalvoEm] = useState<string | null>(null)
   // Retrato do plano como está no banco, para saber se há coisa por salvar.
   const [instantaneoSalvo, setInstantaneoSalvo] = useState('')
+  /**
+   * Trava contra recarregar por cima de trabalho não salvo.
+   *
+   * `temAlteracao` só é calculado lá embaixo, depois da grade; o espelho em
+   * ref é o que permite consultá-lo aqui em cima, no efeito de carga. Ver a
+   * nota no efeito.
+   */
+  const alteracaoRef = useRef(false)
+  const semanaCarregadaRef = useRef<string | null>(null)
   const [empresaNome, setEmpresaNome] = useState('')
 
   // Alvo do botão "editar" da coluna fixa.
@@ -552,7 +572,23 @@ export function PlanejadorSemanaPage({
     }))
   }, [profile, semana, fichas])
 
-  useEffect(() => { carregarSemana() }, [carregarSemana])
+  /**
+   * Carrega a semana — menos quando isso apagaria o que está na tela.
+   *
+   * `carregarSemana` muda de identidade quando `profile` ou `fichas` mudam, e
+   * qualquer efeito que dependa dela roda de novo. A causa na origem era a
+   * sessão do Supabase se renovando ao voltar para a aba (corrigida no
+   * AuthContext), mas a lição vale para além dela: **recarregar por cima de
+   * trabalho não salvo é perda de dado**, e não pode depender de nenhuma
+   * dessas dependências se comportar bem.
+   *
+   * Trocar de semana continua recarregando sempre — aí a intenção é essa.
+   */
+  useEffect(() => {
+    if (semanaCarregadaRef.current === semana && alteracaoRef.current) return
+    semanaCarregadaRef.current = semana
+    carregarSemana()
+  }, [carregarSemana, semana])
 
   // ── Meta ────────────────────────────────────────────────────
   const alvoEfetivo = useMemo<Record<string, number>>(() => {
@@ -719,7 +755,6 @@ export function PlanejadorSemanaPage({
       const n = Math.max(0, Math.round(atual / passo) + delta)
       return { ...s, [f.id]: n > 0 ? String(n * passo) : '' }
     })
-    setAjustado(false)
   }
 
   /**
@@ -735,7 +770,6 @@ export function PlanejadorSemanaPage({
     const encaixado = snapUnidades(atual, passo)
     if (encaixado !== atual) {
       setAlvo(s => ({ ...s, [f.id]: String(encaixado) }))
-      setAjustado(false)
     }
   }
 
@@ -853,6 +887,9 @@ export function PlanejadorSemanaPage({
   }), [grade, diasAtivos, preenchimento, ordem])
 
   const temAlteracao = instantaneo !== instantaneoSalvo
+
+  // Espelha para o efeito de carga, que roda antes deste ponto do arquivo.
+  useEffect(() => { alteracaoRef.current = temAlteracao }, [temAlteracao])
 
   const totalFormas = porDia.reduce((s, d) => s + d.formas, 0)
   const totalBateladas = porDia.reduce((s, d) => s + d.bateladas, 0)
@@ -1034,14 +1071,13 @@ export function PlanejadorSemanaPage({
                   </p>
                   <CampoNumerico
                     valor={totalDigitado}
-                    onDigitar={v => { setTotalDigitado(v); setAjustado(false) }}
+                    onDigitar={v => setTotalDigitado(v)}
                     onPasso={d => {
                       setTotalDigitado(v => {
                         const atual = parseFloat((v ?? '').replace(',', '.')) || 0
                         const n = Math.max(0, Math.round(atual / passoTotalEfetivo) + d) * passoTotalEfetivo
                         return n > 0 ? String(n) : ''
                       })
-                      setAjustado(false)
                     }}
                     passo={passoTotalEfetivo}
                     sufixo="unidades"
@@ -1078,7 +1114,7 @@ export function PlanejadorSemanaPage({
                     {modo === 'unidades' ? (
                       <CampoNumerico
                         valor={alvo[f.id] ?? ''}
-                        onDigitar={v => { setAlvo(s => ({ ...s, [f.id]: v })); setAjustado(false) }}
+                        onDigitar={v => setAlvo(s => ({ ...s, [f.id]: v }))}
                         onPasso={d => passoFormas(f, d)}
                         onSair={() => encaixarFormas(f)}
                         passo={passoDe(f.rendimento_fornada ?? 0) || 1}
@@ -1088,14 +1124,13 @@ export function PlanejadorSemanaPage({
                     ) : (
                       <CampoNumerico
                         valor={pct[f.id] ?? ''}
-                        onDigitar={v => { setPct(s => ({ ...s, [f.id]: v })); setAjustado(false) }}
+                        onDigitar={v => setPct(s => ({ ...s, [f.id]: v }))}
                         onPasso={d => {
                           setPct(s => {
                             const atual = parseFloat((s[f.id] ?? '').replace(',', '.')) || 0
                             const n = Math.min(100, Math.max(0, Math.round(atual) + d))
                             return { ...s, [f.id]: n > 0 ? String(n) : '' }
                           })
-                          setAjustado(false)
                         }}
                         passo={1}
                         max={100}
@@ -1171,7 +1206,6 @@ export function PlanejadorSemanaPage({
                       return [f.id, n > 0 ? String(n) : '']
                     })))
                   }
-                  setAjustado(false)
                 }}
                 className="mt-0.5 w-4 h-4 rounded border-gray-300 text-brand-600
                            focus:ring-brand-500/30 dark:border-white/[.15]"

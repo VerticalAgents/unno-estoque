@@ -28,6 +28,9 @@ type ConfigArmazenamento = ConfigReembalagem & {
 type LoteWithInsumo = Lote & {
   insumo: {
     nome: string; codigo: string; shelf_life_dias_pos_abertura: number | null
+    unidade_medida?: string
+    /** Peso de cada pacote dentro da embalagem. NULL quando não vem subdividido. */
+    tamanho_subembalagem?: number | null
     armazenamento_config?: ConfigArmazenamento
   }
   marca?: { nome: string } | null
@@ -102,6 +105,10 @@ export function TransferenciaPage() {
   // escrever por que está contrariando a regra.
   const [travaAviso, setTravaAviso] = useState<{ chave: string; mensagem: string } | null>(null)
   const [justificativa, setJustificativa] = useState('')
+
+  // O que ficou na origem depois de despejar. Vazio = saiu tudo.
+  const [sobrou, setSobrou] = useState(false)
+  const [sobraTexto, setSobraTexto] = useState('')
   const [showConfirm, setShowConfirm] = useState(false)
   const [loading, setLoading] = useState(false)
   const [scanError, setScanError] = useState('')
@@ -181,7 +188,7 @@ export function TransferenciaPage() {
     *,
     marca:marcas(nome),
     insumo:insumos(
-      nome, codigo, shelf_life_dias_pos_abertura,
+      nome, codigo, shelf_life_dias_pos_abertura, unidade_medida, tamanho_subembalagem,
       armazenamento_config:insumos_armazenamento_config(passa_reembalagem, destino_multiplo, modo_ep)
     )
   `
@@ -372,6 +379,9 @@ export function TransferenciaPage() {
       p_empresa_id:     profile.empresa_id,
       // vai preenchida na segunda tentativa, quando uma trava pediu explicação
       p_justificativa:  justificativa.trim() || null,
+      // O que FICOU na origem. Sobra se enxerga; o que saiu se estima — e é por
+      // isso que a pergunta é sobre a sobra. `null` = saiu tudo.
+      p_sobra_origem:   sobraDeclarada,
     })
 
     setLoading(false)
@@ -487,6 +497,25 @@ export function TransferenciaPage() {
 
   const totalQty = lotes.reduce((acc, l) => acc + (l.quantidade_disponivel ?? 0), 0)
   const unidade = lotes[0]?.unidade ?? ''
+
+  /**
+   * Quanto tem cada pacote dentro da embalagem, quando ela é subdividida.
+   *
+   * É fato do produto: o fardo de chocolate traz 10 pacotes de 1,01 kg; o saco
+   * de cobertura não traz nenhum. É isso que decide se a pergunta é "quantos
+   * pacotes sobraram" ou "quanto está pesando".
+   */
+  const porPacote = lote?.insumo?.tamanho_subembalagem ?? null
+
+  /** A sobra na unidade do insumo, que é o que o banco espera. `null` = saiu tudo. */
+  const sobraDeclarada = (() => {
+    if (!sobrou) return null
+    const n = parseFloat(sobraTexto.replace(',', '.'))
+    if (!isFinite(n) || n < 0) return null
+    return porPacote ? Number((n * porPacote).toFixed(3)) : n
+  })()
+
+  const sobraInvalida = sobrou && (sobraTexto.trim() === '' || sobraDeclarada === null)
 
   /** Depois de juntar os lotes: bipar o recipiente, ou mover o pacote inteiro. */
   const passoDepoisDosLotes: Step =
@@ -895,6 +924,82 @@ export function TransferenciaPage() {
                 <span className="font-medium">{local.nome}</span>
               </div>
 
+              {/* ── O que ficou na origem ────────────────────────────
+                  Antes quem decidia quanto saía era a capacidade cadastrada do
+                  pote — o sistema enchia até o número do cadastro e descontava
+                  isso do lote, sem nenhuma balança na conta. O erro de cada
+                  passagem virava dívida no saldo, até sobrar mais no fardo do
+                  que o sistema achava que tinha.
+
+                  Pergunta-se a SOBRA e não o que saiu, porque a sobra se
+                  enxerga: são os pacotes que ficaram na caixa, ou o que a
+                  balança diz do saco. Assim o saldo do lote é reancorado na
+                  realidade a cada passagem e o erro nunca acumula. */}
+              <div className="py-3 border-b border-gray-100">
+                <p className="text-sm font-medium text-gray-900 dark:text-unno-text mb-2">
+                  Sobrou alguma coisa na origem?
+                </p>
+
+                <div className="flex gap-2 mb-2">
+                  <button
+                    type="button"
+                    onClick={() => { setSobrou(false); setSobraTexto('') }}
+                    className={[
+                      'flex-1 min-h-[44px] rounded-controle border px-3 text-sm font-medium transition-colors',
+                      !sobrou
+                        ? 'border-brand-600 bg-brand-50 text-brand-800 dark:bg-brand-500/15 dark:text-brand-200'
+                        : 'border-gray-300 text-gray-600 dark:border-white/[.08] dark:text-unno-muted',
+                    ].join(' ')}
+                  >
+                    Saiu tudo
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setSobrou(true)}
+                    className={[
+                      'flex-1 min-h-[44px] rounded-controle border px-3 text-sm font-medium transition-colors',
+                      sobrou
+                        ? 'border-brand-600 bg-brand-50 text-brand-800 dark:bg-brand-500/15 dark:text-brand-200'
+                        : 'border-gray-300 text-gray-600 dark:border-white/[.08] dark:text-unno-muted',
+                    ].join(' ')}
+                  >
+                    Sobrou um pouco
+                  </button>
+                </div>
+
+                {sobrou && (
+                  <>
+                    <label className="block">
+                      <span className="text-xs font-semibold uppercase tracking-wide text-gray-500">
+                        {porPacote ? 'Quantos pacotes ficaram' : `Quanto ficou (${unidade})`}
+                      </span>
+                      <input
+                        type="number"
+                        inputMode="decimal"
+                        min={0}
+                        step={porPacote ? 1 : 0.001}
+                        value={sobraTexto}
+                        onChange={e => setSobraTexto(e.target.value)}
+                        autoFocus
+                        className="mt-1 w-full min-h-[44px] rounded-controle border border-gray-300 px-3 text-sm
+                                   dark:border-white/[.08] dark:bg-unno-bg dark:text-unno-text"
+                        placeholder={porPacote ? 'ex: 6' : `ex: 13,4`}
+                      />
+                    </label>
+
+                    {sobraDeclarada !== null && (
+                      <p className="text-xs text-gray-600 dark:text-unno-muted mt-1.5">
+                        {porPacote && (
+                          <>Ficam <strong>{formatQty(sobraDeclarada, unidade)}</strong> na embalagem. </>
+                        )}
+                        Vai para o recipiente{' '}
+                        <strong>{formatQty(Math.max(totalQty - sobraDeclarada, 0), unidade)}</strong>.
+                      </p>
+                    )}
+                  </>
+                )}
+              </div>
+
               {/* O recipiente pode ter sobra de outro lote: não é mais bloqueio,
                   mas o operador precisa saber que vai misturar. */}
               {(local.estado_atual?.quantidade ?? 0) > 0 && (
@@ -951,6 +1056,9 @@ export function TransferenciaPage() {
             size="xl"
             fullWidth
             loading={loading}
+            // Marcou "sobrou" e não disse quanto: confirmar aqui gravaria "saiu
+            // tudo", que é o oposto do que a pessoa quis dizer.
+            disabled={sobraInvalida}
             onClick={() => setShowConfirm(true)}
           >
             CONFIRMAR TRANSFERÊNCIA

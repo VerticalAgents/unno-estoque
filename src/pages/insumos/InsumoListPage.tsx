@@ -35,6 +35,7 @@ type FormState = {
   estoque_maximo_ep: string
   shelf_life_dias_pos_abertura: string
   tamanho_embalagem: string
+  tamanho_subembalagem: string
   exige_temperatura: boolean
   temperatura_min: string
   temperatura_max: string
@@ -60,6 +61,7 @@ const emptyForm = (): FormState => ({
   estoque_maximo_ep: '',
   shelf_life_dias_pos_abertura: '',
   tamanho_embalagem: '',
+  tamanho_subembalagem: '',
   exige_temperatura: false,
   temperatura_min: '',
   temperatura_max: '',
@@ -302,6 +304,7 @@ export function InsumoListPage() {
       estoque_maximo_ep: ins.estoque_maximo_ep?.toString() ?? '',
       shelf_life_dias_pos_abertura: ins.shelf_life_dias_pos_abertura?.toString() ?? '',
       tamanho_embalagem: ins.tamanho_embalagem?.toString() ?? '',
+      tamanho_subembalagem: ins.tamanho_subembalagem?.toString() ?? '',
       exige_temperatura: ins.exige_temperatura ?? false,
       temperatura_min: ins.temperatura_min?.toString() ?? '',
       temperatura_max: ins.temperatura_max?.toString() ?? '',
@@ -382,6 +385,7 @@ export function InsumoListPage() {
         ? parseInt(form.shelf_life_dias_pos_abertura)
         : null,
       tamanho_embalagem: form.tamanho_embalagem ? parseFloat(form.tamanho_embalagem) : null,
+      tamanho_subembalagem: form.tamanho_subembalagem ? parseFloat(form.tamanho_subembalagem) : null,
       exige_temperatura: form.exige_temperatura,
       // Desligado, a faixa é apagada: guardar limites de uma conferência que
       // não acontece mais é convite para ela voltar sozinha com números velhos.
@@ -676,6 +680,28 @@ export function InsumoListPage() {
                   onChange={e => set('tamanho_embalagem', e.target.value)}
                   placeholder="Ex: 10"
                   hint={`${form.unidade_medida} por embalagem/fardo`}
+                />
+
+                {/* Existir subembalagem é fato do produto, não escolha de fluxo:
+                    dá para olhar o fardo e responder. É este campo que decide se
+                    a transferência pergunta "quantos pacotes sobraram" ou
+                    "quanto está pesando". */}
+                <Input
+                  label="Tamanho do pacote dentro"
+                  type="number" inputMode="decimal"
+                  step="0.001"
+                  min="0"
+                  value={form.tamanho_subembalagem}
+                  onChange={e => set('tamanho_subembalagem', e.target.value)}
+                  placeholder="deixe vazio se não vier em pacotes"
+                  hint={
+                    form.tamanho_subembalagem && form.tamanho_embalagem
+                      ? `${Math.round(
+                          (parseFloat(form.tamanho_embalagem) || 0) /
+                          (parseFloat(form.tamanho_subembalagem) || 1),
+                        )} pacotes por embalagem`
+                      : 'Só para o que vem subdividido — o fardo com pacotinhos dentro'
+                  }
                 />
               </div>
 

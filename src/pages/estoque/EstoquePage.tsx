@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../contexts/AuthContext'
 import type { EstoqueConsolidado, CategoriaInsumo } from '../../types/database.types'
@@ -8,16 +8,68 @@ import { formatQty, formatDate, daysUntil } from '../../lib/utils'
 import { InsumoDetalhePanel } from './InsumoDetalhePanel'
 import { combina } from '../../lib/busca'
 
+/**
+ * ESTOQUE DE INSUMOS — a posição de tudo, EC mais EP.
+ *
+ * A tela é lida de duas maneiras muito diferentes. De longe, para saber **o que
+ * pede providência hoje**; de perto, para conferir o número de um insumo. O
+ * desenho atende as duas em ordem: o resumo em cima responde a primeira, a
+ * lista embaixo responde a segunda.
+ *
+ * O resumo não é enfeite — cada quadro é um filtro. "3 a comprar" só vale a
+ * pena estar escrito se der para tocar nele e ver quais são os três.
+ */
+
+type Alerta = 'comprar' | 'transferir' | 'etiquetar' | 'vencendo'
+
+/** Quantos dias antes do vencimento a validade começa a incomodar. */
+const DIAS_ATENCAO = 30
+
+const CORES_SELO: Record<Alerta, string> = {
+  comprar:    'bg-amber-100 text-amber-800 dark:bg-amber-500/15 dark:text-amber-300',
+  transferir: 'bg-blue-100 text-blue-800 dark:bg-blue-500/15 dark:text-blue-300',
+  etiquetar:  'bg-purple-100 text-purple-800 dark:bg-purple-500/15 dark:text-purple-300',
+  vencendo:   'bg-red-100 text-red-800 dark:bg-red-500/15 dark:text-red-300',
+}
+
+/**
+ * A cor da tarja na lateral da linha.
+ *
+ * A versão anterior pintava a linha inteira de amarelo. Com meia dúzia de
+ * insumos em alerta, meia tabela ficava amarela e o destaque deixava de
+ * destacar — além de brigar com a cor da validade dentro da própria linha. A
+ * tarja diz a mesma coisa ocupando 3px.
+ */
+const CORES_TARJA: Record<Alerta, string> = {
+  comprar:    '#f59e0b',
+  transferir: '#3b82f6',
+  etiquetar:  '#a855f7',
+  vencendo:   '#ef4444',
+}
+
+const ROTULOS: Record<Alerta, string> = {
+  comprar:    'comprar',
+  transferir: 'transferir',
+  etiquetar:  'etiquetar',
+  vencendo:   `vence em ${DIAS_ATENCAO}d`,
+}
+
+const EXPLICACAO: Record<Alerta, string> = {
+  comprar:    'EC abaixo do mínimo — comprar',
+  transferir: 'EP abaixo do mínimo — transferir do EC',
+  etiquetar:  'Há lotes sem etiqueta impressa',
+  vencendo:   `Vence em até ${DIAS_ATENCAO} dias`,
+}
+
 /** Selo curto de alerta, do tamanho de caber três lado a lado num cartão. */
-function Selo({ cor, children }: { cor: 'amber' | 'blue' | 'purple'; children: React.ReactNode }) {
-  const cores = {
-    amber: 'bg-amber-100 text-amber-700 dark:bg-unno-amber/15 dark:text-unno-amber',
-    blue: 'bg-blue-100 text-blue-700 dark:bg-blue-500/15 dark:text-blue-300',
-    purple: 'bg-purple-100 text-purple-700 dark:bg-purple-500/15 dark:text-purple-300',
-  }
+function Selo({ tipo }: { tipo: Alerta }) {
   return (
-    <span className={`px-1.5 py-0.5 rounded text-[0.65rem] font-medium ${cores[cor]}`}>
-      {children}
+    <span
+      title={EXPLICACAO[tipo]}
+      className={`px-1.5 py-0.5 rounded-controle text-[0.65rem] font-semibold
+                  uppercase tracking-wide ${CORES_SELO[tipo]}`}
+    >
+      {ROTULOS[tipo]}
     </span>
   )
 }
@@ -29,13 +81,26 @@ type ValidadeInfo = {
   validade_ep: string | null   // validade_ep do recipiente EP mais próximo
 }
 
+/**
+ * Os dois temas declarados em cada faixa.
+ *
+ * Vermelho-escuro sobre fundo escuro não se lê a um metro da tela, que é a
+ * distância de quem confere estoque em pé.
+ */
 function validadeClass(date: string | null): string {
-  if (!date) return 'text-gray-400'
+  if (!date) return 'text-muted-foreground/40'
   const days = daysUntil(date)
-  if (days < 0) return 'text-red-600 font-semibold'
-  if (days <= 30) return 'text-red-600 font-semibold'
-  if (days <= 60) return 'text-yellow-600 font-semibold'
-  return 'text-gray-700'
+  if (days <= DIAS_ATENCAO) return 'text-red-600 dark:text-red-400 font-semibold'
+  if (days <= 60) return 'text-amber-600 dark:text-amber-400 font-semibold'
+  return 'text-foreground/70'
+}
+
+/** A mais próxima entre as duas validades — é ela que decide o alerta. */
+function venceEmBreve(val: ValidadeInfo | undefined): boolean {
+  if (!val) return false
+  return [val.validade_ec, val.validade_ep]
+    .filter((d): d is string => !!d)
+    .some(d => daysUntil(d) <= DIAS_ATENCAO)
 }
 
 export function EstoquePage() {
@@ -44,6 +109,8 @@ export function EstoquePage() {
   const [categorias, setCategorias] = useState<CategoriaInsumo[]>([])
   const [validades, setValidades] = useState<Record<string, ValidadeInfo>>({})
   const [filtroCategoria, setFiltroCategoria] = useState('')
+  /** Quadro do resumo em que se tocou. Nulo = a lista inteira. */
+  const [filtroAlerta, setFiltroAlerta] = useState<Alerta | null>(null)
   const [search, setSearch] = useState('')
   const [loading, setLoading] = useState(true)
   const [insumoSelecionado, setInsumoSelecionado] = useState<EstoqueConsolidado | null>(null)
@@ -120,160 +187,293 @@ export function EstoquePage() {
       })
   }, [profile])
 
-  const catMap = Object.fromEntries(categorias.map((c) => [c.id, c]))
+  const catMap = useMemo(
+    () => Object.fromEntries(categorias.map(c => [c.id, c])),
+    [categorias],
+  )
 
-  const filtered = estoque.filter((e) => {
-    const matchSearch = combina(search, e.insumo_nome)
-    const cat = insumosMeta[e.insumo_id]?.categoria_id
-    const matchCat = filtroCategoria === '' || cat === filtroCategoria
-    return matchSearch && matchCat
-  })
+  /**
+   * Cada linha já com a categoria, a validade e os alertas resolvidos.
+   *
+   * Antes essa conta acontecia duas vezes — uma no cartão do celular, outra na
+   * linha da tabela — e as duas cópias podiam divergir. Resolver uma vez aqui
+   * também é o que permite ao resumo contar e ao filtro filtrar.
+   */
+  const linhas = useMemo(
+    () => estoque.map(e => {
+      const meta = insumosMeta[e.insumo_id]
+      const val = validades[e.insumo_id]
+      const alertas: Alerta[] = []
+
+      if ((meta?.estoque_minimo_ec != null && e.qtd_estoque_central < meta.estoque_minimo_ec)
+          || e.alerta_reposicao) alertas.push('comprar')
+      if (meta?.estoque_minimo_ep != null && e.qtd_estoque_produtivo < meta.estoque_minimo_ep)
+        alertas.push('transferir')
+      if (insumosSemEtiqueta.has(e.insumo_id)) alertas.push('etiquetar')
+      if (venceEmBreve(val)) alertas.push('vencendo')
+
+      return { e, val, categoria: catMap[meta?.categoria_id ?? ''], alertas }
+    }),
+    [estoque, insumosMeta, validades, insumosSemEtiqueta, catMap],
+  )
+
+  const filtered = useMemo(
+    () => linhas.filter(l => {
+      const meta = insumosMeta[l.e.insumo_id]
+      if (!combina(search, l.e.insumo_nome)) return false
+      if (filtroCategoria && meta?.categoria_id !== filtroCategoria) return false
+      if (filtroAlerta && !l.alertas.includes(filtroAlerta)) return false
+      return true
+    }),
+    [linhas, insumosMeta, search, filtroCategoria, filtroAlerta],
+  )
+
+  /** Quantos insumos em cada situação — a conta é sobre TUDO, não sobre o filtro. */
+  const contagens = useMemo(() => {
+    const c: Record<Alerta, number> = { comprar: 0, transferir: 0, etiquetar: 0, vencendo: 0 }
+    for (const l of linhas) for (const a of l.alertas) c[a]++
+    return c
+  }, [linhas])
+
+  const alternarAlerta = (a: Alerta) => setFiltroAlerta(atual => (atual === a ? null : a))
+
+  const campoClasse =
+    'rounded-controle border border-border bg-input px-4 py-2.5 text-sm text-foreground ' +
+    'placeholder-muted-foreground/50 focus:outline-none focus:border-ring ' +
+    'focus:ring-[3px] focus:ring-brand-400/25 transition-[border-color,box-shadow] duration-200'
 
   return (
-    <div className="p-4 sm:p-6 max-w-5xl mx-auto">
-      <div className="mb-6">
-        <h1 className="text-xl font-bold text-gray-900">Estoque</h1>
-        <p className="text-sm text-gray-500 mt-0.5">Posição atual por insumo (EC + EP)</p>
+    <div className="p-4 sm:p-6 max-w-5xl mx-auto space-y-5">
+      <div>
+        <h1 className="text-2xl font-bold text-foreground">Estoque de insumos</h1>
+        <p className="text-sm text-muted-foreground mt-0.5">
+          Posição atual de cada insumo, somando o estoque central e o que está nos baldes.
+        </p>
       </div>
 
-      <div className="flex gap-3 mb-4 flex-wrap">
-        <input type="search" placeholder="Buscar insumo..." value={search} onChange={(e) => setSearch(e.target.value)}
-          className="flex-1 min-w-48 px-3 py-2 rounded-lg border border-gray-300 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500" />
-        <select value={filtroCategoria} onChange={(e) => setFiltroCategoria(e.target.value)}
-          className="px-3 py-2 rounded-lg border border-gray-300 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500">
+      {/* ── O resumo, que também é filtro ─────────────────────
+          Fica antes da lista porque responde a pergunta que se faz de longe:
+          o que pede providência hoje. */}
+      {!loading && (
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
+          {(['comprar', 'transferir', 'etiquetar', 'vencendo'] as Alerta[]).map(a => {
+            const n = contagens[a]
+            const ativo = filtroAlerta === a
+            const vazio = n === 0
+            return (
+              <button
+                key={a}
+                onClick={() => !vazio && alternarAlerta(a)}
+                disabled={vazio}
+                aria-pressed={ativo}
+                title={vazio ? `Nada em ${ROTULOS[a]}` : EXPLICACAO[a]}
+                className={[
+                  'rounded-bloco border px-4 py-3 text-left transition-all duration-200 ease-out-expo',
+                  vazio
+                    ? 'border-border bg-card/60 cursor-default'
+                    : 'border-border bg-card shadow-tema [@media(hover:hover)]:hover:-translate-y-0.5 hover:shadow-tema-md',
+                  ativo ? 'ring-2 ring-ring border-transparent' : '',
+                ].join(' ')}
+              >
+                <p
+                  className="text-2xl font-display font-bold tabular-nums leading-none"
+                  style={{ color: vazio ? undefined : CORES_TARJA[a] }}
+                >
+                  <span className={vazio ? 'text-muted-foreground/40' : ''}>{n}</span>
+                </p>
+                <p className="text-[0.65rem] uppercase tracking-[1px] font-semibold text-muted-foreground mt-1.5">
+                  {ROTULOS[a]}
+                </p>
+              </button>
+            )
+          })}
+        </div>
+      )}
+
+      <div className="flex gap-2.5 flex-wrap">
+        <input
+          type="search"
+          placeholder="Buscar insumo..."
+          value={search}
+          onChange={e => setSearch(e.target.value)}
+          className={`flex-1 min-w-48 ${campoClasse}`}
+        />
+        <select
+          value={filtroCategoria}
+          onChange={e => setFiltroCategoria(e.target.value)}
+          className={campoClasse}
+        >
           <option value="">Todas as categorias</option>
-          {categorias.map((c) => <option key={c.id} value={c.id}>{c.nome}</option>)}
+          {categorias.map(c => <option key={c.id} value={c.id}>{c.nome}</option>)}
         </select>
       </div>
 
-      {/* Legenda de validade */}
-      <div className="flex gap-4 mb-3 text-xs text-gray-500 flex-wrap">
-        <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-red-500 inline-block" /> Vence em ≤ 30 dias</span>
-        <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-yellow-400 inline-block" /> Vence em ≤ 60 dias</span>
-      </div>
+      {/* O filtro do resumo é o único que não tem campo próprio na tela — sem
+          esta linha, quem tocou num quadro e esqueceu não entende por que a
+          lista está curta. */}
+      {filtroAlerta && (
+        <div className="flex items-center gap-2 text-sm text-muted-foreground">
+          <span>Mostrando só o que precisa <strong className="text-foreground">{ROTULOS[filtroAlerta]}</strong>.</span>
+          <button
+            onClick={() => setFiltroAlerta(null)}
+            className="text-brand-600 dark:text-brand-400 font-semibold hover:underline"
+          >
+            Ver todos
+          </button>
+        </div>
+      )}
 
       {loading ? (
-        <div className="flex justify-center py-12"><div className="w-6 h-6 border-2 border-brand-600 border-t-transparent rounded-full animate-spin" /></div>
+        <div className="flex justify-center py-12">
+          <div className="w-6 h-6 border-2 border-brand-600 border-t-transparent rounded-full animate-spin" />
+        </div>
       ) : (
         <Card>
           <ListaResponsiva
             cartoes={
               filtered.length === 0
                 ? <ListaVazia>Nenhum insumo encontrado.</ListaVazia>
-                : filtered.map(e => {
-                    const meta = insumosMeta[e.insumo_id]
-                    const cat = catMap[meta?.categoria_id ?? '']
-                    const val = validades[e.insumo_id]
-                    const alertaEC = meta?.estoque_minimo_ec != null && e.qtd_estoque_central < meta.estoque_minimo_ec
-                    const alertaEP = meta?.estoque_minimo_ep != null && e.qtd_estoque_produtivo < meta.estoque_minimo_ep
-                    const alertaEtiqueta = insumosSemEtiqueta.has(e.insumo_id)
-                    return (
-                      <CartaoLista
-                        key={e.insumo_id}
-                        onClick={() => setInsumoSelecionado(e)}
-                        alerta={alertaEC || alertaEP || e.alerta_reposicao || alertaEtiqueta}
-                        titulo={
-                          <>
-                            {cat?.cor_hex && (
-                              <span className="w-2 h-2 mt-1.5 rounded-full shrink-0" style={{ backgroundColor: cat.cor_hex }} />
-                            )}
-                            <span className="font-medium text-gray-900 dark:text-unno-text">{e.insumo_nome}</span>
-                          </>
-                        }
-                        subtitulo={`${e.insumo_codigo}${cat?.nome ? ` · ${cat.nome}` : ''}`}
-                        // O total é o que se procura de relance; o resto é detalhe.
-                        destaque={formatQty(e.qtd_total, e.unidade_medida)}
-                        marcadores={
-                          (alertaEC || e.alerta_reposicao || alertaEP || alertaEtiqueta) ? (
-                            <>
-                              {(alertaEC || e.alerta_reposicao) && <Selo cor="amber">⚠ comprar</Selo>}
-                              {alertaEP && <Selo cor="blue">⚠ transferir</Selo>}
-                              {alertaEtiqueta && <Selo cor="purple">⚠ etiquetar</Selo>}
-                            </>
-                          ) : undefined
-                        }
-                        campos={[
-                          { rotulo: 'EC', valor: formatQty(e.qtd_estoque_central, e.unidade_medida) },
-                          { rotulo: 'EP', valor: formatQty(e.qtd_estoque_produtivo, e.unidade_medida) },
-                          {
-                            rotulo: 'Val. EC',
-                            valor: val?.validade_ec
-                              ? <span className={validadeClass(val.validade_ec)}>{formatDate(val.validade_ec)}</span>
-                              : <span className="text-gray-300">—</span>,
-                          },
-                          {
-                            rotulo: 'Val. EP',
-                            valor: val?.validade_ep
-                              ? <span className={validadeClass(val.validade_ep)}>{formatDate(val.validade_ep)}</span>
-                              : <span className="text-gray-300">—</span>,
-                          },
-                        ]}
-                      />
-                    )
-                  })
+                : filtered.map(({ e, val, categoria, alertas }) => (
+                    <CartaoLista
+                      key={e.insumo_id}
+                      onClick={() => setInsumoSelecionado(e)}
+                      alerta={alertas.length > 0}
+                      titulo={
+                        <>
+                          {categoria?.cor_hex && (
+                            <span className="w-2 h-2 mt-1.5 rounded-full shrink-0" style={{ backgroundColor: categoria.cor_hex }} />
+                          )}
+                          <span className="font-medium text-foreground">{e.insumo_nome}</span>
+                        </>
+                      }
+                      subtitulo={`${e.insumo_codigo}${categoria?.nome ? ` · ${categoria.nome}` : ''}`}
+                      // O total é o que se procura de relance; o resto é detalhe.
+                      destaque={<span className="tabular-nums">{formatQty(e.qtd_total, e.unidade_medida)}</span>}
+                      marcadores={
+                        alertas.length > 0
+                          ? <>{alertas.map(a => <Selo key={a} tipo={a} />)}</>
+                          : undefined
+                      }
+                      campos={[
+                        { rotulo: 'EC', valor: <span className="tabular-nums">{formatQty(e.qtd_estoque_central, e.unidade_medida)}</span> },
+                        { rotulo: 'EP', valor: <span className="tabular-nums">{formatQty(e.qtd_estoque_produtivo, e.unidade_medida)}</span> },
+                        {
+                          rotulo: 'Val. EC',
+                          valor: val?.validade_ec
+                            ? <span className={`tabular-nums ${validadeClass(val.validade_ec)}`}>{formatDate(val.validade_ec)}</span>
+                            : <span className="text-muted-foreground/40">—</span>,
+                        },
+                        {
+                          rotulo: 'Val. EP',
+                          valor: val?.validade_ep
+                            ? <span className={`tabular-nums ${validadeClass(val.validade_ep)}`}>{formatDate(val.validade_ep)}</span>
+                            : <span className="text-muted-foreground/40">—</span>,
+                        },
+                      ]}
+                    />
+                  ))
             }
             tabela={
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b border-gray-100 text-left">
-                  <th className="px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">Insumo</th>
-                  <th className="px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">Categoria</th>
-                  <th className="px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide text-right">EC</th>
-                  <th className="px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide text-center">Val. EC</th>
-                  <th className="px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide text-right">EP</th>
-                  <th className="px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide text-center">Val. EP</th>
-                  <th className="px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide text-right">Total</th>
-                  <th className="px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide text-right">Mínimo</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-50">
-                {filtered.map((e) => {
-                  const meta = insumosMeta[e.insumo_id]
-                  const cat = catMap[meta?.categoria_id ?? '']
-                  const val = validades[e.insumo_id]
-                  const alertaEC = meta?.estoque_minimo_ec != null && e.qtd_estoque_central < meta.estoque_minimo_ec
-                  const alertaEP = meta?.estoque_minimo_ep != null && e.qtd_estoque_produtivo < meta.estoque_minimo_ep
-                  const alertaEtiqueta = insumosSemEtiqueta.has(e.insumo_id)
-                  return (
-                    <tr key={e.insumo_id} onClick={() => setInsumoSelecionado(e)} className={`cursor-pointer ${(alertaEC || alertaEP || e.alerta_reposicao || alertaEtiqueta) ? 'bg-yellow-50 hover:bg-yellow-100' : 'hover:bg-gray-50'}`}>
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b border-border text-left">
+                    {[
+                      { r: 'Insumo' }, { r: 'Categoria' },
+                      { r: 'EC', fim: true }, { r: 'Val. EC', meio: true },
+                      { r: 'EP', fim: true }, { r: 'Val. EP', meio: true },
+                      { r: 'Total', fim: true }, { r: 'Mínimo', fim: true },
+                    ].map(c => (
+                      <th
+                        key={c.r}
+                        className={[
+                          'px-4 py-3 text-[0.65rem] font-semibold uppercase tracking-[1px] text-muted-foreground',
+                          c.fim ? 'text-right' : c.meio ? 'text-center' : '',
+                        ].join(' ')}
+                      >
+                        {c.r}
+                      </th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-border/60">
+                  {filtered.map(({ e, val, categoria, alertas }) => (
+                    <tr
+                      key={e.insumo_id}
+                      onClick={() => setInsumoSelecionado(e)}
+                      // A tarja fica em box-shadow, e não em border-left: borda
+                      // muda a largura da célula e desalinha a coluna das linhas
+                      // sem alerta.
+                      style={alertas.length > 0
+                        ? { boxShadow: `inset 3px 0 0 ${CORES_TARJA[alertas[0]]}` }
+                        : undefined}
+                      className="cursor-pointer transition-colors duration-150 hover:bg-accent"
+                    >
                       <td className="px-4 py-3">
                         <div className="flex items-center gap-2 flex-wrap">
-                          {cat?.cor_hex && <div className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: cat.cor_hex }} />}
-                          <span className="font-medium text-gray-900">{e.insumo_nome}</span>
-                          {(alertaEC || e.alerta_reposicao) && <span className="text-xs text-amber-600" title="EC abaixo do mínimo — comprar">⚠ comprar</span>}
-                          {alertaEP && <span className="text-xs text-blue-600" title="EP abaixo do mínimo — transferir do EC">⚠ transferir</span>}
-                          {alertaEtiqueta && <span className="text-xs text-purple-600" title="Há lotes sem etiqueta impressa">⚠ etiquetar</span>}
+                          {categoria?.cor_hex && (
+                            <div className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: categoria.cor_hex }} />
+                          )}
+                          <span className="font-medium text-foreground">{e.insumo_nome}</span>
+                          {alertas.map(a => <Selo key={a} tipo={a} />)}
                         </div>
-                        <p className="text-xs text-gray-400 ml-4">{e.insumo_codigo}</p>
+                        <p className="text-xs text-muted-foreground/70 ml-4">{e.insumo_codigo}</p>
                       </td>
-                      <td className="px-4 py-3 text-gray-500">{cat?.nome ?? '—'}</td>
-                      <td className="px-4 py-3 text-right text-gray-700">{formatQty(e.qtd_estoque_central, e.unidade_medida)}</td>
+                      <td className="px-4 py-3 text-muted-foreground">{categoria?.nome ?? '—'}</td>
+                      <td className="px-4 py-3 text-right tabular-nums text-foreground/80">
+                        {formatQty(e.qtd_estoque_central, e.unidade_medida)}
+                      </td>
                       <td className="px-4 py-3 text-center text-xs">
                         {val?.validade_ec
-                          ? <span className={validadeClass(val.validade_ec)}>{formatDate(val.validade_ec)}</span>
-                          : <span className="text-gray-300">—</span>
-                        }
+                          ? <span className={`tabular-nums ${validadeClass(val.validade_ec)}`}>{formatDate(val.validade_ec)}</span>
+                          : <span className="text-muted-foreground/40">—</span>}
                       </td>
-                      <td className="px-4 py-3 text-right text-gray-700">{formatQty(e.qtd_estoque_produtivo, e.unidade_medida)}</td>
+                      <td className="px-4 py-3 text-right tabular-nums text-foreground/80">
+                        {formatQty(e.qtd_estoque_produtivo, e.unidade_medida)}
+                      </td>
                       <td className="px-4 py-3 text-center text-xs">
                         {val?.validade_ep
-                          ? <span className={validadeClass(val.validade_ep)}>{formatDate(val.validade_ep)}</span>
-                          : <span className="text-gray-300">—</span>
-                        }
+                          ? <span className={`tabular-nums ${validadeClass(val.validade_ep)}`}>{formatDate(val.validade_ep)}</span>
+                          : <span className="text-muted-foreground/40">—</span>}
                       </td>
-                      <td className="px-4 py-3 text-right font-semibold text-gray-900">{formatQty(e.qtd_total, e.unidade_medida)}</td>
-                      <td className="px-4 py-3 text-right text-gray-400">{e.estoque_minimo ? formatQty(e.estoque_minimo, e.unidade_medida) : '—'}</td>
+                      <td className="px-4 py-3 text-right font-semibold tabular-nums text-foreground">
+                        {formatQty(e.qtd_total, e.unidade_medida)}
+                      </td>
+                      <td className="px-4 py-3 text-right tabular-nums text-muted-foreground/60">
+                        {e.estoque_minimo ? formatQty(e.estoque_minimo, e.unidade_medida) : '—'}
+                      </td>
                     </tr>
-                  )
-                })}
-                {filtered.length === 0 && (
-                  <tr><td colSpan={8} className="px-4 py-8 text-center text-gray-400">Nenhum insumo encontrado.</td></tr>
-                )}
-              </tbody>
-            </table>
+                  ))}
+                  {filtered.length === 0 && (
+                    <tr>
+                      <td colSpan={8} className="px-4 py-10 text-center text-sm text-muted-foreground">
+                        Nenhum insumo encontrado.
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
             }
           />
         </Card>
+      )}
+
+      {/* A legenda desceu para o rodapé: ela se consulta uma vez, quando bate a
+          dúvida sobre o que a cor quer dizer, e não a cada visita à tela. */}
+      {!loading && (
+        <div className="flex gap-4 text-xs text-muted-foreground flex-wrap px-1">
+          <span className="flex items-center gap-1.5">
+            <span className="w-2 h-2 rounded-full bg-red-500 inline-block" />
+            Vence em até {DIAS_ATENCAO} dias
+          </span>
+          <span className="flex items-center gap-1.5">
+            <span className="w-2 h-2 rounded-full bg-amber-400 inline-block" />
+            Vence em até 60 dias
+          </span>
+          <span className="flex items-center gap-1.5">
+            <span className="w-3 h-2 rounded-sm bg-amber-500 inline-block" />
+            Tarja na lateral: a linha pede providência
+          </span>
+        </div>
       )}
 
       {insumoSelecionado && (

@@ -1,4 +1,4 @@
-import { createContext, useContext, useEffect, useState, type ReactNode } from 'react'
+import { createContext, useContext, useEffect, useRef, useState, type ReactNode } from 'react'
 import type { User } from '@supabase/supabase-js'
 import { supabase } from '../lib/supabase'
 import type { Usuario } from '../types/database.types'
@@ -51,25 +51,52 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }
 
+  /**
+   * Quem está logado agora, guardado fora do estado.
+   *
+   * É o que permite reconhecer um evento de sessão que não mudou nada.
+   */
+  const idAtual = useRef<string | null>(null)
+
+  /**
+   * Aplica uma sessão — e SÓ quando ela troca de pessoa.
+   *
+   * O Supabase renova o token sozinho, e dispara `TOKEN_REFRESHED` sempre que a
+   * aba volta a ficar visível. Quem estava no terminal e voltou para o
+   * navegador recebia esse evento. A sessão é a mesma, mas `session.user` e o
+   * perfil recarregado são OBJETOS NOVOS — e em React objeto novo é mudança.
+   *
+   * O estrago acontecia longe daqui: toda tela que carrega dados com
+   * `useCallback([... profile])` via a identidade do perfil mudar, refazia a
+   * consulta e sobrescrevia o que estava na tela. No Planejador isso apagava a
+   * semana inteira que ainda não tinha sido salva.
+   *
+   * Comparar o id resolve na origem: token renovado não mexe em nada, entrar e
+   * sair continuam funcionando.
+   */
+  async function aplicarSessao(session: { user: User } | null) {
+    const novoId = session?.user?.id ?? null
+    if (novoId === idAtual.current) return
+
+    idAtual.current = novoId
+    setUser(session?.user ?? null)
+
+    if (session?.user) {
+      await loadProfile(session.user.id)
+    } else {
+      setProfile(null)
+      setPermissoes({})
+    }
+  }
+
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
-      setUser(session?.user ?? null)
-      if (session?.user) {
-        loadProfile(session.user.id).finally(() => setLoading(false))
-      } else {
-        setLoading(false)
-      }
+      aplicarSessao(session).finally(() => setLoading(false))
     })
 
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
-      setUser(session?.user ?? null)
-      if (session?.user) {
-        loadProfile(session.user.id)
-      } else {
-        setProfile(null)
-        setPermissoes({})
-      }
-    })
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(
+      (_event, session) => { aplicarSessao(session) },
+    )
 
     return () => subscription.unsubscribe()
   }, [])
