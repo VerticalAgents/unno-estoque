@@ -1,0 +1,1307 @@
+[
+  {
+    "sessao": "SESS-0001",
+    "produto": "Brownie Tradicional Odara",
+    "validade": "2026-12-11T03:00:00.000Z",
+    "dossie": {
+      "ok": true,
+      "lotes": [
+        {
+          "codigo": "LPROD-0001",
+          "status": "ativo",
+          "qr_code": "QR-LPROD-0001",
+          "sessao_id": "e8d2365f-dac9-42bb-ae2a-0680b6af1f2a",
+          "data_producao": "2026-08-10",
+          "data_desenforma": "2026-08-11",
+          "quantidade_produzida": 1438,
+          "quantidade_disponivel": 1438
+        },
+        {
+          "codigo": "LPROD-0022",
+          "status": "esgotado",
+          "qr_code": null,
+          "sessao_id": "0b30353e-e902-438f-b098-e1541028b8f5",
+          "data_producao": "2026-08-13",
+          "data_desenforma": null,
+          "quantidade_produzida": 1200,
+          "quantidade_disponivel": 0
+        }
+      ],
+      "avisos": [
+        "A sessão SESS-0020 é produção anterior ao sistema: foi lançada como registro histórico, e o número de unidades é o que a fábrica tinha anotado. Não existe lote de insumo, pesagem de balde nem desenforma para mostrar — este dia foi produzido antes de o sistema existir."
+      ],
+      "resumo": {
+        "formas": 24,
+        "no_forno": 1440,
+        "perda_pct": 0.14,
+        "descartadas": 2,
+        "aproveitadas": 1438
+      },
+      "insumos": [
+        {
+          "marca": "Art Alimentos",
+          "origem": "inventario_inicial",
+          "unidade": "kg",
+          "sublotes": 1,
+          "numero_nf": null,
+          "sessao_id": "e8d2365f-dac9-42bb-ae2a-0680b6af1f2a",
+          "fornecedor": "Odara",
+          "insumo_nome": "Ácido Cítrico Anidro",
+          "lote_codigo": "INS017-0002",
+          "recipientes": "Pote PP Ácido Cítrico Anidro #1",
+          "consumo_real": 0.098,
+          "recebido_por": "Lucca Milleto",
+          "insumo_codigo": "INS017",
+          "sessao_codigo": "SESS-0001",
+          "data_fabricacao": null,
+          "fornecedor_cnpj": null,
+          "data_recebimento": "2026-08-09",
+          "embalagem_aberta": false,
+          "validade_original": "2036-08-06",
+          "temperatura_recebimento": null
+        },
+        {
+          "marca": "Glucosul",
+          "origem": "inventario_inicial",
+          "unidade": "kg",
+          "sublotes": 1,
+          "numero_nf": null,
+          "sessao_id": "e8d2365f-dac9-42bb-ae2a-0680b6af1f2a",
+          "fornecedor": "Odara",
+          "insumo_nome": "Açúcar Invertido",
+          "lote_codigo": "INS007-0002",
+          "recipientes": "Pote PP Açúcar Invertido #1, Pote PP Açúcar Invertido #2, Pote PP Açúcar Invertido #3",
+          "consumo_real": 4.811,
+          "recebido_por": "Lucca Milleto",
+          "insumo_codigo": "INS007",
+          "sessao_codigo": "SESS-0001",
+          "data_fabricacao": null,
+          "fornecedor_cnpj": null,
+          "data_recebimento": "2026-08-09",
+          "embalagem_aberta": false,
+          "validade_original": "2036-08-06",
+          "temperatura_recebimento": null
+        },
+        {
+          "marca": null,
+          "origem": "inventario_inicial",
+          "unidade": "kg",
+          "sublotes": 1,
+          "numero_nf": null,
+          "sessao_id": "e8d2365f-dac9-42bb-ae2a-0680b6af1f2a",
+          "fornecedor": null,
+          "insumo_nome": "Açúcar Refinado",
+          "lote_codigo": "INS001-0001",
+          "recipientes": "Pote G Açúcar #2",
+          "consumo_real": 1.7,
+          "recebido_por": "Lucca Milleto",
+          "insumo_codigo": "INS001",
+          "sessao_codigo": "SESS-0001",
+          "data_fabricacao": null,
+          "fornecedor_cnpj": null,
+          "data_recebimento": "2026-08-09",
+          "embalagem_aberta": false,
+          "validade_original": "2036-08-06",
+          "temperatura_recebimento": null
+        },
+        {
+          "marca": "Melken",
+          "origem": "recebimento",
+          "unidade": "kg",
+          "sublotes": 2,
+          "numero_nf": "27364",
+          "sessao_id": "e8d2365f-dac9-42bb-ae2a-0680b6af1f2a",
+          "fornecedor": "Odara",
+          "insumo_nome": "Choco em Pó 50%",
+          "lote_codigo": "INS003-0002",
+          "recipientes": "Pote G Choco em Pó 50% #1, Pote G Choco em Pó 50% #2",
+          "consumo_real": 9.354,
+          "recebido_por": "Lucca Milleto",
+          "insumo_codigo": "INS003",
+          "sessao_codigo": "SESS-0001",
+          "data_fabricacao": null,
+          "fornecedor_cnpj": null,
+          "data_recebimento": "2026-08-07",
+          "embalagem_aberta": false,
+          "validade_original": "2027-10-18",
+          "temperatura_recebimento": null
+        },
+        {
+          "marca": null,
+          "origem": "inventario_inicial",
+          "unidade": "kg",
+          "sublotes": 1,
+          "numero_nf": null,
+          "sessao_id": "e8d2365f-dac9-42bb-ae2a-0680b6af1f2a",
+          "fornecedor": null,
+          "insumo_nome": "Cobertura Ao Leite",
+          "lote_codigo": "INS012-0001",
+          "recipientes": "Pote G Cobertura Ao Leite #1, Pote G Cobertura Ao Leite #2, Pote G Cobertura Ao Leite #3",
+          "consumo_real": 19.524,
+          "recebido_por": "Lucca Milleto",
+          "insumo_codigo": "INS012",
+          "sessao_codigo": "SESS-0001",
+          "data_fabricacao": null,
+          "fornecedor_cnpj": null,
+          "data_recebimento": "2026-08-09",
+          "embalagem_aberta": false,
+          "validade_original": "2036-08-06",
+          "temperatura_recebimento": null
+        },
+        {
+          "marca": "Kemin",
+          "origem": "inventario_inicial",
+          "unidade": "kg",
+          "sublotes": 1,
+          "numero_nf": null,
+          "sessao_id": "e8d2365f-dac9-42bb-ae2a-0680b6af1f2a",
+          "fornecedor": "Odara",
+          "insumo_nome": "Extrato de Alecrim",
+          "lote_codigo": "INS019-0002",
+          "recipientes": "Garrafa 600 mL Ext. Alecrim #2",
+          "consumo_real": 0.049,
+          "recebido_por": "Lucca Milleto",
+          "insumo_codigo": "INS019",
+          "sessao_codigo": "SESS-0001",
+          "data_fabricacao": null,
+          "fornecedor_cnpj": null,
+          "data_recebimento": "2026-08-09",
+          "embalagem_aberta": false,
+          "validade_original": "2036-08-06",
+          "temperatura_recebimento": null
+        },
+        {
+          "marca": "Motasa",
+          "origem": "inventario_inicial",
+          "unidade": "kg",
+          "sublotes": 1,
+          "numero_nf": null,
+          "sessao_id": "e8d2365f-dac9-42bb-ae2a-0680b6af1f2a",
+          "fornecedor": "Odara",
+          "insumo_nome": "Farinha de Trigo",
+          "lote_codigo": "INS002-0002",
+          "recipientes": "Pote G Farinha de Trigo #2, Pote G Farinha de Trigo #3",
+          "consumo_real": 10.688,
+          "recebido_por": "Lucca Milleto",
+          "insumo_codigo": "INS002",
+          "sessao_codigo": "SESS-0001",
+          "data_fabricacao": null,
+          "fornecedor_cnpj": null,
+          "data_recebimento": "2026-08-09",
+          "embalagem_aberta": false,
+          "validade_original": "2036-08-06",
+          "temperatura_recebimento": null
+        },
+        {
+          "marca": null,
+          "origem": "inventario_inicial",
+          "unidade": "kg",
+          "sublotes": 1,
+          "numero_nf": null,
+          "sessao_id": "e8d2365f-dac9-42bb-ae2a-0680b6af1f2a",
+          "fornecedor": null,
+          "insumo_nome": "Glicerina",
+          "lote_codigo": "INS009-0001",
+          "recipientes": "Garrafa 1L Glicerina #1",
+          "consumo_real": 0.7,
+          "recebido_por": "Lucca Milleto",
+          "insumo_codigo": "INS009",
+          "sessao_codigo": "SESS-0001",
+          "data_fabricacao": null,
+          "fornecedor_cnpj": null,
+          "data_recebimento": "2026-08-09",
+          "embalagem_aberta": false,
+          "validade_original": "2036-08-06",
+          "temperatura_recebimento": null
+        },
+        {
+          "marca": "Ingredientes Online",
+          "origem": "inventario_inicial",
+          "unidade": "kg",
+          "sublotes": 1,
+          "numero_nf": null,
+          "sessao_id": "e8d2365f-dac9-42bb-ae2a-0680b6af1f2a",
+          "fornecedor": "Odara",
+          "insumo_nome": "Lecitina de Soja",
+          "lote_codigo": "INS024-0002",
+          "recipientes": "Balde P",
+          "consumo_real": 0.246,
+          "recebido_por": "Lucca Milleto",
+          "insumo_codigo": "INS024",
+          "sessao_codigo": "SESS-0001",
+          "data_fabricacao": null,
+          "fornecedor_cnpj": null,
+          "data_recebimento": "2026-08-09",
+          "embalagem_aberta": false,
+          "validade_original": "2036-08-06",
+          "temperatura_recebimento": null
+        },
+        {
+          "marca": "Naturovos",
+          "origem": "inventario_inicial",
+          "unidade": "kg",
+          "sublotes": 1,
+          "numero_nf": null,
+          "sessao_id": "e8d2365f-dac9-42bb-ae2a-0680b6af1f2a",
+          "fornecedor": "Odara",
+          "insumo_nome": "Ovo em Pó",
+          "lote_codigo": "INS005-0002",
+          "recipientes": "Caixa plástica Ovo em Pó #1",
+          "consumo_real": 2.4,
+          "recebido_por": "Lucca Milleto",
+          "insumo_codigo": "INS005",
+          "sessao_codigo": "SESS-0001",
+          "data_fabricacao": null,
+          "fornecedor_cnpj": null,
+          "data_recebimento": "2026-08-09",
+          "embalagem_aberta": false,
+          "validade_original": "2036-08-06",
+          "temperatura_recebimento": null
+        },
+        {
+          "marca": "Art Alimentos",
+          "origem": "inventario_inicial",
+          "unidade": "kg",
+          "sublotes": 1,
+          "numero_nf": null,
+          "sessao_id": "e8d2365f-dac9-42bb-ae2a-0680b6af1f2a",
+          "fornecedor": "Odara",
+          "insumo_nome": "Propionato de Cálcio",
+          "lote_codigo": "INS016-0002",
+          "recipientes": "Pote PP Propionato de Cálcio #1",
+          "consumo_real": 0.1,
+          "recebido_por": "Lucca Milleto",
+          "insumo_codigo": "INS016",
+          "sessao_codigo": "SESS-0001",
+          "data_fabricacao": null,
+          "fornecedor_cnpj": null,
+          "data_recebimento": "2026-08-09",
+          "embalagem_aberta": false,
+          "validade_original": "2036-08-06",
+          "temperatura_recebimento": null
+        },
+        {
+          "marca": "Tuchê",
+          "origem": "inventario_inicial",
+          "unidade": "kg",
+          "sublotes": 1,
+          "numero_nf": null,
+          "sessao_id": "e8d2365f-dac9-42bb-ae2a-0680b6af1f2a",
+          "fornecedor": "Odara",
+          "insumo_nome": "Sal",
+          "lote_codigo": "INS015-0002",
+          "recipientes": "Pote PP Sal #1",
+          "consumo_real": 0.267,
+          "recebido_por": "Lucca Milleto",
+          "insumo_codigo": "INS015",
+          "sessao_codigo": "SESS-0001",
+          "data_fabricacao": null,
+          "fornecedor_cnpj": null,
+          "data_recebimento": "2026-08-09",
+          "embalagem_aberta": false,
+          "validade_original": "2036-08-06",
+          "temperatura_recebimento": null
+        },
+        {
+          "marca": null,
+          "origem": "inventario_inicial",
+          "unidade": "kg",
+          "sublotes": 1,
+          "numero_nf": null,
+          "sessao_id": "e8d2365f-dac9-42bb-ae2a-0680b6af1f2a",
+          "fornecedor": null,
+          "insumo_nome": "Sorbato de Potássio",
+          "lote_codigo": "INS018-0001",
+          "recipientes": "Pote 10L Sorbato de Potássio #1",
+          "consumo_real": 0.098,
+          "recebido_por": "Lucca Milleto",
+          "insumo_codigo": "INS018",
+          "sessao_codigo": "SESS-0001",
+          "data_fabricacao": null,
+          "fornecedor_cnpj": null,
+          "data_recebimento": "2026-08-09",
+          "embalagem_aberta": false,
+          "validade_original": "2036-08-06",
+          "temperatura_recebimento": null
+        },
+        {
+          "marca": "Pantec",
+          "origem": "inventario_inicial",
+          "unidade": "kg",
+          "sublotes": 1,
+          "numero_nf": null,
+          "sessao_id": "e8d2365f-dac9-42bb-ae2a-0680b6af1f2a",
+          "fornecedor": "Odara",
+          "insumo_nome": "Sorbitol",
+          "lote_codigo": "INS004-0002",
+          "recipientes": "Pote G Sorbitol #2",
+          "consumo_real": 1.017,
+          "recebido_por": "Lucca Milleto",
+          "insumo_codigo": "INS004",
+          "sessao_codigo": "SESS-0001",
+          "data_fabricacao": null,
+          "fornecedor_cnpj": null,
+          "data_recebimento": "2026-08-09",
+          "embalagem_aberta": false,
+          "validade_original": "2036-08-06",
+          "temperatura_recebimento": null
+        }
+      ],
+      "produto": {
+        "id": "b96be280-60e8-484c-92e0-0e1d1d815ba2",
+        "nome": "Brownie Tradicional Odara",
+        "codigo": "0001",
+        "validade_dias": 120,
+        "peso_unitario_g": 65,
+        "ficha_tecnica_id": "aff3b493-eded-4df7-871e-a35ea042f9d4"
+      },
+      "sessoes": [
+        {
+          "id": "e8d2365f-dac9-42bb-ae2a-0680b6af1f2a",
+          "skus": [
+            {
+              "itens": [
+                {
+                  "unidade": "ml",
+                  "quantidade": 11.125,
+                  "insumo_nome": "Essência de Baunilha",
+                  "observacoes": null,
+                  "insumo_codigo": "INS010"
+                },
+                {
+                  "unidade": "kg",
+                  "quantidade": 0.8135,
+                  "insumo_nome": "Cobertura Ao Leite",
+                  "observacoes": "derretida 662,8 g + gotas 2.591,2 g, somadas",
+                  "insumo_codigo": "INS012"
+                },
+                {
+                  "unidade": "kg",
+                  "quantidade": 0.6992,
+                  "insumo_nome": "Açúcar Refinado",
+                  "observacoes": null,
+                  "insumo_codigo": "INS001"
+                },
+                {
+                  "unidade": "kg",
+                  "quantidade": 0.44535,
+                  "insumo_nome": "Farinha de Trigo",
+                  "observacoes": null,
+                  "insumo_codigo": "INS002"
+                },
+                {
+                  "unidade": "kg",
+                  "quantidade": 0.42375,
+                  "insumo_nome": "Óleo",
+                  "observacoes": null,
+                  "insumo_codigo": "INS006"
+                },
+                {
+                  "unidade": "kg",
+                  "quantidade": 0.38975,
+                  "insumo_nome": "Choco em Pó 50%",
+                  "observacoes": null,
+                  "insumo_codigo": "INS003"
+                },
+                {
+                  "unidade": "kg",
+                  "quantidade": 0.2783,
+                  "insumo_nome": "Doce de Leite",
+                  "observacoes": null,
+                  "insumo_codigo": "INS014"
+                },
+                {
+                  "unidade": "kg",
+                  "quantidade": 0.200425,
+                  "insumo_nome": "Açúcar Invertido",
+                  "observacoes": null,
+                  "insumo_codigo": "INS007"
+                },
+                {
+                  "unidade": "kg",
+                  "quantidade": 0.1589,
+                  "insumo_nome": "Ovo em Pó",
+                  "observacoes": null,
+                  "insumo_codigo": "INS005"
+                },
+                {
+                  "unidade": "kg",
+                  "quantidade": 0.105925,
+                  "insumo_nome": "Glicerina",
+                  "observacoes": null,
+                  "insumo_codigo": "INS009"
+                },
+                {
+                  "unidade": "kg",
+                  "quantidade": 0.100225,
+                  "insumo_nome": "Xarope de Glucose",
+                  "observacoes": null,
+                  "insumo_codigo": "INS008"
+                },
+                {
+                  "unidade": "kg",
+                  "quantidade": 0.042375,
+                  "insumo_nome": "Sorbitol",
+                  "observacoes": null,
+                  "insumo_codigo": "INS004"
+                },
+                {
+                  "unidade": "kg",
+                  "quantidade": 0.011125,
+                  "insumo_nome": "Sal",
+                  "observacoes": null,
+                  "insumo_codigo": "INS015"
+                },
+                {
+                  "unidade": "kg",
+                  "quantidade": 0.01025,
+                  "insumo_nome": "Lecitina de Soja",
+                  "observacoes": "travado em 0,25% da receita",
+                  "insumo_codigo": "INS024"
+                },
+                {
+                  "unidade": "kg",
+                  "quantidade": 0.0082,
+                  "insumo_nome": "Propionato de Cálcio",
+                  "observacoes": "travado em 0,20% da receita",
+                  "insumo_codigo": "INS016"
+                },
+                {
+                  "unidade": "kg",
+                  "quantidade": 0.0041,
+                  "insumo_nome": "Ácido Cítrico Anidro",
+                  "observacoes": "travado em 0,10% da receita",
+                  "insumo_codigo": "INS017"
+                },
+                {
+                  "unidade": "kg",
+                  "quantidade": 0.0041,
+                  "insumo_nome": "Sorbato de Potássio",
+                  "observacoes": "travado em 0,10% da receita",
+                  "insumo_codigo": "INS018"
+                },
+                {
+                  "unidade": "kg",
+                  "quantidade": 0.00205,
+                  "insumo_nome": "Extrato de Alecrim",
+                  "observacoes": "travado em 0,05% da receita",
+                  "insumo_codigo": "INS019"
+                }
+              ],
+              "versao": 1,
+              "ficha_id": "aff3b493-eded-4df7-871e-a35ea042f9d4",
+              "versao_id": "87ac9c9d-6ae8-4d71-9b01-7d15cefb24d4",
+              "ficha_nome": "Brownie Tradicional Odara",
+              "ficha_codigo": "FT-001",
+              "peso_medio_g": 65,
+              "formas_assadas": 24,
+              "notas_alteracao": "Versão inicial — Ficha Técnica Tradicional Odara 4x v10",
+              "rendimento_fornada": 60,
+              "quantidade_produzida": 1438
+            }
+          ],
+          "codigo": "SESS-0001",
+          "aberta_por": "Lucca Milleto",
+          "fechada_por": "Lucca Milleto",
+          "data_abertura": "2026-08-11T22:04:26.608162+00:00",
+          "data_producao": "2026-08-10",
+          "data_fechamento": "2026-08-11T22:05:10.821857+00:00",
+          "observacoes_abertura": null,
+          "observacoes_fechamento": null
+        },
+        {
+          "id": "0b30353e-e902-438f-b098-e1541028b8f5",
+          "skus": [
+            {
+              "itens": [
+                {
+                  "unidade": "ml",
+                  "quantidade": 25.975,
+                  "insumo_nome": "Essência de Baunilha",
+                  "observacoes": null,
+                  "insumo_codigo": "INS010"
+                },
+                {
+                  "unidade": "kg",
+                  "quantidade": 0.7589,
+                  "insumo_nome": "Doce de Leite",
+                  "observacoes": "massa 2.235,6 g + topping 800 g (200 g/forma), somados",
+                  "insumo_codigo": "INS014"
+                },
+                {
+                  "unidade": "kg",
+                  "quantidade": 0.663875,
+                  "insumo_nome": "Açúcar Refinado",
+                  "observacoes": null,
+                  "insumo_codigo": "INS001"
+                },
+                {
+                  "unidade": "kg",
+                  "quantidade": 0.644425,
+                  "insumo_nome": "Farinha de Trigo",
+                  "observacoes": null,
+                  "insumo_codigo": "INS002"
+                },
+                {
+                  "unidade": "kg",
+                  "quantidade": 0.6191,
+                  "insumo_nome": "Cobertura Caramelo",
+                  "observacoes": "travado em 15,10% da receita",
+                  "insumo_codigo": "INS013"
+                },
+                {
+                  "unidade": "kg",
+                  "quantidade": 0.29925,
+                  "insumo_nome": "Cobertura Branca",
+                  "observacoes": null,
+                  "insumo_codigo": "INS011"
+                },
+                {
+                  "unidade": "kg",
+                  "quantidade": 0.2603,
+                  "insumo_nome": "Óleo",
+                  "observacoes": null,
+                  "insumo_codigo": "INS006"
+                },
+                {
+                  "unidade": "kg",
+                  "quantidade": 0.1139,
+                  "insumo_nome": "Sorbitol",
+                  "observacoes": null,
+                  "insumo_codigo": "INS004"
+                },
+                {
+                  "unidade": "kg",
+                  "quantidade": 0.104275,
+                  "insumo_nome": "Açúcar Invertido",
+                  "observacoes": null,
+                  "insumo_codigo": "INS007"
+                },
+                {
+                  "unidade": "kg",
+                  "quantidade": 0.088325,
+                  "insumo_nome": "Ovo em Pó",
+                  "observacoes": null,
+                  "insumo_codigo": "INS005"
+                },
+                {
+                  "unidade": "kg",
+                  "quantidade": 0.06845,
+                  "insumo_nome": "Glicerina",
+                  "observacoes": null,
+                  "insumo_codigo": "INS009"
+                },
+                {
+                  "unidade": "kg",
+                  "quantidade": 0.0521,
+                  "insumo_nome": "Xarope de Glucose",
+                  "observacoes": null,
+                  "insumo_codigo": "INS008"
+                },
+                {
+                  "unidade": "kg",
+                  "quantidade": 0.025975,
+                  "insumo_nome": "Sal",
+                  "observacoes": null,
+                  "insumo_codigo": "INS015"
+                },
+                {
+                  "unidade": "kg",
+                  "quantidade": 0.0123,
+                  "insumo_nome": "Lecitina de Soja",
+                  "observacoes": "travado em 0,30% da receita",
+                  "insumo_codigo": "INS024"
+                },
+                {
+                  "unidade": "kg",
+                  "quantidade": 0.01025,
+                  "insumo_nome": "Essência de Doce de Leite",
+                  "observacoes": "travado em 0,25% da receita",
+                  "insumo_codigo": "INS025"
+                },
+                {
+                  "unidade": "kg",
+                  "quantidade": 0.0082,
+                  "insumo_nome": "Propionato de Cálcio",
+                  "observacoes": "travado em 0,20% da receita",
+                  "insumo_codigo": "INS016"
+                },
+                {
+                  "unidade": "kg",
+                  "quantidade": 0.0041,
+                  "insumo_nome": "Ácido Cítrico Anidro",
+                  "observacoes": "travado em 0,10% da receita",
+                  "insumo_codigo": "INS017"
+                },
+                {
+                  "unidade": "kg",
+                  "quantidade": 0.0041,
+                  "insumo_nome": "Sorbato de Potássio",
+                  "observacoes": "travado em 0,10% da receita",
+                  "insumo_codigo": "INS018"
+                },
+                {
+                  "unidade": "kg",
+                  "quantidade": 0.00205,
+                  "insumo_nome": "Extrato de Alecrim",
+                  "observacoes": "travado em 0,05% da receita",
+                  "insumo_codigo": "INS019"
+                }
+              ],
+              "versao": 1,
+              "ficha_id": "4f5e6b76-ef66-41e0-b9b3-dc786f9d32dd",
+              "versao_id": "88c0d2d5-8e4d-4b94-b278-cc3c0843b716",
+              "ficha_nome": "Brownie Doce de Leite Odara",
+              "ficha_codigo": "FT-002",
+              "peso_medio_g": 65,
+              "formas_assadas": 24,
+              "notas_alteracao": "Versão inicial — Ficha Técnica Doce de Leite 4x",
+              "rendimento_fornada": 60,
+              "quantidade_produzida": 1396
+            },
+            {
+              "itens": [
+                {
+                  "unidade": "ml",
+                  "quantidade": 11.125,
+                  "insumo_nome": "Essência de Baunilha",
+                  "observacoes": null,
+                  "insumo_codigo": "INS010"
+                },
+                {
+                  "unidade": "kg",
+                  "quantidade": 0.8135,
+                  "insumo_nome": "Cobertura Ao Leite",
+                  "observacoes": "derretida 662,8 g + gotas 2.591,2 g, somadas",
+                  "insumo_codigo": "INS012"
+                },
+                {
+                  "unidade": "kg",
+                  "quantidade": 0.6992,
+                  "insumo_nome": "Açúcar Refinado",
+                  "observacoes": null,
+                  "insumo_codigo": "INS001"
+                },
+                {
+                  "unidade": "kg",
+                  "quantidade": 0.44535,
+                  "insumo_nome": "Farinha de Trigo",
+                  "observacoes": null,
+                  "insumo_codigo": "INS002"
+                },
+                {
+                  "unidade": "kg",
+                  "quantidade": 0.42375,
+                  "insumo_nome": "Óleo",
+                  "observacoes": null,
+                  "insumo_codigo": "INS006"
+                },
+                {
+                  "unidade": "kg",
+                  "quantidade": 0.38975,
+                  "insumo_nome": "Choco em Pó 50%",
+                  "observacoes": null,
+                  "insumo_codigo": "INS003"
+                },
+                {
+                  "unidade": "kg",
+                  "quantidade": 0.2783,
+                  "insumo_nome": "Doce de Leite",
+                  "observacoes": null,
+                  "insumo_codigo": "INS014"
+                },
+                {
+                  "unidade": "kg",
+                  "quantidade": 0.200425,
+                  "insumo_nome": "Açúcar Invertido",
+                  "observacoes": null,
+                  "insumo_codigo": "INS007"
+                },
+                {
+                  "unidade": "kg",
+                  "quantidade": 0.1589,
+                  "insumo_nome": "Ovo em Pó",
+                  "observacoes": null,
+                  "insumo_codigo": "INS005"
+                },
+                {
+                  "unidade": "kg",
+                  "quantidade": 0.105925,
+                  "insumo_nome": "Glicerina",
+                  "observacoes": null,
+                  "insumo_codigo": "INS009"
+                },
+                {
+                  "unidade": "kg",
+                  "quantidade": 0.100225,
+                  "insumo_nome": "Xarope de Glucose",
+                  "observacoes": null,
+                  "insumo_codigo": "INS008"
+                },
+                {
+                  "unidade": "kg",
+                  "quantidade": 0.042375,
+                  "insumo_nome": "Sorbitol",
+                  "observacoes": null,
+                  "insumo_codigo": "INS004"
+                },
+                {
+                  "unidade": "kg",
+                  "quantidade": 0.011125,
+                  "insumo_nome": "Sal",
+                  "observacoes": null,
+                  "insumo_codigo": "INS015"
+                },
+                {
+                  "unidade": "kg",
+                  "quantidade": 0.01025,
+                  "insumo_nome": "Lecitina de Soja",
+                  "observacoes": "travado em 0,25% da receita",
+                  "insumo_codigo": "INS024"
+                },
+                {
+                  "unidade": "kg",
+                  "quantidade": 0.0082,
+                  "insumo_nome": "Propionato de Cálcio",
+                  "observacoes": "travado em 0,20% da receita",
+                  "insumo_codigo": "INS016"
+                },
+                {
+                  "unidade": "kg",
+                  "quantidade": 0.0041,
+                  "insumo_nome": "Ácido Cítrico Anidro",
+                  "observacoes": "travado em 0,10% da receita",
+                  "insumo_codigo": "INS017"
+                },
+                {
+                  "unidade": "kg",
+                  "quantidade": 0.0041,
+                  "insumo_nome": "Sorbato de Potássio",
+                  "observacoes": "travado em 0,10% da receita",
+                  "insumo_codigo": "INS018"
+                },
+                {
+                  "unidade": "kg",
+                  "quantidade": 0.00205,
+                  "insumo_nome": "Extrato de Alecrim",
+                  "observacoes": "travado em 0,05% da receita",
+                  "insumo_codigo": "INS019"
+                }
+              ],
+              "versao": 1,
+              "ficha_id": "aff3b493-eded-4df7-871e-a35ea042f9d4",
+              "versao_id": "87ac9c9d-6ae8-4d71-9b01-7d15cefb24d4",
+              "ficha_nome": "Brownie Tradicional Odara",
+              "ficha_codigo": "FT-001",
+              "peso_medio_g": 65,
+              "formas_assadas": 20,
+              "notas_alteracao": "Versão inicial — Ficha Técnica Tradicional Odara 4x v10",
+              "rendimento_fornada": 60,
+              "quantidade_produzida": 1196
+            }
+          ],
+          "codigo": "SESS-0020",
+          "aberta_por": "Lucca Milleto",
+          "fechada_por": "Lucca Milleto",
+          "data_abertura": "2026-08-13T08:00:00+00:00",
+          "data_producao": "2026-08-13",
+          "data_fechamento": "2026-08-13T17:00:00+00:00",
+          "observacoes_abertura": "Produção anterior ao sistema, lançada na importação.",
+          "observacoes_fechamento": "Registro histórico: sem consumo de insumo e sem lote de produto. Perda estimada a partir do faturamento da semana, nao medida na bancada."
+        }
+      ],
+      "validade": "2026-12-11",
+      "descartes": [
+        {
+          "motivo": "Quebrado",
+          "quantidade": 2
+        }
+      ],
+      "desenforma": [
+        {
+          "formas": 24,
+          "no_forno": 1440,
+          "validade": "2026-12-11",
+          "descartadas": 2,
+          "aproveitadas": 1438,
+          "sessao_codigo": "SESS-0001",
+          "data_desenforma": "2026-08-11"
+        }
+      ],
+      "emitido_em": "2026-08-23T16:46:20.342955+00:00"
+    }
+  },
+  {
+    "sessao": "SESS-0002",
+    "produto": "Brownie Tradicional Odara",
+    "validade": "2026-12-12T03:00:00.000Z",
+    "dossie": {
+      "ok": true,
+      "lotes": [
+        {
+          "codigo": "LPROD-0002",
+          "status": "ativo",
+          "qr_code": "QR-LPROD-0002",
+          "sessao_id": "a17d880a-1f4e-44e6-813e-cfe41a5d90b1",
+          "data_producao": "2026-08-11",
+          "data_desenforma": "2026-08-12",
+          "quantidade_produzida": 2390,
+          "quantidade_disponivel": 2390
+        },
+        {
+          "codigo": "LPROD-0003",
+          "status": "ativo",
+          "qr_code": "QR-LPROD-0003",
+          "sessao_id": "a17d880a-1f4e-44e6-813e-cfe41a5d90b1",
+          "data_producao": "2026-08-11",
+          "data_desenforma": "2026-08-11",
+          "quantidade_produzida": 1194,
+          "quantidade_disponivel": 1194
+        }
+      ],
+      "avisos": [],
+      "resumo": {
+        "formas": 60,
+        "no_forno": 3600,
+        "perda_pct": 0.44,
+        "descartadas": 16,
+        "aproveitadas": 3584
+      },
+      "insumos": [
+        {
+          "marca": "Art Alimentos",
+          "origem": "inventario_inicial",
+          "unidade": "kg",
+          "sublotes": 1,
+          "numero_nf": null,
+          "sessao_id": "a17d880a-1f4e-44e6-813e-cfe41a5d90b1",
+          "fornecedor": "Odara",
+          "insumo_nome": "Ácido Cítrico Anidro",
+          "lote_codigo": "INS017-0002",
+          "recipientes": "Pote PP Ácido Cítrico Anidro #1",
+          "consumo_real": 0.246,
+          "recebido_por": "Lucca Milleto",
+          "insumo_codigo": "INS017",
+          "sessao_codigo": "SESS-0002",
+          "data_fabricacao": null,
+          "fornecedor_cnpj": null,
+          "data_recebimento": "2026-08-09",
+          "embalagem_aberta": false,
+          "validade_original": "2036-08-06",
+          "temperatura_recebimento": null
+        },
+        {
+          "marca": "Glucosul",
+          "origem": "inventario_inicial",
+          "unidade": "kg",
+          "sublotes": 1,
+          "numero_nf": null,
+          "sessao_id": "a17d880a-1f4e-44e6-813e-cfe41a5d90b1",
+          "fornecedor": "Odara",
+          "insumo_nome": "Açúcar Invertido",
+          "lote_codigo": "INS007-0002",
+          "recipientes": "Pote PP Açúcar Invertido #3",
+          "consumo_real": 0.589,
+          "recebido_por": "Lucca Milleto",
+          "insumo_codigo": "INS007",
+          "sessao_codigo": "SESS-0002",
+          "data_fabricacao": null,
+          "fornecedor_cnpj": null,
+          "data_recebimento": "2026-08-09",
+          "embalagem_aberta": false,
+          "validade_original": "2036-08-06",
+          "temperatura_recebimento": null
+        },
+        {
+          "marca": null,
+          "origem": "inventario_inicial",
+          "unidade": "kg",
+          "sublotes": 1,
+          "numero_nf": null,
+          "sessao_id": "a17d880a-1f4e-44e6-813e-cfe41a5d90b1",
+          "fornecedor": null,
+          "insumo_nome": "Choco em Pó 50%",
+          "lote_codigo": "INS003-0001",
+          "recipientes": "Pote G Choco em Pó 50% #2",
+          "consumo_real": 2.6,
+          "recebido_por": "Lucca Milleto",
+          "insumo_codigo": "INS003",
+          "sessao_codigo": "SESS-0002",
+          "data_fabricacao": null,
+          "fornecedor_cnpj": null,
+          "data_recebimento": "2026-08-09",
+          "embalagem_aberta": false,
+          "validade_original": "2036-08-06",
+          "temperatura_recebimento": null
+        },
+        {
+          "marca": "Melken",
+          "origem": "recebimento",
+          "unidade": "kg",
+          "sublotes": 2,
+          "numero_nf": "27364",
+          "sessao_id": "a17d880a-1f4e-44e6-813e-cfe41a5d90b1",
+          "fornecedor": "Odara",
+          "insumo_nome": "Choco em Pó 50%",
+          "lote_codigo": "INS003-0002",
+          "recipientes": "Pote G Choco em Pó 50% #1, Pote G Choco em Pó 50% #2",
+          "consumo_real": 8.046,
+          "recebido_por": "Lucca Milleto",
+          "insumo_codigo": "INS003",
+          "sessao_codigo": "SESS-0002",
+          "data_fabricacao": null,
+          "fornecedor_cnpj": null,
+          "data_recebimento": "2026-08-07",
+          "embalagem_aberta": false,
+          "validade_original": "2027-10-18",
+          "temperatura_recebimento": null
+        },
+        {
+          "marca": null,
+          "origem": "inventario_inicial",
+          "unidade": "kg",
+          "sublotes": 1,
+          "numero_nf": null,
+          "sessao_id": "a17d880a-1f4e-44e6-813e-cfe41a5d90b1",
+          "fornecedor": null,
+          "insumo_nome": "Cobertura Ao Leite",
+          "lote_codigo": "INS012-0001",
+          "recipientes": "Pote G Cobertura Ao Leite #2, Pote G Cobertura Ao Leite #3",
+          "consumo_real": 14.576,
+          "recebido_por": "Lucca Milleto",
+          "insumo_codigo": "INS012",
+          "sessao_codigo": "SESS-0002",
+          "data_fabricacao": null,
+          "fornecedor_cnpj": null,
+          "data_recebimento": "2026-08-09",
+          "embalagem_aberta": false,
+          "validade_original": "2036-08-06",
+          "temperatura_recebimento": null
+        },
+        {
+          "marca": "Kemin",
+          "origem": "inventario_inicial",
+          "unidade": "kg",
+          "sublotes": 1,
+          "numero_nf": null,
+          "sessao_id": "a17d880a-1f4e-44e6-813e-cfe41a5d90b1",
+          "fornecedor": "Odara",
+          "insumo_nome": "Extrato de Alecrim",
+          "lote_codigo": "INS019-0002",
+          "recipientes": "Garrafa 600 mL Ext. Alecrim #2",
+          "consumo_real": 0.123,
+          "recebido_por": "Lucca Milleto",
+          "insumo_codigo": "INS019",
+          "sessao_codigo": "SESS-0002",
+          "data_fabricacao": null,
+          "fornecedor_cnpj": null,
+          "data_recebimento": "2026-08-09",
+          "embalagem_aberta": false,
+          "validade_original": "2036-08-06",
+          "temperatura_recebimento": null
+        },
+        {
+          "marca": "Motasa",
+          "origem": "inventario_inicial",
+          "unidade": "kg",
+          "sublotes": 1,
+          "numero_nf": null,
+          "sessao_id": "a17d880a-1f4e-44e6-813e-cfe41a5d90b1",
+          "fornecedor": "Odara",
+          "insumo_nome": "Farinha de Trigo",
+          "lote_codigo": "INS002-0002",
+          "recipientes": "Pote G Farinha de Trigo #3",
+          "consumo_real": 4.212,
+          "recebido_por": "Lucca Milleto",
+          "insumo_codigo": "INS002",
+          "sessao_codigo": "SESS-0002",
+          "data_fabricacao": null,
+          "fornecedor_cnpj": null,
+          "data_recebimento": "2026-08-09",
+          "embalagem_aberta": false,
+          "validade_original": "2036-08-06",
+          "temperatura_recebimento": null
+        },
+        {
+          "marca": "Ingredientes Online",
+          "origem": "inventario_inicial",
+          "unidade": "kg",
+          "sublotes": 1,
+          "numero_nf": null,
+          "sessao_id": "a17d880a-1f4e-44e6-813e-cfe41a5d90b1",
+          "fornecedor": "Odara",
+          "insumo_nome": "Lecitina de Soja",
+          "lote_codigo": "INS024-0002",
+          "recipientes": "Balde P",
+          "consumo_real": 0.615,
+          "recebido_por": "Lucca Milleto",
+          "insumo_codigo": "INS024",
+          "sessao_codigo": "SESS-0002",
+          "data_fabricacao": null,
+          "fornecedor_cnpj": null,
+          "data_recebimento": "2026-08-09",
+          "embalagem_aberta": false,
+          "validade_original": "2036-08-06",
+          "temperatura_recebimento": null
+        },
+        {
+          "marca": "Tuchê",
+          "origem": "inventario_inicial",
+          "unidade": "kg",
+          "sublotes": 1,
+          "numero_nf": null,
+          "sessao_id": "a17d880a-1f4e-44e6-813e-cfe41a5d90b1",
+          "fornecedor": "Odara",
+          "insumo_nome": "Sal",
+          "lote_codigo": "INS015-0002",
+          "recipientes": "Pote PP Sal #1",
+          "consumo_real": 0.633,
+          "recebido_por": "Lucca Milleto",
+          "insumo_codigo": "INS015",
+          "sessao_codigo": "SESS-0002",
+          "data_fabricacao": null,
+          "fornecedor_cnpj": null,
+          "data_recebimento": "2026-08-09",
+          "embalagem_aberta": false,
+          "validade_original": "2036-08-06",
+          "temperatura_recebimento": null
+        },
+        {
+          "marca": null,
+          "origem": "inventario_inicial",
+          "unidade": "kg",
+          "sublotes": 1,
+          "numero_nf": null,
+          "sessao_id": "a17d880a-1f4e-44e6-813e-cfe41a5d90b1",
+          "fornecedor": null,
+          "insumo_nome": "Sorbato de Potássio",
+          "lote_codigo": "INS018-0001",
+          "recipientes": "Pote 10L Sorbato de Potássio #1",
+          "consumo_real": 0.246,
+          "recebido_por": "Lucca Milleto",
+          "insumo_codigo": "INS018",
+          "sessao_codigo": "SESS-0002",
+          "data_fabricacao": null,
+          "fornecedor_cnpj": null,
+          "data_recebimento": "2026-08-09",
+          "embalagem_aberta": false,
+          "validade_original": "2036-08-06",
+          "temperatura_recebimento": null
+        },
+        {
+          "marca": "Pantec",
+          "origem": "inventario_inicial",
+          "unidade": "kg",
+          "sublotes": 1,
+          "numero_nf": null,
+          "sessao_id": "a17d880a-1f4e-44e6-813e-cfe41a5d90b1",
+          "fornecedor": "Odara",
+          "insumo_nome": "Sorbitol",
+          "lote_codigo": "INS004-0002",
+          "recipientes": "Pote G Sorbitol #2",
+          "consumo_real": 1.383,
+          "recebido_por": "Lucca Milleto",
+          "insumo_codigo": "INS004",
+          "sessao_codigo": "SESS-0002",
+          "data_fabricacao": null,
+          "fornecedor_cnpj": null,
+          "data_recebimento": "2026-08-09",
+          "embalagem_aberta": false,
+          "validade_original": "2036-08-06",
+          "temperatura_recebimento": null
+        }
+      ],
+      "produto": {
+        "id": "b96be280-60e8-484c-92e0-0e1d1d815ba2",
+        "nome": "Brownie Tradicional Odara",
+        "codigo": "0001",
+        "validade_dias": 120,
+        "peso_unitario_g": 65,
+        "ficha_tecnica_id": "aff3b493-eded-4df7-871e-a35ea042f9d4"
+      },
+      "sessoes": [
+        {
+          "id": "a17d880a-1f4e-44e6-813e-cfe41a5d90b1",
+          "skus": [
+            {
+              "itens": [
+                {
+                  "unidade": "ml",
+                  "quantidade": 11.125,
+                  "insumo_nome": "Essência de Baunilha",
+                  "observacoes": null,
+                  "insumo_codigo": "INS010"
+                },
+                {
+                  "unidade": "kg",
+                  "quantidade": 0.8135,
+                  "insumo_nome": "Cobertura Ao Leite",
+                  "observacoes": "derretida 662,8 g + gotas 2.591,2 g, somadas",
+                  "insumo_codigo": "INS012"
+                },
+                {
+                  "unidade": "kg",
+                  "quantidade": 0.6992,
+                  "insumo_nome": "Açúcar Refinado",
+                  "observacoes": null,
+                  "insumo_codigo": "INS001"
+                },
+                {
+                  "unidade": "kg",
+                  "quantidade": 0.44535,
+                  "insumo_nome": "Farinha de Trigo",
+                  "observacoes": null,
+                  "insumo_codigo": "INS002"
+                },
+                {
+                  "unidade": "kg",
+                  "quantidade": 0.42375,
+                  "insumo_nome": "Óleo",
+                  "observacoes": null,
+                  "insumo_codigo": "INS006"
+                },
+                {
+                  "unidade": "kg",
+                  "quantidade": 0.38975,
+                  "insumo_nome": "Choco em Pó 50%",
+                  "observacoes": null,
+                  "insumo_codigo": "INS003"
+                },
+                {
+                  "unidade": "kg",
+                  "quantidade": 0.2783,
+                  "insumo_nome": "Doce de Leite",
+                  "observacoes": null,
+                  "insumo_codigo": "INS014"
+                },
+                {
+                  "unidade": "kg",
+                  "quantidade": 0.200425,
+                  "insumo_nome": "Açúcar Invertido",
+                  "observacoes": null,
+                  "insumo_codigo": "INS007"
+                },
+                {
+                  "unidade": "kg",
+                  "quantidade": 0.1589,
+                  "insumo_nome": "Ovo em Pó",
+                  "observacoes": null,
+                  "insumo_codigo": "INS005"
+                },
+                {
+                  "unidade": "kg",
+                  "quantidade": 0.105925,
+                  "insumo_nome": "Glicerina",
+                  "observacoes": null,
+                  "insumo_codigo": "INS009"
+                },
+                {
+                  "unidade": "kg",
+                  "quantidade": 0.100225,
+                  "insumo_nome": "Xarope de Glucose",
+                  "observacoes": null,
+                  "insumo_codigo": "INS008"
+                },
+                {
+                  "unidade": "kg",
+                  "quantidade": 0.042375,
+                  "insumo_nome": "Sorbitol",
+                  "observacoes": null,
+                  "insumo_codigo": "INS004"
+                },
+                {
+                  "unidade": "kg",
+                  "quantidade": 0.011125,
+                  "insumo_nome": "Sal",
+                  "observacoes": null,
+                  "insumo_codigo": "INS015"
+                },
+                {
+                  "unidade": "kg",
+                  "quantidade": 0.01025,
+                  "insumo_nome": "Lecitina de Soja",
+                  "observacoes": "travado em 0,25% da receita",
+                  "insumo_codigo": "INS024"
+                },
+                {
+                  "unidade": "kg",
+                  "quantidade": 0.0082,
+                  "insumo_nome": "Propionato de Cálcio",
+                  "observacoes": "travado em 0,20% da receita",
+                  "insumo_codigo": "INS016"
+                },
+                {
+                  "unidade": "kg",
+                  "quantidade": 0.0041,
+                  "insumo_nome": "Ácido Cítrico Anidro",
+                  "observacoes": "travado em 0,10% da receita",
+                  "insumo_codigo": "INS017"
+                },
+                {
+                  "unidade": "kg",
+                  "quantidade": 0.0041,
+                  "insumo_nome": "Sorbato de Potássio",
+                  "observacoes": "travado em 0,10% da receita",
+                  "insumo_codigo": "INS018"
+                },
+                {
+                  "unidade": "kg",
+                  "quantidade": 0.00205,
+                  "insumo_nome": "Extrato de Alecrim",
+                  "observacoes": "travado em 0,05% da receita",
+                  "insumo_codigo": "INS019"
+                }
+              ],
+              "versao": 1,
+              "ficha_id": "aff3b493-eded-4df7-871e-a35ea042f9d4",
+              "versao_id": "87ac9c9d-6ae8-4d71-9b01-7d15cefb24d4",
+              "ficha_nome": "Brownie Tradicional Odara",
+              "ficha_codigo": "FT-001",
+              "peso_medio_g": 65,
+              "formas_assadas": 60,
+              "notas_alteracao": "Versão inicial — Ficha Técnica Tradicional Odara 4x v10",
+              "rendimento_fornada": 60,
+              "quantidade_produzida": 3584
+            }
+          ],
+          "codigo": "SESS-0002",
+          "aberta_por": "Lucca Milleto",
+          "fechada_por": "Lucca Milleto",
+          "data_abertura": "2026-08-11T22:05:34.226515+00:00",
+          "data_producao": "2026-08-11",
+          "data_fechamento": "2026-08-11T22:05:51.98786+00:00",
+          "observacoes_abertura": null,
+          "observacoes_fechamento": null
+        }
+      ],
+      "validade": "2026-12-12",
+      "descartes": [
+        {
+          "motivo": "Quebrado",
+          "quantidade": 16
+        }
+      ],
+      "desenforma": [
+        {
+          "formas": 20,
+          "no_forno": 1200,
+          "validade": "2026-12-12",
+          "descartadas": 6,
+          "aproveitadas": 1194,
+          "sessao_codigo": "SESS-0002",
+          "data_desenforma": "2026-08-11"
+        },
+        {
+          "formas": 40,
+          "no_forno": 2400,
+          "validade": "2026-12-12",
+          "descartadas": 10,
+          "aproveitadas": 2390,
+          "sessao_codigo": "SESS-0002",
+          "data_desenforma": "2026-08-12"
+        }
+      ],
+      "emitido_em": "2026-08-23T16:46:20.431498+00:00"
+    }
+  }
+]
