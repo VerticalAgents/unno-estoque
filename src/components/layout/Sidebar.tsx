@@ -14,7 +14,7 @@ export interface NavItem {
   exceto?: string[]
 }
 
-export const mainNavItems: NavItem[] = [
+const CAT_PRINCIPAIS: NavItem[] = [
   {
     to: '/dashboard',
     label: 'Dashboard',
@@ -127,7 +127,7 @@ export const mainNavItems: NavItem[] = [
   },
 ]
 
-export const cadastrosItems: NavItem[] = [
+const CAT_CADASTROS: NavItem[] = [
   {
     to: '/insumos',
     label: 'Cadastro de insumos',
@@ -177,7 +177,7 @@ export const cadastrosItems: NavItem[] = [
   },
 ]
 
-export const estoqueItems: NavItem[] = [
+const CAT_ESTOQUE: NavItem[] = [
   {
     to: '/estoque/insumos',
     label: 'Estoque de insumos',
@@ -207,9 +207,89 @@ export const estoqueItems: NavItem[] = [
   },
 ]
 
-export const estoqueRoutes = ['/estoque/insumos', '/estoque/produtos', '/estoque/historico']
+/**
+ * OS GRUPOS.
+ *
+ * Dezenove itens soltos não cabem numa coluna sem rolagem, e deitados não cabem
+ * num cabeçalho sem rolagem horizontal. O corte não é por o que a coisa É, e sim
+ * por QUANDO se usa — foi assim que 16 linhas viraram 6.
+ *
+ * Operação segue a ordem física da matéria-prima pela fábrica: chega,
+ * distribui, enche o balde, planeja o dia, produz, desenforma, expede. Menu que
+ * acompanha o caminho real se aprende uma vez; em ordem alfabética, nunca.
+ *
+ * Transferência e Reabastecimento ficam aqui, e não em Estoque, por decisão do
+ * usuário: as duas acontecem no meio do turno, pelas mesmas mãos que produzem.
+ *
+ * Cadastros fica por último de propósito — mexe-se nele uma vez por mês, e
+ * antes ele dividia espaço visual com Produção, que se abre todo dia.
+ */
+export interface GrupoNav {
+  chave: string
+  titulo: string
+  icone: ReactNode
+  itens: NavItem[]
+}
 
-export const cadastrosRoutes = ['/insumos', '/fornecedores', '/fichas', '/produtos', '/recipientes']
+const doCatalogo = (...rotas: string[]): NavItem[] => {
+  const mapa = new Map([...CAT_PRINCIPAIS, ...CAT_ESTOQUE, ...CAT_CADASTROS].map(i => [i.to, i]))
+  return rotas.map(r => mapa.get(r)).filter((i): i is NavItem => Boolean(i))
+}
+
+const icone = (d: string) => (
+  <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
+    <path strokeLinecap="round" strokeLinejoin="round" d={d} />
+  </svg>
+)
+
+/** Fora de grupo, no topo: é o destino de quem não sabe para onde ir. */
+export const itemDashboard = doCatalogo('/dashboard')[0]
+
+export const itemConfiguracoes: NavItem = {
+  to: '/configuracoes',
+  label: 'Configurações',
+  icon: icone('M9.594 3.94c.09-.542.56-.94 1.11-.94h2.593c.55 0 1.02.398 1.11.94l.213 1.281c.063.374.313.686.645.87.074.04.147.083.22.127.325.196.72.257 1.075.124l1.217-.456a1.125 1.125 0 011.37.49l1.296 2.247a1.125 1.125 0 01-.26 1.431l-1.003.827c-.293.241-.438.613-.43.992a7.723 7.723 0 010 .255c-.008.378.137.75.43.991l1.004.827c.424.35.534.955.26 1.43l-1.298 2.247a1.125 1.125 0 01-1.369.491l-1.217-.456c-.355-.133-.75-.072-1.076.124a6.47 6.47 0 01-.22.128c-.331.183-.581.495-.644.869l-.213 1.281c-.09.543-.56.94-1.11.94h-2.594c-.55 0-1.019-.398-1.11-.94l-.213-1.281c-.062-.374-.312-.686-.644-.87a6.52 6.52 0 01-.22-.127c-.325-.196-.72-.257-1.076-.124l-1.217.456a1.125 1.125 0 01-1.369-.49l-1.297-2.247a1.125 1.125 0 01.26-1.431l1.004-.827c.292-.24.437-.613.43-.991a6.932 6.932 0 010-.255c.007-.38-.138-.751-.43-.992l-1.004-.827a1.125 1.125 0 01-.26-1.43l1.297-2.247a1.125 1.125 0 011.37-.491l1.216.456c.356.133.751.072 1.076-.124.072-.044.146-.086.22-.128.332-.183.582-.495.644-.869l.214-1.28z'),
+}
+
+export const gruposNav: GrupoNav[] = [
+  {
+    chave: 'operacao',
+    titulo: 'Operação',
+    icone: icone('M9.75 3.104v5.714a2.25 2.25 0 01-.659 1.591L5 14.5M9.75 3.104c-.251.023-.501.05-.75.082m.75-.082a24.301 24.301 0 014.5 0m0 0v5.714c0 .597.237 1.17.659 1.591L19.8 15.3M14.25 3.104c.251.023.501.05.75.082M19.8 15.3l-1.57.393A9.065 9.065 0 0112 15a9.065 9.065 0 00-6.23-.693L5 14.5m14.8.8l1.402 1.402c1 1 .23 2.717-1.07 2.717H3.868c-1.3 0-2.07-1.716-1.07-2.716L4.198 15.3'),
+    itens: doCatalogo('/recebimento', '/transferencia', '/reabastecimento', '/producao/planejador', '/producao', '/pos-producao', '/expedicao'),
+  },
+  {
+    chave: 'estoque',
+    titulo: 'Estoque',
+    icone: icone('M20.25 7.5l-.625 10.632a2.25 2.25 0 01-2.247 2.118H6.622a2.25 2.25 0 01-2.247-2.118L3.75 7.5M10 11.25h4M3.375 7.5h17.25c.621 0 1.125-.504 1.125-1.125v-1.5c0-.621-.504-1.125-1.125-1.125H3.375c-.621 0-1.125.504-1.125 1.125v1.5c0 .621.504 1.125 1.125 1.125z'),
+    itens: doCatalogo('/estoque/insumos', '/estoque/produtos', '/contagem', '/estoque/historico'),
+  },
+  {
+    chave: 'analise',
+    titulo: 'Análise',
+    icone: icone('M3 13.125C3 12.504 3.504 12 4.125 12h2.25c.621 0 1.125.504 1.125 1.125v6.75C7.5 20.496 6.996 21 6.375 21h-2.25A1.125 1.125 0 013 19.875v-6.75zM9.75 8.625c0-.621.504-1.125 1.125-1.125h2.25c.621 0 1.125.504 1.125 1.125v11.25c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 01-1.125-1.125V8.625zM16.5 4.125c0-.621.504-1.125 1.125-1.125h2.25C20.496 3 21 3.504 21 4.125v15.75c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 01-1.125-1.125V4.125z'),
+    itens: doCatalogo('/perdas', '/rastreabilidade', '/relatorios'),
+  },
+  {
+    chave: 'cadastros',
+    titulo: 'Cadastros',
+    icone: icone('M2.25 12.75V12A2.25 2.25 0 014.5 9.75h15A2.25 2.25 0 0121.75 12v.75m-8.69-6.44l-2.12-2.12a1.5 1.5 0 00-1.061-.44H4.5A2.25 2.25 0 002.25 6v12a2.25 2.25 0 002.25 2.25h15A2.25 2.25 0 0021.75 18V9a2.25 2.25 0 00-2.25-2.25h-5.379a1.5 1.5 0 01-1.06-.44z'),
+    itens: doCatalogo('/insumos', '/fornecedores', '/fichas', '/produtos', '/recipientes'),
+  },
+]
+
+/** Um grupo acende quando a rota atual é de algum filho dele. */
+export function grupoAceso(grupo: GrupoNav, caminho: string): boolean {
+  return grupo.itens.some(i => caminho.startsWith(i.to))
+}
+
+/** Item aceso: o mais específico ganha, senão /producao acenderia no planejador. */
+export function itemAceso(item: NavItem, caminho: string): boolean {
+  if (item.exact) return caminho === item.to
+  return caminho.startsWith(item.to)
+    && !(item.exceto ?? []).some(p => caminho.startsWith(p))
+}
+
 
 /**
  * A barra lateral, agora só do computador.
@@ -217,22 +297,55 @@ export const cadastrosRoutes = ['/insumos', '/fornecedores', '/fichas', '/produt
  * No celular ela era aberta como gaveta pela esquerda; quem faz esse papel
  * hoje é o `MenuInferior`, que sobe de baixo — perto do polegar e de onde o
  * toque acontece.
+ *
+ * SEIS LINHAS, NÃO DEZESSEIS. Antes os doze itens de operação ficavam soltos no
+ * topo e a coluna rolava. Agora só Dashboard e Configurações ficam soltos; o
+ * resto mora nos quatro grupos, e o grupo da rota atual abre sozinho.
  */
 export function Sidebar({ onRecolher }: { onRecolher?: () => void }) {
   const location = useLocation()
   const { profile, permissoes } = useAuth()
   const papel = profile?.papel ?? 'producao'
 
-  const filteredMainNav = mainNavItems.filter(item => canAccess(papel, item.to, permissoes))
-  const filteredEstoque = estoqueItems.filter(item => canAccess(papel, item.to, permissoes))
-  const filteredCadastros = cadastrosItems.filter(item => canAccess(papel, item.to, permissoes))
-  const showEstoque = filteredEstoque.length > 0
-  const showCadastros = filteredCadastros.length > 0
-  const showConfig = canAccess(papel, '/configuracoes', permissoes)
-  const isEstoqueActive = estoqueRoutes.some(r => location.pathname.startsWith(r))
-  const [estoqueOpen, setEstoqueOpen] = useState(isEstoqueActive)
-  const isCadastrosActive = cadastrosRoutes.some(r => location.pathname.startsWith(r))
-  const [cadastrosOpen, setCadastrosOpen] = useState(isCadastrosActive)
+  // O papel do usuário some com itens inteiros — e grupo que ficou vazio não
+  // deve aparecer só para dizer que está vazio.
+  const grupos = gruposNav
+    .map(g => ({ ...g, itens: g.itens.filter(i => canAccess(papel, i.to, permissoes)) }))
+    .filter(g => g.itens.length > 0)
+
+  const mostrarDashboard = canAccess(papel, itemDashboard.to, permissoes)
+  const mostrarConfig = canAccess(papel, itemConfiguracoes.to, permissoes)
+
+  /**
+   * Quais grupos estão abertos.
+   *
+   * Nasce com o grupo da rota atual aberto e os outros fechados: quem chega em
+   * Produção quer ver as irmãs de Produção, não Cadastros. Depois disso a
+   * escolha é de quem clica — não reabrimos nada ao navegar, senão um grupo que
+   * a pessoa fechou de propósito voltaria sozinho a cada página.
+   */
+  const [abertos, setAbertos] = useState<Set<string>>(
+    () => new Set(gruposNav.filter(g => grupoAceso(g, location.pathname)).map(g => g.chave)),
+  )
+
+  const alternarGrupo = (chave: string) =>
+    setAbertos(atual => {
+      const novo = new Set(atual)
+      if (novo.has(chave)) novo.delete(chave)
+      else novo.add(chave)
+      return novo
+    })
+
+  const classeLinha = (aceso: boolean) => [
+    'flex items-center gap-3 px-3 py-2.5 rounded-controle text-[0.7rem] font-semibold',
+    'uppercase tracking-[1px] transition-all duration-200 ease-out-expo',
+    aceso
+      ? 'bg-brand-500/12 text-brand-700 shadow-[inset_0_1px_0_#ffffffb3] dark:text-brand-400 dark:shadow-[inset_0_1px_0_#ffffff0f]'
+      : 'text-areia-600 hover:bg-areia-100 hover:text-areia-950 dark:text-unno-muted dark:hover:bg-white/[.04] dark:hover:text-unno-text',
+  ].join(' ')
+
+  const classeIcone = (aceso: boolean) =>
+    aceso ? 'text-brand-600 dark:text-brand-400' : 'text-areia-400 dark:text-unno-dim'
 
   const content = (
     // <div> e não <nav>: o <nav> agora é o bloco que envolve isto, e um
@@ -273,167 +386,98 @@ export function Sidebar({ onRecolher }: { onRecolher?: () => void }) {
         </div>
       </div>
 
-      {/* Nav items */}
       <div className="flex-1 px-3 py-4 space-y-1 overflow-y-auto">
-        {filteredMainNav.map((item) => {
-          const isActive = item.exact
-            ? location.pathname === item.to
-            : location.pathname.startsWith(item.to) &&
-              !(item.exceto ?? []).some(p => location.pathname.startsWith(p))
+        {/* Dashboard, fora de grupo */}
+        {mostrarDashboard && (
+          <NavLink to={itemDashboard.to} className={classeLinha(itemAceso(itemDashboard, location.pathname))}>
+            <span className={classeIcone(itemAceso(itemDashboard, location.pathname))}>{itemDashboard.icon}</span>
+            {itemDashboard.label}
+          </NavLink>
+        )}
 
+        {/* Os quatro grupos */}
+        {grupos.map(grupo => {
+          const aceso = grupoAceso(grupo, location.pathname)
+          const aberto = abertos.has(grupo.chave)
           return (
-            <NavLink
-              key={item.to}
-              to={item.to}
-              className={[
-                'flex items-center gap-3 px-3 py-2.5 rounded-controle text-[0.7rem] font-semibold uppercase tracking-[1px] transition-all duration-200 ease-out-expo',
-                isActive
-                  ? 'bg-brand-500/12 text-brand-700 shadow-[inset_0_1px_0_#ffffffb3] dark:text-brand-400 dark:shadow-[inset_0_1px_0_#ffffff0f]'
-                  : 'text-areia-600 hover:bg-areia-100 hover:text-areia-950 dark:text-unno-muted dark:hover:bg-white/[.04] dark:hover:text-unno-text',
-              ].join(' ')}
-            >
-              <span className={isActive ? 'text-brand-600' : 'text-gray-400'}>{item.icon}</span>
-              {item.label}
-            </NavLink>
+            <div key={grupo.chave}>
+              <button
+                type="button"
+                onClick={() => alternarGrupo(grupo.chave)}
+                aria-expanded={aberto}
+                className={`w-full ${classeLinha(aceso && !aberto)}`}
+              >
+                <span className={classeIcone(aceso)}>{grupo.icone}</span>
+                <span className="flex-1 text-left">{grupo.titulo}</span>
+                {/* A bolinha só aparece com o grupo fechado: aberto, o item
+                    aceso já está à vista e o ponto seria ruído. */}
+                {aceso && !aberto && (
+                  <span className="w-1.5 h-1.5 rounded-full bg-brand-500 shrink-0" />
+                )}
+                <svg
+                  className={['w-4 h-4 shrink-0 transition-transform duration-200', aberto ? 'rotate-180' : ''].join(' ')}
+                  fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}
+                >
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
+                </svg>
+              </button>
+
+              {aberto && (
+                <div className="mt-1 ml-4 pl-3 border-l border-areia-200 dark:border-white/[.06] space-y-1">
+                  {grupo.itens.map(item => {
+                    const filhoAceso = itemAceso(item, location.pathname)
+                    return (
+                      <NavLink
+                        key={item.to}
+                        to={item.to}
+                        className={classeLinha(filhoAceso).replace('gap-3 px-3 py-2.5', 'gap-2.5 px-3 py-2')}
+                      >
+                        <span className={classeIcone(filhoAceso)}>{item.icon}</span>
+                        {item.label}
+                      </NavLink>
+                    )
+                  })}
+                </div>
+              )}
+            </div>
           )
         })}
 
-        {/* Estoque group */}
-        {showEstoque && <div>
-          <button
-            onClick={() => setEstoqueOpen(o => !o)}
-            className={[
-              'w-full flex items-center gap-3 px-3 py-2.5 rounded-controle text-[0.7rem] font-semibold uppercase tracking-[1px] transition-all duration-200 ease-out-expo',
-              isEstoqueActive
-                ? 'bg-brand-500/12 text-brand-700 shadow-[inset_0_1px_0_#ffffffb3] dark:text-brand-400 dark:shadow-[inset_0_1px_0_#ffffff0f]'
-                : 'text-areia-600 hover:bg-areia-100 hover:text-areia-950 dark:text-unno-muted dark:hover:bg-white/[.04] dark:hover:text-unno-text',
-            ].join(' ')}
+        {/* Configurações, fora de grupo */}
+        {mostrarConfig && (
+          <NavLink
+            to={itemConfiguracoes.to}
+            className={classeLinha(location.pathname.startsWith(itemConfiguracoes.to))}
           >
-            <span className={isEstoqueActive ? 'text-brand-600' : 'text-gray-400'}>
-              <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
-                <path strokeLinecap="round" strokeLinejoin="round" d="M20.25 7.5l-.625 10.632a2.25 2.25 0 01-2.247 2.118H6.622a2.25 2.25 0 01-2.247-2.118L3.75 7.5M10 11.25h4M3.375 7.5h17.25c.621 0 1.125-.504 1.125-1.125v-1.5c0-.621-.504-1.125-1.125-1.125H3.375c-.621 0-1.125.504-1.125 1.125v1.5c0 .621.504 1.125 1.125 1.125z" />
-              </svg>
+            <span className={classeIcone(location.pathname.startsWith(itemConfiguracoes.to))}>
+              {itemConfiguracoes.icon}
             </span>
-            <span className="flex-1 text-left">Estoque</span>
-            <svg
-              className={['w-4 h-4 transition-transform', estoqueOpen ? 'rotate-180' : ''].join(' ')}
-              fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}
-            >
-              <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
-            </svg>
-          </button>
-
-          {estoqueOpen && (
-            <div className="mt-1 ml-4 pl-3 border-l border-gray-200 dark:border-[#1a1a24] space-y-1">
-              {filteredEstoque.map((item) => {
-                const isActive = location.pathname.startsWith(item.to)
-                return (
-                  <NavLink
-                    key={item.to}
-                    to={item.to}
-                          className={[
-                      'flex items-center gap-2.5 px-3 py-2 rounded-controle text-[0.7rem] font-semibold uppercase tracking-[1px] transition-all duration-200 ease-out-expo',
-                      isActive
-                        ? 'bg-brand-500/12 text-brand-700 shadow-[inset_0_1px_0_#ffffffb3] dark:text-brand-400 dark:shadow-[inset_0_1px_0_#ffffff0f]'
-                        : 'text-areia-600 hover:bg-areia-100 hover:text-areia-950 dark:text-unno-muted dark:hover:bg-white/[.04] dark:hover:text-unno-text',
-                    ].join(' ')}
-                  >
-                    <span className={isActive ? 'text-brand-600' : 'text-gray-400'}>{item.icon}</span>
-                    {item.label}
-                  </NavLink>
-                )
-              })}
-            </div>
-          )}
-        </div>}
-
-        {/* Cadastros group */}
-        {showCadastros && <div>
-          <button
-            onClick={() => setCadastrosOpen(o => !o)}
-            className={[
-              'w-full flex items-center gap-3 px-3 py-2.5 rounded-controle text-[0.7rem] font-semibold uppercase tracking-[1px] transition-all duration-200 ease-out-expo',
-              isCadastrosActive
-                ? 'bg-brand-500/12 text-brand-700 shadow-[inset_0_1px_0_#ffffffb3] dark:text-brand-400 dark:shadow-[inset_0_1px_0_#ffffff0f]'
-                : 'text-areia-600 hover:bg-areia-100 hover:text-areia-950 dark:text-unno-muted dark:hover:bg-white/[.04] dark:hover:text-unno-text',
-            ].join(' ')}
-          >
-            <span className={isCadastrosActive ? 'text-brand-600' : 'text-gray-400'}>
-              <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
-                <path strokeLinecap="round" strokeLinejoin="round" d="M2.25 12.75V12A2.25 2.25 0 014.5 9.75h15A2.25 2.25 0 0121.75 12v.75m-8.69-6.44l-2.12-2.12a1.5 1.5 0 00-1.061-.44H4.5A2.25 2.25 0 002.25 6v12a2.25 2.25 0 002.25 2.25h15A2.25 2.25 0 0021.75 18V9a2.25 2.25 0 00-2.25-2.25h-5.379a1.5 1.5 0 01-1.06-.44z" />
-              </svg>
-            </span>
-            <span className="flex-1 text-left">Cadastros</span>
-            <svg
-              className={['w-4 h-4 transition-transform', cadastrosOpen ? 'rotate-180' : ''].join(' ')}
-              fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}
-            >
-              <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
-            </svg>
-          </button>
-
-          {cadastrosOpen && (
-            <div className="mt-1 ml-4 pl-3 border-l border-gray-200 dark:border-[#1a1a24] space-y-1">
-              {filteredCadastros.map((item) => {
-                const isActive = location.pathname.startsWith(item.to)
-                return (
-                  <NavLink
-                    key={item.to}
-                    to={item.to}
-                          className={[
-                      'flex items-center gap-2.5 px-3 py-2 rounded-controle text-[0.7rem] font-semibold uppercase tracking-[1px] transition-all duration-200 ease-out-expo',
-                      isActive
-                        ? 'bg-brand-500/12 text-brand-700 shadow-[inset_0_1px_0_#ffffffb3] dark:text-brand-400 dark:shadow-[inset_0_1px_0_#ffffff0f]'
-                        : 'text-areia-600 hover:bg-areia-100 hover:text-areia-950 dark:text-unno-muted dark:hover:bg-white/[.04] dark:hover:text-unno-text',
-                    ].join(' ')}
-                  >
-                    <span className={isActive ? 'text-brand-600' : 'text-gray-400'}>{item.icon}</span>
-                    {item.label}
-                  </NavLink>
-                )
-              })}
-            </div>
-          )}
-        </div>}
-
-        {/* Configurações */}
-        {showConfig && <NavLink
-          to="/configuracoes"
-          className={[
-            'flex items-center gap-3 px-3 py-2.5 rounded-controle text-[0.7rem] font-semibold uppercase tracking-[1px] transition-all duration-200 ease-out-expo',
-            location.pathname.startsWith('/configuracoes')
-              ? 'bg-brand-500/12 text-brand-700 shadow-[inset_0_1px_0_#ffffffb3] dark:text-brand-400 dark:shadow-[inset_0_1px_0_#ffffff0f]'
-              : 'text-areia-600 hover:bg-areia-100 hover:text-areia-950 dark:text-unno-muted dark:hover:bg-white/[.04] dark:hover:text-unno-text',
-          ].join(' ')}
-        >
-          <span className={location.pathname.startsWith('/configuracoes') ? 'text-brand-600' : 'text-gray-400'}>
-            <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
-              <path strokeLinecap="round" strokeLinejoin="round" d="M9.594 3.94c.09-.542.56-.94 1.11-.94h2.593c.55 0 1.02.398 1.11.94l.213 1.281c.063.374.313.686.645.87.074.04.147.083.22.127.325.196.72.257 1.075.124l1.217-.456a1.125 1.125 0 011.37.49l1.296 2.247a1.125 1.125 0 01-.26 1.431l-1.003.827c-.293.241-.438.613-.43.992a7.723 7.723 0 010 .255c-.008.378.137.75.43.991l1.004.827c.424.35.534.955.26 1.43l-1.298 2.247a1.125 1.125 0 01-1.369.491l-1.217-.456c-.355-.133-.75-.072-1.076.124a6.47 6.47 0 01-.22.128c-.331.183-.581.495-.644.869l-.213 1.281c-.09.543-.56.94-1.11.94h-2.594c-.55 0-1.019-.398-1.11-.94l-.213-1.281c-.062-.374-.312-.686-.644-.87a6.52 6.52 0 01-.22-.127c-.325-.196-.72-.257-1.076-.124l-1.217.456a1.125 1.125 0 01-1.369-.49l-1.297-2.247a1.125 1.125 0 01.26-1.431l1.004-.827c.292-.24.437-.613.43-.991a6.932 6.932 0 010-.255c.007-.38-.138-.751-.43-.992l-1.004-.827a1.125 1.125 0 01-.26-1.43l1.297-2.247a1.125 1.125 0 011.37-.491l1.216.456c.356.133.751.072 1.076-.124.072-.044.146-.086.22-.128.332-.183.582-.495.644-.869l.214-1.28z" />
-              <path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-            </svg>
-          </span>
-          Configurações
-        </NavLink>}
+            {itemConfiguracoes.label}
+          </NavLink>
+        )}
 
         {/* Dev tools */}
-        {papel === 'admin' && <div className="pt-2 mt-2 border-t border-gray-100 dark:border-[#1a1a24]">
-          <NavLink
-            to="/dev"
+        {papel === 'admin' && (
+          <div className="pt-2 mt-2 border-t border-areia-200 dark:border-white/[.06]">
+            <NavLink
+              to="/dev"
               className={[
-              'flex items-center gap-3 px-3 py-2.5 rounded-controle text-[0.7rem] font-semibold uppercase tracking-[1px] transition-all duration-200 ease-out-expo',
-              location.pathname.startsWith('/dev')
-                ? 'bg-amber-50 text-amber-700'
-                : 'text-amber-600 hover:bg-amber-50 hover:text-amber-700',
-            ].join(' ')}
-          >
-            <span className="text-amber-500">
-              <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
-                <path strokeLinecap="round" strokeLinejoin="round" d="M11.42 15.17L17.25 21A2.652 2.652 0 0021 17.25l-5.877-5.877M11.42 15.17l2.496-3.03c.317-.384.74-.626 1.208-.766M11.42 15.17l-4.655 5.653a2.548 2.548 0 11-3.586-3.586l6.837-5.63m5.108-.233c.55-.164 1.163-.188 1.743-.14a4.5 4.5 0 004.486-6.336l-3.276 3.277a3.004 3.004 0 01-2.25-2.25l3.276-3.276a4.5 4.5 0 00-6.336 4.486c.091 1.076-.071 2.264-.904 2.95l-.102.085m-1.745 1.437L5.909 7.5H4.5L2.25 3.75l1.5-1.5L7.5 4.5v1.409l4.26 4.26m-1.745 1.437l1.745-1.437m6.615 8.206L15.75 15.75M4.867 19.125h.008v.008h-.008v-.008z" />
-              </svg>
-            </span>
-            Dev Tools
-          </NavLink>
-        </div>}
+                'flex items-center gap-3 px-3 py-2.5 rounded-controle text-[0.7rem] font-semibold',
+                'uppercase tracking-[1px] transition-all duration-200 ease-out-expo',
+                location.pathname.startsWith('/dev')
+                  ? 'bg-unno-amber/[.14] text-amber-800 dark:text-unno-amber'
+                  : 'text-amber-700/80 hover:bg-unno-amber/[.10] hover:text-amber-800 dark:text-unno-amber/80 dark:hover:text-unno-amber',
+              ].join(' ')}
+            >
+              <span className="text-unno-amber">
+                <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M11.42 15.17L17.25 21A2.652 2.652 0 0021 17.25l-5.877-5.877M11.42 15.17l2.496-3.03c.317-.384.74-.626 1.208-.766M11.42 15.17l-4.655 5.653a2.548 2.548 0 11-3.586-3.586l6.837-5.63m5.108-.233c.55-.164 1.163-.188 1.743-.14a4.5 4.5 0 004.486-6.336l-3.276 3.277a3.004 3.004 0 01-2.25-2.25l3.276-3.276a4.5 4.5 0 00-6.336 4.486c.091 1.076-.071 2.264-.904 2.95l-.102.085m-1.745 1.437L5.909 7.5H4.5L2.25 3.75l1.5-1.5L7.5 4.5v1.409l4.26 4.26m-1.745 1.437l1.745-1.437m6.615 8.206L15.75 15.75M4.867 19.125h.008v.008h-.008v-.008z" />
+                </svg>
+              </span>
+              Dev Tools
+            </NavLink>
+          </div>
+        )}
       </div>
 
       {/* Footer */}

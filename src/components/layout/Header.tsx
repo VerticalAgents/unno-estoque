@@ -3,9 +3,9 @@ import { NavLink, useLocation, useNavigate } from 'react-router-dom'
 import { useAuth } from '../../contexts/AuthContext'
 import { canAccess } from '../../lib/permissions'
 import {
-  mainNavItems, estoqueItems, cadastrosItems,
-  estoqueRoutes, cadastrosRoutes,
-  type NavItem,
+  gruposNav, itemDashboard, itemConfiguracoes,
+  grupoAceso, itemAceso,
+  type GrupoNav,
 } from './Sidebar'
 
 /**
@@ -16,12 +16,13 @@ import {
  * e a tela ganha os 240px de largura de volta. Num notebook de 13", numa tabela
  * de relatório, essa largura é a diferença entre ler e rolar para o lado.
  *
- * OS GRUPOS VIRAM MENUS SUSPENSOS. Estoque e Cadastros têm filhos; deitados na
- * horizontal eles ocupariam a tira inteira. Recolhidos num botão que abre para
- * baixo, ocupam um item cada.
+ * SEIS ITENS, SEM ROLAGEM. Dashboard, os quatro grupos e Configurações. Os
+ * dezenove destinos moram dentro dos grupos, que abrem para baixo — deitados por
+ * extenso não caberiam, e cabeçalho que rola para o lado esconde metade do
+ * caminho sem avisar que existe metade escondida.
  *
- * A TIRA ROLA e não quebra em duas linhas: cabeçalho que muda de altura conforme
- * a rota empurra o conteúdo da página para baixo a cada navegação.
+ * Também não quebra em duas linhas: cabeçalho que muda de altura conforme a rota
+ * empurra o conteúdo da página para baixo a cada navegação.
  */
 
 interface HeaderProps {
@@ -44,14 +45,7 @@ const CLASSE_INATIVO =
   'dark:text-unno-muted dark:hover:bg-white/[.04] dark:hover:text-unno-text'
 
 /** Um grupo (Estoque, Cadastros) recolhido num botão que abre para baixo. */
-function GrupoSuspenso({
-  rotulo, icone, itens, ativo,
-}: {
-  rotulo: string
-  icone: React.ReactNode
-  itens: NavItem[]
-  ativo: boolean
-}) {
+function GrupoSuspenso({ grupo, ativo }: { grupo: GrupoNav; ativo: boolean }) {
   const [aberto, setAberto] = useState(false)
   const location = useLocation()
   const caixa = useRef<HTMLDivElement>(null)
@@ -76,9 +70,9 @@ function GrupoSuspenso({
         className={[CLASSE_ITEM, ativo ? CLASSE_ATIVO : CLASSE_INATIVO].join(' ')}
       >
         <span className={ativo ? 'text-brand-600 dark:text-brand-400' : 'text-areia-400 dark:text-unno-dim'}>
-          {icone}
+          {grupo.icone}
         </span>
-        {rotulo}
+        {grupo.titulo}
         <svg
           className={['w-3.5 h-3.5 transition-transform duration-200', aberto ? 'rotate-180' : ''].join(' ')}
           fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}
@@ -91,7 +85,7 @@ function GrupoSuspenso({
         <div className="absolute left-0 top-full mt-2 w-56 z-30 p-1.5 overflow-hidden
                         rounded-bloco bg-white border border-areia-200 shadow-bloco
                         dark:bg-unno-elevated dark:border-white/[.08] dark:shadow-tactil-escuro">
-          {itens.map(item => {
+          {grupo.itens.map(item => {
             const aceso = location.pathname.startsWith(item.to)
             return (
               <NavLink
@@ -124,20 +118,12 @@ export function Header({ onMenuToggle, darkMode, colapsado, onExpandir }: Header
   const tira = useRef<HTMLDivElement>(null)
 
   const papel = profile?.papel ?? 'producao'
-  const principais = mainNavItems.filter(i => canAccess(papel, i.to, permissoes))
-  const doEstoque = estoqueItems.filter(i => canAccess(papel, i.to, permissoes))
-  const deCadastros = cadastrosItems.filter(i => canAccess(papel, i.to, permissoes))
-  const podeConfig = canAccess(papel, '/configuracoes', permissoes)
-  const estoqueAtivo = estoqueRoutes.some(r => location.pathname.startsWith(r))
-  const cadastrosAtivo = cadastrosRoutes.some(r => location.pathname.startsWith(r))
-
-  // Traz o item aceso para dentro da vista: numa tira que rola, chegar numa
-  // rota do fim do menu deixaria o indicador de posição fora da tela.
-  useEffect(() => {
-    if (!colapsado) return
-    const aceso = tira.current?.querySelector('[data-aceso="sim"]')
-    aceso?.scrollIntoView({ block: 'nearest', inline: 'center' })
-  }, [colapsado, location.pathname])
+  const grupos = gruposNav
+    .map(g => ({ ...g, itens: g.itens.filter(i => canAccess(papel, i.to, permissoes)) }))
+    .filter(g => g.itens.length > 0)
+  const mostrarDashboard = canAccess(papel, itemDashboard.to, permissoes)
+  const mostrarConfig = canAccess(papel, itemConfiguracoes.to, permissoes)
+  const configAcesa = location.pathname.startsWith(itemConfiguracoes.to)
 
   async function handleLogout() {
     await logout()
@@ -204,74 +190,49 @@ export function Header({ onMenuToggle, darkMode, colapsado, onExpandir }: Header
           </button>
         )}
 
-        {/* A navegação, deitada. Só existe no computador com o menu recolhido. */}
+        {/* A navegação, deitada. Só existe no computador com o menu recolhido.
+            São seis itens — Dashboard, quatro grupos e Configurações — porque
+            os dezenove destinos moram dentro dos grupos. Deitados por extenso
+            eles não caberiam, e cabeçalho que rola para o lado esconde metade
+            do caminho sem avisar que existe metade escondida. */}
         {colapsado && (
           <nav
             ref={tira}
-            className="hidden lg:flex items-center gap-1 flex-1 min-w-0 overflow-x-auto tira-rolavel
+            className="hidden lg:flex items-center gap-1 flex-1 min-w-0
                        border-l border-areia-200 dark:border-white/[.06] pl-2 ml-1"
           >
-            {principais.map(item => {
-              const aceso = item.exact
-                ? location.pathname === item.to
-                : location.pathname.startsWith(item.to) &&
-                  !(item.exceto ?? []).some(p => location.pathname.startsWith(p))
-              return (
-                <NavLink
-                  key={item.to}
-                  to={item.to}
-                  data-aceso={aceso ? 'sim' : 'nao'}
-                  className={[CLASSE_ITEM, aceso ? CLASSE_ATIVO : CLASSE_INATIVO].join(' ')}
-                >
-                  <span className={aceso ? 'text-brand-600 dark:text-brand-400' : 'text-areia-400 dark:text-unno-dim'}>
-                    {item.icon}
-                  </span>
-                  {item.label}
-                </NavLink>
-              )
-            })}
-
-            {doEstoque.length > 0 && (
-              <GrupoSuspenso
-                rotulo="Estoque"
-                ativo={estoqueAtivo}
-                itens={doEstoque}
-                icone={
-                  <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M20.25 7.5l-.625 10.632a2.25 2.25 0 01-2.247 2.118H6.622a2.25 2.25 0 01-2.247-2.118L3.75 7.5M10 11.25h4M3.375 7.5h17.25c.621 0 1.125-.504 1.125-1.125v-1.5c0-.621-.504-1.125-1.125-1.125H3.375c-.621 0-1.125.504-1.125 1.125v1.5c0 .621.504 1.125 1.125 1.125z" />
-                  </svg>
-                }
-              />
-            )}
-
-            {deCadastros.length > 0 && (
-              <GrupoSuspenso
-                rotulo="Cadastros"
-                ativo={cadastrosAtivo}
-                itens={deCadastros}
-                icone={
-                  <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M2.25 12.75V12A2.25 2.25 0 014.5 9.75h15A2.25 2.25 0 0121.75 12v.75m-8.69-6.44l-2.12-2.12a1.5 1.5 0 00-1.061-.44H4.5A2.25 2.25 0 002.25 6v12a2.25 2.25 0 002.25 2.25h15A2.25 2.25 0 0021.75 18V9a2.25 2.25 0 00-2.25-2.25h-5.379a1.5 1.5 0 01-1.06-.44z" />
-                  </svg>
-                }
-              />
-            )}
-
-            {podeConfig && (
+            {mostrarDashboard && (
               <NavLink
-                to="/configuracoes"
-                data-aceso={location.pathname.startsWith('/configuracoes') ? 'sim' : 'nao'}
+                to={itemDashboard.to}
                 className={[
                   CLASSE_ITEM,
-                  location.pathname.startsWith('/configuracoes') ? CLASSE_ATIVO : CLASSE_INATIVO,
+                  itemAceso(itemDashboard, location.pathname) ? CLASSE_ATIVO : CLASSE_INATIVO,
                 ].join(' ')}
               >
-                <span className={location.pathname.startsWith('/configuracoes')
+                <span className={itemAceso(itemDashboard, location.pathname)
                   ? 'text-brand-600 dark:text-brand-400' : 'text-areia-400 dark:text-unno-dim'}>
-                  <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M9.594 3.94c.09-.542.56-.94 1.11-.94h2.593c.55 0 1.02.398 1.11.94l.213 1.281c.063.374.313.686.645.87.074.04.147.083.22.127.325.196.72.257 1.075.124l1.217-.456a1.125 1.125 0 011.37.49l1.296 2.247a1.125 1.125 0 01-.26 1.431l-1.003.827c-.293.241-.438.613-.43.992a7.723 7.723 0 010 .255c-.008.378.137.75.43.991l1.004.827c.424.35.534.955.26 1.43l-1.298 2.247a1.125 1.125 0 01-1.369.491l-1.217-.456c-.355-.133-.75-.072-1.076.124a6.47 6.47 0 01-.22.128c-.331.183-.581.495-.644.869l-.213 1.281c-.09.543-.56.94-1.11.94h-2.594c-.55 0-1.019-.398-1.11-.94l-.213-1.281c-.062-.374-.312-.686-.644-.87a6.52 6.52 0 01-.22-.127c-.325-.196-.72-.257-1.076-.124l-1.217.456a1.125 1.125 0 01-1.369-.49l-1.297-2.247a1.125 1.125 0 01.26-1.431l1.004-.827c.292-.24.437-.613.43-.991a6.932 6.932 0 010-.255c.007-.38-.138-.751-.43-.992l-1.004-.827a1.125 1.125 0 01-.26-1.43l1.297-2.247a1.125 1.125 0 011.37-.491l1.216.456c.356.133.751.072 1.076-.124.072-.044.146-.086.22-.128.332-.183.582-.495.644-.869l.214-1.28z" />
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-                  </svg>
+                  {itemDashboard.icon}
+                </span>
+                {itemDashboard.label}
+              </NavLink>
+            )}
+
+            {grupos.map(grupo => (
+              <GrupoSuspenso
+                key={grupo.chave}
+                grupo={grupo}
+                ativo={grupoAceso(grupo, location.pathname)}
+              />
+            ))}
+
+            {mostrarConfig && (
+              <NavLink
+                to={itemConfiguracoes.to}
+                className={[CLASSE_ITEM, configAcesa ? CLASSE_ATIVO : CLASSE_INATIVO].join(' ')}
+              >
+                <span className={configAcesa
+                  ? 'text-brand-600 dark:text-brand-400' : 'text-areia-400 dark:text-unno-dim'}>
+                  {itemConfiguracoes.icon}
                 </span>
                 Config
               </NavLink>

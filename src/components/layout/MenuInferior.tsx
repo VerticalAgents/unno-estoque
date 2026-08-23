@@ -2,7 +2,7 @@ import { useEffect, useRef } from 'react'
 import { NavLink, useLocation } from 'react-router-dom'
 import { useAuth } from '../../contexts/AuthContext'
 import { canAccess } from '../../lib/permissions'
-import { mainNavItems, estoqueItems, cadastrosItems, type NavItem } from './Sidebar'
+import { gruposNav, itemDashboard, type NavItem } from './Sidebar'
 
 /**
  * O "Mais" da barra de baixo.
@@ -150,10 +150,14 @@ export function MenuInferior({ aberto, onFechar }: { aberto: boolean; onFechar: 
   const papel = profile?.papel ?? 'producao'
   const podeVer = (item: NavItem) => canAccess(papel, item.to, permissoes)
 
+  // Os mesmos quatro grupos da barra lateral, para não haver duas arrumações
+  // do mesmo menu — quem aprende no computador não reaprende no celular.
+  // Dashboard entra junto de Operação: aqui não há topo onde ele fique solto.
   const grupos: { titulo: string; itens: NavItem[] }[] = [
-    { titulo: 'Operação', itens: mainNavItems },
-    { titulo: 'Estoque', itens: estoqueItems },
-    { titulo: 'Cadastros', itens: cadastrosItems },
+    ...gruposNav.map((g, i) => ({
+      titulo: g.titulo,
+      itens: i === 0 ? [itemDashboard, ...g.itens] : g.itens,
+    })),
     { titulo: 'Sistema', itens: profile?.papel === 'admin' ? [CONFIGURACOES, DEV] : [CONFIGURACOES] },
   ]
     .map(g => ({ ...g, itens: g.itens.filter(podeVer) }))
