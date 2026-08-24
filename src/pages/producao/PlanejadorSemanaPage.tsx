@@ -225,7 +225,10 @@ function avisoDeAbastecimento(
       const p = emPacotes(resto)
       if (p && p.pacotes > 1) {
         apertaPacote = true
-        partes.push(`${fmt(resto, 2)} ${un} do pote = ${p.pacotes} `
+        // "do pote = 3 baldes" era confuso: pote e balde são a mesma coisa, e
+        // a frase parecia comparar dois recipientes diferentes. As duas partes
+        // se distinguem pelo CAMINHO — porcionado ou não — e não pelo objeto.
+        partes.push(`${fmt(resto, 2)} ${un} sem porcionar = ${p.pacotes} `
           + `${nomeDaEmbalagem(arm?.tipo, true)} de ${fmt(p.tam, 2)} ${un}`)
       }
     }
