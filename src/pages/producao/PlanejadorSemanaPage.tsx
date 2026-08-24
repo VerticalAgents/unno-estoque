@@ -108,7 +108,7 @@ function diaCurto(iso: string): string {
   return `${DIAS_LABEL[d.getDay()]} ${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')}`
 }
 
-import { nomeDaPorcao } from '../../lib/armazenamento'
+import { nomeDaEmbalagem, nomeDaPorcao } from '../../lib/armazenamento'
 
 // ── Aviso de abastecimento ───────────────────────────────────
 
@@ -120,11 +120,19 @@ type Armazenamento = {
   porcao: number | null
   /** Como a porção se chama na tela: saco, porção... */
   formato: string | null
+  /** Como a embalagem se chama na bancada: balde, garrafa, lata... */
+  tipo: string | null
   /** Tamanho da embalagem do fornecedor, na unidade do insumo. */
   embalagem: number | null
 }
 
 type Aviso = { nome: string; titulo: string; detalhe: string }
+
+/** "mais de um balde", "mais de uma garrafa" — o artigo acompanha a palavra. */
+function umDe(tipo?: string | null): string {
+  const nome = nomeDaEmbalagem(tipo)
+  return `${nome.endsWith('a') ? 'uma' : 'um'} ${nome}`
+}
 
 /**
  * "Vai precisar de mais de uma rodada de abastecimento" só faz sentido para um
@@ -173,9 +181,10 @@ function avisoDeAbastecimento(
     if (!p || p.pacotes <= 1) return null
     return {
       nome: cap.nome,
-      titulo: 'Vai precisar de mais de um pacote',
-      detalhe: `${cap.nome}: o dia pede ${fmt(qtd, 2)} ${un} = ${p.pacotes} pacotes `
-             + `de ${fmt(p.tam, 2)} ${un}. Confira se há esse tanto no estoque central.`,
+      titulo: `Vai precisar de mais de ${umDe(arm?.tipo)}`,
+      detalhe: `${cap.nome}: o dia pede ${fmt(qtd, 2)} ${un} = ${p.pacotes} `
+             + `${nomeDaEmbalagem(arm?.tipo, true)} de ${fmt(p.tam, 2)} ${un}. `
+             + `Confira se há esse tanto no estoque central.`,
     }
   }
 
@@ -198,10 +207,15 @@ function avisoDeAbastecimento(
     // tradicional oferecia 67 sacos para uma receita que não tem topping.
     const resto = Math.max(qtd - qtdPorcionada, 0)
     const partes: string[] = []
+    // O título diz o MOTIVO, e são motivos diferentes: encher a caixa de novo
+    // não é a mesma tarefa que buscar outro pacote na prateleira.
+    let apertaCaixa = false
+    let apertaPacote = false
 
     if (qtdPorcionada > 0) {
       const s = emSacos(qtdPorcionada)
       if (s && s.enchimentos > 1) {
+        apertaCaixa = true
         partes.push(`${fmt(qtdPorcionada, 2)} ${un} porcionados = ${s.sacos} `
           + `${nomeDaPorcao(arm?.formato, true)}, ${s.enchimentos} enchimentos da caixa`)
       }
@@ -210,7 +224,9 @@ function avisoDeAbastecimento(
     if (resto > 0) {
       const p = emPacotes(resto)
       if (p && p.pacotes > 1) {
-        partes.push(`${fmt(resto, 2)} ${un} do pote = ${p.pacotes} pacotes de ${fmt(p.tam, 2)} ${un}`)
+        apertaPacote = true
+        partes.push(`${fmt(resto, 2)} ${un} do pote = ${p.pacotes} `
+          + `${nomeDaEmbalagem(arm?.tipo, true)} de ${fmt(p.tam, 2)} ${un}`)
       }
     }
 
@@ -220,7 +236,11 @@ function avisoDeAbastecimento(
     if (partes.length === 0) return null
     return {
       nome: cap.nome,
-      titulo: 'O dia pede mais de uma rodada',
+      titulo: apertaCaixa && apertaPacote
+        ? 'Vai faltar caixa e pacote no meio do dia'
+        : apertaCaixa
+          ? 'A caixa não comporta o dia inteiro'
+          : `Vai precisar de mais de ${umDe(arm?.tipo)}`,
       detalhe: `${cap.nome}: ${partes.join(' · ')}.`,
     }
   }
@@ -421,7 +441,7 @@ export function PlanejadorSemanaPage({
         // Como cada insumo ocupa o EP: a conta de "quantas rodadas" só vale
         // para quem passa por pote da cozinha (ver ARMAZENAMENTO abaixo).
         supabase.from('insumos_armazenamento_config')
-          .select('insumo_id, modo_ep, reembalagem_tamanho_porcao, reembalagem_formato, insumo:insumos(unidade_medida, tamanho_embalagem)'),
+          .select('insumo_id, modo_ep, tipo_armazenamento, reembalagem_tamanho_porcao, reembalagem_formato, insumo:insumos(unidade_medida, tamanho_embalagem)'),
       ])
 
       const rows = (fichasRes.data ?? []) as unknown as {
@@ -449,7 +469,7 @@ export function PlanejadorSemanaPage({
       const modos: Record<string, Armazenamento> = {}
       for (const r of (modoRes.data ?? []) as unknown as {
         insumo_id: string; modo_ep: ModoEp; reembalagem_tamanho_porcao: number | null
-        reembalagem_formato: string | null
+        reembalagem_formato: string | null; tipo_armazenamento: string | null
         insumo?: { unidade_medida?: string; tamanho_embalagem?: number | null }
           | { unidade_medida?: string; tamanho_embalagem?: number | null }[]
       }[]) {
@@ -460,6 +480,7 @@ export function PlanejadorSemanaPage({
           modo: r.modo_ep ?? 'recipiente',
           porcao: r.reembalagem_tamanho_porcao ? Number(r.reembalagem_tamanho_porcao) / divisor : null,
           formato: r.reembalagem_formato,
+          tipo: r.tipo_armazenamento,
           embalagem: ins?.tamanho_embalagem ? Number(ins.tamanho_embalagem) : null,
         }
       }

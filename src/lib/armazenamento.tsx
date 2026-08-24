@@ -58,6 +58,29 @@ export const MODOS_EP: {
  * avulsa lê "porções", sem que o sistema precise generalizar a ponto de ficar
  * vago para os dois.
  */
+/**
+ * Como se chama a embalagem em que o insumo chega, para a frase da tela.
+ *
+ * "Pacote" era a palavra usada em tudo, e estava errada na maioria: doce de
+ * leite e xarope vêm em BALDE, baunilha em GARRAFA, desmoldante em LATA. Quem
+ * lê a tela procura a palavra que usa na bancada.
+ *
+ * O padrão é "embalagem" e não "pacote": genérico e nunca errado, para o tipo
+ * que ainda não foi mapeado aqui.
+ */
+export function nomeDaEmbalagem(tipo?: string | null, plural = false): string {
+  const nomes: Record<string, [string, string]> = {
+    balde:              ['balde', 'baldes'],
+    balde_fornecedor:   ['balde', 'baldes'],
+    garrafa_fornecedor: ['garrafa', 'garrafas'],
+    caixa_plastica:     ['caixa', 'caixas'],
+    saco_confeitar:     ['saco', 'sacos'],
+    lata:               ['lata', 'latas'],
+  }
+  const par = nomes[tipo ?? ''] ?? ['embalagem', 'embalagens']
+  return plural ? par[1] : par[0]
+}
+
 export function nomeDaPorcao(formato?: string | null, plural = false): string {
   if (formato === 'saco_confeitar') return plural ? 'sacos' : 'saco'
   return plural ? 'porções' : 'porção'
