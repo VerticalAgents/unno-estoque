@@ -182,8 +182,8 @@ function avisoDeAbastecimento(
     return {
       nome: cap.nome,
       titulo: `Vai precisar de mais de ${umDe(arm?.tipo)}`,
-      detalhe: `${cap.nome}: o dia pede ${fmt(qtd, 2)} ${un} = ${p.pacotes} `
-             + `${nomeDaEmbalagem(arm?.tipo, true)} de ${fmt(p.tam, 2)} ${un}. `
+      detalhe: `${cap.nome}: o dia pede ${peso(qtd, un)} = ${p.pacotes} `
+             + `${nomeDaEmbalagem(arm?.tipo, true)} de ${peso(p.tam, un)}. `
              + `Confira se há esse tanto no estoque central.`,
     }
   }
@@ -194,7 +194,7 @@ function avisoDeAbastecimento(
     return {
       nome: cap.nome,
       titulo: 'A caixa não comporta o dia inteiro',
-      detalhe: `${cap.nome}: o dia pede ${fmt(qtd, 2)} ${un} = ${s.sacos} `
+      detalhe: `${cap.nome}: o dia pede ${peso(qtd, un)} = ${s.sacos} `
              + `${nomeDaPorcao(arm?.formato, true)}, e na caixa cabem ${s.porCaixa} `
              + `— ${s.enchimentos} enchimentos.`,
     }
@@ -216,7 +216,7 @@ function avisoDeAbastecimento(
       const s = emSacos(qtdPorcionada)
       if (s && s.enchimentos > 1) {
         apertaCaixa = true
-        partes.push(`${fmt(qtdPorcionada, 2)} ${un} porcionados = ${s.sacos} `
+        partes.push(`${peso(qtdPorcionada, un)} porcionados = ${s.sacos} `
           + `${nomeDaPorcao(arm?.formato, true)}, ${s.enchimentos} enchimentos da caixa`)
       }
     }
@@ -228,8 +228,8 @@ function avisoDeAbastecimento(
         // "do pote = 3 baldes" era confuso: pote e balde são a mesma coisa, e
         // a frase parecia comparar dois recipientes diferentes. As duas partes
         // se distinguem pelo CAMINHO — porcionado ou não — e não pelo objeto.
-        partes.push(`${fmt(resto, 2)} ${un} sem porcionar = ${p.pacotes} `
-          + `${nomeDaEmbalagem(arm?.tipo, true)} de ${fmt(p.tam, 2)} ${un}`)
+        partes.push(`${peso(resto, un)} sem porcionar = ${p.pacotes} `
+          + `${nomeDaEmbalagem(arm?.tipo, true)} de ${peso(p.tam, un)}`)
       }
     }
 
@@ -254,9 +254,21 @@ function avisoDeAbastecimento(
   return {
     nome: cap.nome,
     titulo: 'Vai precisar de mais de uma rodada de abastecimento',
-    detalhe: `${cap.nome}: o dia pede ${fmt(qtd, 2)} ${un} e os recipientes `
-           + `comportam ${fmt(cap.capacidade, 2)} — ${rodadas} rodadas.`,
+    detalhe: `${cap.nome}: o dia pede ${peso(qtd, un)} e os recipientes somados `
+           + `comportam ${peso(cap.capacidade, un)} — ${rodadas} rodadas.`,
   }
+}
+
+/**
+ * Peso na frase do aviso: sempre com duas casas e sempre com a unidade.
+ *
+ * `fmt(n, 2)` mostrava "39" para 39,00, porque o mínimo de casas é zero — e
+ * "o dia pede 39,05 kg e os recipientes comportam 39" fazia parecer que os
+ * dois números eram de naturezas diferentes. São o mesmo peso, e devem ter a
+ * mesma cara.
+ */
+function peso(n: number, un: string) {
+  return `${n.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ${un}`
 }
 
 function fmt(n: number, casas = 0) {
