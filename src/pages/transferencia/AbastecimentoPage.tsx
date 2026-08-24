@@ -22,9 +22,15 @@ import type { UnidadeMedida } from '../../types/database.types'
  * Aqui a ordem é a da vida real:
  *
  *   1. escolher o insumo que vai ser abastecido (a tela diz quanto falta);
- *   2. encher os potes à vontade e PESAR cada um;
+ *   2. dizer como cada pote chegou (vazio ou pesando tanto), encher e PESAR;
  *   3. bipar as embalagens usadas, já no fim;
  *   4. dizer quais zeraram e quanto sobrou nas outras.
+ *
+ * AS DUAS PESAGENS DO PASSO 2 são o que tira a suposição do caminho. Com uma
+ * só, o quanto entrou saía de "peso final menos o que o SISTEMA achava que
+ * havia" — e o sistema erra sempre que a produção consome diferente do
+ * teórico. Com as duas, é subtração de medições, e a discordância com o saldo
+ * suposto vira acerto de recipiente, com nome e movimento próprios.
  *
  * A diferença entre o que saiu das embalagens e o que entrou nos potes é
  * perda de abastecimento — gravada como movimento, sem travar nada.
@@ -70,7 +76,15 @@ type LoteBipado = {
 type Colocado =
   | { estado: 'vazio' }
   | { estado: 'erro'; mensagem: string }
-  | { estado: 'ok'; colocou: number; conteudoFinal: number }
+  | {
+      estado: 'ok'
+      /** O que havia no pote antes, medido: zero se chegou vazio. */
+      antes: number
+      colocou: number
+      conteudoFinal: number
+      /** Medido menos o que o sistema supunha. Diferente de zero = acerto. */
+      acerto: number
+    }
 
 export function AbastecimentoPage() {
   const { profile } = useAuth()
@@ -86,7 +100,18 @@ export function AbastecimentoPage() {
 
   // Passo 2 — o que a balança disse, por pote. Texto, porque o campo é texto:
   // converter cedo transforma "12," em 12 e o operador perde o que digitou.
+  /** Peso na balança DEPOIS de encher. */
   const [pesos, setPesos] = useState<Record<string, string>>({})
+  /**
+   * Peso na balança ANTES de encher, e quais chegaram vazios.
+   *
+   * É esta pesagem que tira a suposição do caminho: `colocou` vira subtração de
+   * duas medições, e a diferença entre o que a balança acusa e o que o sistema
+   * supunha aparece com nome próprio (acerto de balde) em vez de se esconder
+   * dentro do excesso no fim.
+   */
+  const [pesosAntes, setPesosAntes] = useState<Record<string, string>>({})
+  const [vazios, setVazios] = useState<Record<string, boolean>>({})
   const [taras, setTaras] = useState<Record<string, string>>({})
 
   // Passo 3
@@ -238,7 +263,13 @@ export function AbastecimentoPage() {
    * O campo é o peso BRUTO — pote e conteúdo — porque é o que o visor mostra
    * e é o único jeito de matar o erro de contar embalagens: quem esquece que
    * colocou oito e registra nove some com um pacote no estoque. A tara vem do
-   * cadastro do recipiente, e o que já havia dentro é descontado no fim.
+   * cadastro do recipiente e vale para as duas pesagens.
+   *
+   * DUAS PESAGENS, NÃO UMA. Antes o que entrou era `peso final menos o que o
+   * sistema achava que havia dentro` — e o sistema erra sempre que a produção
+   * consome diferente do teórico. Agora é subtração de duas medições, e a
+   * discordância com o sistema vira `acerto`, que a tela mostra em vez de
+   * deixar virar "os potes receberam a mais" no fim.
    */
   function colocadoNo(pote: Pote): Colocado {
     const bruto = (pesos[pote.local_id] ?? '').replace(',', '.').trim()
@@ -259,20 +290,45 @@ export function AbastecimentoPage() {
       }
     }
 
+    // O que havia antes: zero se o operador disse que chegou vazio, senão a
+    // pesagem. Sem uma das duas respostas não há o que calcular.
+    let antes: number
+    if (vazios[pote.local_id]) {
+      antes = 0
+    } else {
+      const brutoAntes = (pesosAntes[pote.local_id] ?? '').replace(',', '.').trim()
+      if (brutoAntes === '') {
+        return {
+          estado: 'erro',
+          mensagem: 'Diga se o pote chegou vazio ou pese o que havia dentro dele.',
+        }
+      }
+      const na = parseFloat(brutoAntes)
+      if (isNaN(na) || na < 0) return { estado: 'erro', mensagem: 'Peso inválido.' }
+      antes = daBancada(Math.max(0, na - tara), b.fator)
+    }
+
     const conteudoFinal = daBancada(Math.max(0, n - tara), b.fator)
-    const colocou = Number((conteudoFinal - pote.ja_tem).toFixed(6))
+    const colocou = Number((conteudoFinal - antes).toFixed(6))
 
     if (colocou < -0.0005) {
       return {
         estado: 'erro',
-        mensagem: `O pote está com ${formatQty(conteudoFinal, alvo!.unidade)} e já tinha `
-                + `${formatQty(pote.ja_tem, alvo!.unidade)}. Confira a balança ou a tara.`,
+        mensagem: `O pote terminou com ${formatQty(conteudoFinal, alvo!.unidade)} e começou com `
+                + `${formatQty(antes, alvo!.unidade)}. Confira a balança ou a tara.`,
       }
     }
     if (colocou <= 0) {
       return { estado: 'erro', mensagem: 'Este pote não recebeu nada — deixe o campo em branco.' }
     }
-    return { estado: 'ok', colocou, conteudoFinal }
+
+    return {
+      estado: 'ok',
+      antes,
+      colocou,
+      conteudoFinal,
+      acerto: Number((antes - pote.ja_tem).toFixed(6)),
+    }
   }
 
   const potesDeclarados = useMemo(() => {
@@ -281,11 +337,11 @@ export function AbastecimentoPage() {
       .map(p => ({ pote: p, res: colocadoNo(p) }))
       .filter((x): x is { pote: Pote; res: Extract<Colocado, { estado: 'ok' }> } =>
         x.res.estado === 'ok')
-  }, [alvo, pesos, taras])
+  }, [alvo, pesos, pesosAntes, vazios, taras])
 
   const temErroDePeso = useMemo(
     () => (alvo?.potes ?? []).some(p => colocadoNo(p).estado === 'erro'),
-    [alvo, pesos, taras],
+    [alvo, pesos, pesosAntes, vazios, taras],
   )
 
   const colocado = potesDeclarados.reduce((s, x) => s + x.res.colocou, 0)
@@ -419,9 +475,14 @@ export function AbastecimentoPage() {
       p_empresa_id:     profile.empresa_id,
       p_responsavel_id: profile.id,
       p_insumo_id:      alvo.insumo_id,
+      // As duas pesagens, não o resultado da subtração: quem calcula quanto
+      // entrou é o banco, e é lá que a diferença com o saldo suposto vira
+      // acerto de recipiente.
       p_potes: potesDeclarados.map(x => ({
         local_id: x.pote.local_id,
-        colocou:  x.res.colocou,
+        antes:    x.res.antes,
+        depois:   x.res.conteudoFinal,
+        medido:   vazios[x.pote.local_id] ? 'vazio' : 'pesado',
       })),
       p_lotes: lotes.map(l => ({ lote_id: l.id, sobra: sobraDe(l) ?? 0 })),
       p_justificativa: justExcesso.trim() || null,
@@ -462,7 +523,7 @@ export function AbastecimentoPage() {
   function recomecar() {
     setPasso('insumo')
     setAlvo(null)
-    setPesos({}); setTaras({}); setLotes([]); setSobras({})
+    setPesos({}); setPesosAntes({}); setVazios({}); setTaras({}); setLotes([]); setSobras({})
     setErro(''); setErroScan(''); setTravaFefo(null); setJustFefo('')
     setJustExcesso('')
     setSucesso(null)
@@ -479,9 +540,19 @@ export function AbastecimentoPage() {
   const indice = PASSOS.indexOf(passo)
 
   return (
-    <div className="p-4 max-w-lg mx-auto min-h-screen">
+    <div className="p-4 max-w-lg mx-auto">
       <div className="mb-6">
-        <h1 className="text-xl font-bold text-gray-900 dark:text-unno-text">Abastecer a produção</h1>
+        {/* Só no primeiro passo: depois de escolher o insumo, sair daqui é
+            abandonar o que já foi pesado. */}
+        {passo === 'insumo' && (
+          <button
+            onClick={() => navigate('/transferencia')}
+            className="text-sm text-brand-600 dark:text-brand-400 hover:underline mb-2"
+          >
+            ← Transferência
+          </button>
+        )}
+        <h1 className="text-xl font-bold text-gray-900 dark:text-unno-text">Reabastecer recipientes</h1>
         <p className="text-sm text-gray-500 dark:text-unno-muted mt-0.5">
           Encha os potes, pese, e depois diga quais embalagens usou
         </p>
@@ -532,7 +603,7 @@ export function AbastecimentoPage() {
                 className={`p-4 ${cheio ? 'opacity-60' : ''}`}
                 onClick={() => {
                   setAlvo(ins)
-                  setPesos({}); setTaras({}); setLotes([]); setSobras({})
+                  setPesos({}); setPesosAntes({}); setVazios({}); setTaras({}); setLotes([]); setSobras({})
                   setJustExcesso(''); setErro('')
                   setPasso('potes')
                 }}
@@ -576,11 +647,11 @@ export function AbastecimentoPage() {
             )
           })}
 
-          {!carregando && (
-            <Button variant="ghost" size="lg" fullWidth onClick={() => navigate('/transferencia/scan')}>
-              Outro tipo de transferência
-            </Button>
-          )}
+          {/* O botão "Outro tipo de transferência" morava aqui, no fim da
+              rolagem e por baixo do dock do celular. Metade da operação —
+              glucose, doce de leite, desmoldante — ficava atrás dele sem que
+              nada na tela dissesse isso. Quem escolhe o caminho agora é a
+              porta de entrada, em /transferencia. */}
         </div>
       )}
 
@@ -591,8 +662,9 @@ export function AbastecimentoPage() {
             <p className="text-xs text-gray-500 font-medium">ABASTECENDO</p>
             <p className="font-semibold text-gray-900 dark:text-unno-text">{alvo.nome}</p>
             <p className="text-xs text-gray-500 dark:text-unno-muted mt-1">
-              Encha os potes até onde der. Depois pese cada um que você mexeu — os
-              outros ficam em branco.
+              Para cada pote que você mexer: diga se ele chegou vazio ou pese o que
+              tinha dentro, encha, e pese de novo. Os que você não mexeu ficam em
+              branco.
             </p>
             {alvo.proximo && (
               <p className="text-xs text-gray-600 dark:text-unno-muted mt-2">
@@ -638,9 +710,46 @@ export function AbastecimentoPage() {
                   </div>
                 ) : (
                   <>
+                    {/* COMO O POTE CHEGOU. Duas respostas possíveis, e nenhuma
+                        delas é "cheio": cheio nunca é exato. Vazio se declara
+                        num toque; com conteúdo, pesa-se. */}
+                    <div className="flex gap-2 mb-3">
+                      <Button
+                        variant={vazios[pote.local_id] ? 'primary' : 'ghost'}
+                        size="sm" fullWidth
+                        onClick={() => {
+                          setVazios(v => ({ ...v, [pote.local_id]: true }))
+                          setPesosAntes(p => ({ ...p, [pote.local_id]: '' }))
+                        }}
+                      >
+                        Chegou vazio
+                      </Button>
+                      <Button
+                        variant={vazios[pote.local_id] === false ? 'primary' : 'ghost'}
+                        size="sm" fullWidth
+                        onClick={() => setVazios(v => ({ ...v, [pote.local_id]: false }))}
+                      >
+                        Tinha sobra
+                      </Button>
+                    </div>
+
+                    {vazios[pote.local_id] === false && (
+                      <Input
+                        label={usaTara(alvo.unidade)
+                          ? `Peso ANTES de encher, com o pote (${b.rotulo})`
+                          : `Quanto tinha ANTES de encher (${b.rotulo})`}
+                        type="number"
+                        inputMode="decimal"
+                        value={pesosAntes[pote.local_id] ?? ''}
+                        onChange={e => setPesosAntes(p => ({ ...p, [pote.local_id]: e.target.value }))}
+                        placeholder="O que voltou da produção"
+                        hint={`O sistema esperava ${formatQty(pote.ja_tem, alvo.unidade)}.`}
+                      />
+                    )}
+
                     <Input
                       label={usaTara(alvo.unidade)
-                        ? `Peso na balança, com o pote (${b.rotulo})`
+                        ? `Peso DEPOIS de encher, com o pote (${b.rotulo})`
                         : `Quanto tem dentro agora (${b.rotulo})`}
                       type="number"
                       inputMode="decimal"
@@ -648,15 +757,28 @@ export function AbastecimentoPage() {
                       onChange={e => setPesos(p => ({ ...p, [pote.local_id]: e.target.value }))}
                       placeholder="Em branco se não mexeu neste pote"
                       error={res.estado === 'erro' ? res.mensagem : undefined}
+                      className={vazios[pote.local_id] === false ? 'mt-2' : ''}
                     />
                     {res.estado === 'ok' && (
-                      <p className="text-xs text-emerald-700 dark:text-emerald-400 mt-2">
-                        Entrou <strong>{formatQty(res.colocou, alvo.unidade)}</strong> — o pote fica com{' '}
-                        {formatQty(res.conteudoFinal, alvo.unidade)}
-                        {pote.capacidade != null && res.conteudoFinal > pote.capacidade && (
-                          <> , acima da capacidade cadastrada. Tudo bem: vale o que está no pote.</>
+                      <>
+                        <p className="text-xs text-emerald-700 dark:text-emerald-400 mt-2">
+                          Entrou <strong>{formatQty(res.colocou, alvo.unidade)}</strong> — o pote fica com{' '}
+                          {formatQty(res.conteudoFinal, alvo.unidade)}
+                          {pote.capacidade != null && res.conteudoFinal > pote.capacidade && (
+                            <> , acima da capacidade cadastrada. Tudo bem: vale o que está no pote.</>
+                          )}
+                        </p>
+                        {/* O acerto sai da sombra. Antes esta diferença ia
+                            embutida no "os potes receberam a mais" do fim, e
+                            ninguém sabia de qual pote tinha vindo. */}
+                        {Math.abs(res.acerto) > 0.0005 && (
+                          <p className="text-xs text-amber-700 dark:text-amber-400 mt-1">
+                            O sistema esperava {formatQty(pote.ja_tem, alvo.unidade)} aqui dentro —
+                            acerto de <strong>{res.acerto > 0 ? '+' : '−'}
+                            {formatQty(Math.abs(res.acerto), alvo.unidade)}</strong>. Vale a balança.
+                          </p>
                         )}
-                      </p>
+                      </>
                     )}
                     {usaTara(alvo.unidade) && pote.peso_tara != null && (
                       <p className="text-[0.7rem] text-gray-400 mt-1">

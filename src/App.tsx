@@ -11,6 +11,7 @@ import { ImpressaoEtiquetaPage } from './pages/recebimento/ImpressaoEtiquetaPage
 import { ImpressaoLotesPage } from './pages/recebimento/ImpressaoLotesPage'
 import { TransferenciaPage } from './pages/transferencia/TransferenciaPage'
 import { AbastecimentoPage } from './pages/transferencia/AbastecimentoPage'
+import { EscolhaTransferenciaPage } from './pages/transferencia/EscolhaTransferenciaPage'
 import { SessoesListPage } from './pages/producao/SessoesListPage'
 import { AberturaSessaoPage } from './pages/producao/AberturaSessaoPage'
 import { PlanejadorPage } from './pages/producao/PlanejadorPage'
@@ -67,7 +68,8 @@ export default function App() {
           {/* A porta de entrada é escolher o insumo a abastecer. O caminho
               antigo, que começa bipando o lote, continua atendendo os insumos
               que vão inteiros para a produção ou são porcionados. */}
-          <Route path="transferencia" element={<AbastecimentoPage />} />
+          <Route path="transferencia" element={<EscolhaTransferenciaPage />} />
+          <Route path="transferencia/baldes" element={<AbastecimentoPage />} />
           <Route path="transferencia/scan" element={<TransferenciaPage />} />
           <Route path="reabastecimento" element={<ReabastecimentoPage />} />
           <Route path="producao" element={<SessoesListPage />} />

@@ -532,6 +532,9 @@ function TravasTab() {
   const [excecoes, setExcecoes] = useState<
     { id: string; chave: string; justificativa: string; created_at: string }[]
   >([])
+  /** Texto porque é campo de digitação; '' = desligada. */
+  const [folga, setFolga] = useState('')
+  const [salvandoFolga, setSalvandoFolga] = useState(false)
 
   useEffect(() => {
     if (!profile) return
@@ -542,6 +545,12 @@ function TravasTab() {
       .then(({ data }) => {
         setModos(Object.fromEntries((data ?? []).map(t => [t.chave, t.modo])))
       })
+    supabase
+      .from('configuracoes_sistema')
+      .select('folga_balanca_pct')
+      .eq('empresa_id', profile.empresa_id)
+      .maybeSingle()
+      .then(({ data }) => setFolga(data?.folga_balanca_pct != null ? String(data.folga_balanca_pct) : ''))
     supabase
       .from('excecoes_registradas')
       .select('id, chave, justificativa, created_at')
@@ -562,6 +571,24 @@ function TravasTab() {
       )
     setModos(m => ({ ...m, [chave]: modo }))
     setSalvando(null)
+  }
+
+  /**
+   * NULL desliga, e é o padrão.
+   *
+   * Zero e NULL se comportam igual na conta, mas só um deles diz "não use
+   * folga" em vez de "tolere nada" — e a diferença aparece no dia em que
+   * alguém for ler o cadastro para entender o que a fábrica decidiu.
+   */
+  async function salvarFolga(valor: string) {
+    if (!profile) return
+    setSalvandoFolga(true)
+    const n = parseFloat(valor.replace(',', '.'))
+    await supabase
+      .from('configuracoes_sistema')
+      .update({ folga_balanca_pct: valor.trim() === '' || isNaN(n) || n <= 0 ? null : n })
+      .eq('empresa_id', profile.empresa_id)
+    setSalvandoFolga(false)
   }
 
   return (
@@ -610,6 +637,54 @@ function TravasTab() {
             )
           })}
         </div>
+      </Card>
+
+      {/* Não é uma trava de bloqueia/avisa, mas é da mesma família: o quanto o
+          sistema tolera antes de reclamar. Por isso mora aqui, e não na aba de
+          Produção. */}
+      <Card className="p-5">
+        <h2 className="text-base font-semibold text-gray-900 dark:text-unno-text mb-1">
+          Folga de balança no abastecimento
+        </h2>
+        <p className="text-sm text-gray-500 dark:text-unno-muted mb-4">
+          <strong>Desligada</strong> (em branco), vale exato o que foi pesado: se você
+          diz que sobraram 800 g na embalagem, ficam 800 g. <strong>Ligada</strong>,
+          diferenças menores que o percentual são tratadas como ruído das duas
+          balanças, e a sobra cede para a conta fechar.
+        </p>
+        <div className="flex items-end gap-3">
+          <label className="flex-1">
+            <span className="text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-unno-muted">
+              Percentual tolerado
+            </span>
+            <input
+              type="number"
+              inputMode="decimal"
+              min={0}
+              max={100}
+              step={0.5}
+              value={folga}
+              onChange={e => setFolga(e.target.value)}
+              onBlur={e => salvarFolga(e.target.value)}
+              placeholder="Em branco = desligada"
+              className="mt-1 w-full rounded-controle border border-gray-300 dark:border-white/[.08]
+                         dark:bg-unno-bg dark:text-unno-text px-3 py-2 text-sm min-h-[44px]"
+            />
+          </label>
+          {folga.trim() !== '' && (
+            <Button
+              variant="ghost" size="md"
+              disabled={salvandoFolga}
+              onClick={() => { setFolga(''); salvarFolga('') }}
+            >
+              Desligar
+            </Button>
+          )}
+        </div>
+        <p className="text-xs text-gray-400 dark:text-unno-dim mt-2">
+          O aviso de “faltou bipar uma embalagem” continua existindo mesmo com a folga
+          desligada — ele não é sobre balança, é sobre embalagem esquecida.
+        </p>
       </Card>
 
       <Card className="p-5">
