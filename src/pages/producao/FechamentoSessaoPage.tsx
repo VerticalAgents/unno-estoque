@@ -7,6 +7,8 @@ import { Card } from '../../components/ui/Card'
 import { Input } from '../../components/ui/Input'
 import { ConfirmModal } from '../../components/ui/ConfirmModal'
 import { cancelarSessao, avisoCancelamentoSessao } from '../../lib/producao'
+import { QRScanner } from '../../components/qr/QRScanner'
+import { resolverLocalPorQr } from '../../lib/qr'
 
 /**
  * A PRODUÇÃO NÃO PESA MAIS OS RECIPIENTES.
@@ -46,7 +48,25 @@ interface StoredState {
   skuInputs: Record<string, { perdida: number; descartada_gramatura: number; peso_descartado_g: number }>
   /** Formas assadas e massa no tacho, do jeito que foram digitadas. */
   medicoes?: Record<string, { formas: string; sobra: string }>
+  /** Embalagem do fornecedor: '' = sem resposta, '0' = acabou, resto = sobrou. */
+  embalagens?: Record<string, string>
   obs: string
+}
+
+/**
+ * Uma embalagem do fornecedor que virou ponto de consumo (migration 073).
+ *
+ * O balde da cozinha sobrevive e a auditoria de sexta o corrige. Esta aqui vai
+ * para o lixo: o fechamento é a última chance de saber o que havia dentro.
+ */
+type Embalagem = {
+  local_id: string
+  nome: string
+  lote_codigo: string | null
+  conteudo: number
+  unidade: string
+  /** Falso = acabou noutra sessão e ninguém encerrou. Vale registrar do mesmo jeito. */
+  daSessao: boolean
 }
 
 function saveState(sessaoId: string, state: StoredState) {
@@ -79,6 +99,12 @@ export function FechamentoSessaoPage() {
   const [error, setError] = useState('')
   const [dataLoaded, setDataLoaded] = useState(false)
 
+  // Embalagens do fornecedor: o que existe, e o que foi respondido sobre cada.
+  const [embalagens, setEmbalagens] = useState<Embalagem[]>([])
+  const [respostas, setRespostas] = useState<Record<string, string>>({})
+  const [bipando, setBipando] = useState(false)
+  const [erroBip, setErroBip] = useState('')
+
   const medicao = (skuId: string) => medicoes[skuId] ?? { formas: '', sobra: '' }
   const numMed = (v: string) => parseFloat((v ?? '').replace(',', '.')) || 0
 
@@ -105,10 +131,61 @@ export function FechamentoSessaoPage() {
       }))
 
       if (stored?.medicoes) setMedicoes(stored.medicoes)
+      if (stored?.embalagens) setRespostas(stored.embalagens)
       if (stored?.obs) setObs(stored.obs)
       setDataLoaded(true)
     })
+
+    carregarEmbalagens()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id, profile])
+
+  /**
+   * Carrega TODAS as embalagens do fornecedor vivas, não só as desta sessão.
+   *
+   * A lista mostra as da sessão, mas a bipagem precisa reconhecer também a lata
+   * que acabou anteontem e ninguém encerrou — recusá-la seria jogar fora uma
+   * observação verdadeira.
+   */
+  async function carregarEmbalagens() {
+    if (!id || !profile) return
+
+    const [locs, doSessao] = await Promise.all([
+      supabase
+        .from('locais')
+        .select('id, nome, insumo_id, unidade_capacidade, lote:lotes!locais_origem_lote_id_fkey(codigo)')
+        .eq('empresa_id', profile.empresa_id)
+        .eq('efemero', true)
+        .eq('ativo', true),
+      supabase.from('sessoes_producao_locais').select('insumo_id').eq('sessao_id', id),
+    ])
+
+    const ids = ((locs.data ?? []) as { id: string }[]).map(l => l.id)
+    if (ids.length === 0) { setEmbalagens([]); return }
+
+    const { data: conteudos } = await supabase
+      .from('locais_lotes').select('local_id, quantidade').in('local_id', ids)
+
+    const soma = new Map<string, number>()
+    for (const c of (conteudos ?? []) as { local_id: string; quantidade: number }[]) {
+      soma.set(c.local_id, (soma.get(c.local_id) ?? 0) + Number(c.quantidade))
+    }
+    const insumosDaSessao = new Set(
+      ((doSessao.data ?? []) as { insumo_id: string }[]).map(r => r.insumo_id))
+
+    setEmbalagens(((locs.data ?? []) as unknown as {
+      id: string; nome: string; insumo_id: string; unidade_capacidade: string
+      lote: { codigo: string }[] | null
+    }[]).map(l => ({
+      local_id: l.id,
+      nome: l.nome,
+      // O embed do PostgREST vem como lista mesmo na relação para-um.
+      lote_codigo: l.lote?.[0]?.codigo ?? null,
+      conteudo: soma.get(l.id) ?? 0,
+      unidade: l.unidade_capacidade,
+      daSessao: insumosDaSessao.has(l.insumo_id),
+    })))
+  }
 
   /**
    * Guarda o que foi digitado: a conferência é feita no celular, andando pela
@@ -118,6 +195,7 @@ export function FechamentoSessaoPage() {
     newSkus: SkuRow[],
     newMedicoes: Record<string, { formas: string; sobra: string }>,
     newObs: string,
+    newEmbalagens?: Record<string, string>,
   ) => {
     if (!id || !dataLoaded) return
     const skuInputs: StoredState['skuInputs'] = {}
@@ -128,8 +206,52 @@ export function FechamentoSessaoPage() {
         peso_descartado_g: s.peso_descartado_g,
       }
     }
-    saveState(id, { skuInputs, medicoes: newMedicoes, obs: newObs })
-  }, [id, dataLoaded])
+    saveState(id, {
+      skuInputs,
+      medicoes: newMedicoes,
+      obs: newObs,
+      embalagens: newEmbalagens ?? respostas,
+    })
+  }, [id, dataLoaded, respostas])
+
+  /** '' = sem resposta · '0' = acabou · resto = o que sobrou. */
+  function responder(localId: string, valor: string) {
+    setRespostas(r => {
+      const next = { ...r, [localId]: valor }
+      persist(skus, medicoes, obs, next)
+      return next
+    })
+  }
+
+  /**
+   * A etiqueta lida vira a embalagem.
+   *
+   * `resolverLocalPorQr` já sabe que a etiqueta colada nesta embalagem é a do
+   * LOTE, e não uma etiqueta de recipiente — quando o pacote é o próprio ponto
+   * de consumo não existe segunda etiqueta para colar (migration 073).
+   */
+  async function biparEmbalagem(qr: string) {
+    setErroBip('')
+    const local = await resolverLocalPorQr<{ id: string; efemero: boolean; nome: string }>(
+      qr, 'id, efemero, nome')
+
+    if (!local) { setErroBip(`Etiqueta não reconhecida: ${qr}`); return }
+    if (!local.efemero) {
+      setErroBip(`${local.nome} é um recipiente da cozinha. Ele é pesado no reabastecimento, `
+               + 'não encerrado aqui.')
+      return
+    }
+    if (!embalagens.some(e => e.local_id === local.id)) {
+      setErroBip('Esta embalagem já foi encerrada antes.')
+      return
+    }
+    // Chega marcada como "acabou", que é o motivo de 90% das bipagens; quem
+    // quiser dizer que ainda tem troca na linha, logo abaixo.
+    responder(local.id, '0')
+  }
+
+  const respondidas = embalagens.filter(e => (respostas[e.local_id] ?? '') !== '')
+  const semResposta = embalagens.filter(e => e.daSessao && (respostas[e.local_id] ?? '') === '')
 
   function setMedicao(skuId: string, campo: 'formas' | 'sobra', valor: string) {
     setMedicoes((m) => {
@@ -190,6 +312,32 @@ export function FechamentoSessaoPage() {
         formas_assadas: formas > 0 ? Math.round(formas) : (s.multiplicador ?? null),
         massa_sobra_g: numMed(medicao(s.id).sobra) || null,
       }).eq('id', s.id)
+    }
+
+    // As embalagens do fornecedor vão ANTES do fechamento: se o fechamento
+    // falhar, a observação sobre elas continua verdadeira e já está gravada —
+    // e a embalagem que foi para o lixo não volta para ser observada de novo.
+    const itensEmbalagem = embalagens
+      .filter(e => (respostas[e.local_id] ?? '') !== '')
+      .map(e => ({
+        local_id: e.local_id,
+        restante: parseFloat((respostas[e.local_id] ?? '0').replace(',', '.')) || 0,
+      }))
+
+    if (itensEmbalagem.length > 0) {
+      const { data: emb, error: errEmb } = await supabase.rpc('registrar_embalagens_encerradas', {
+        p_sessao_id:      id,
+        p_empresa_id:     profile.empresa_id,
+        p_responsavel_id: profile.id,
+        p_itens:          itensEmbalagem,
+      })
+      const resEmb = emb as { ok: boolean; erro?: string } | null
+      if (errEmb || !resEmb?.ok) {
+        setLoading(false)
+        setShowConfirm(false)
+        setError(errEmb?.message ?? resEmb?.erro ?? 'Não foi possível registrar as embalagens.')
+        return
+      }
     }
 
     // Sem `p_locais`: a baixa dos recipientes é feita pelo consumo teórico
@@ -315,6 +463,110 @@ export function FechamentoSessaoPage() {
           <strong>auditoria de estoque</strong>, não aqui.
         </p>
       </Card>
+
+      {/* ── Embalagens do fornecedor ──────────────────────────
+          O balde da cozinha sobrevive e a auditoria de sexta o corrige. Estas
+          aqui vão para o lixo: agora é a última chance de saber o que havia
+          dentro. Por isso a pergunta é feita a quem esvaziou, no fim do dia. */}
+      {embalagens.length > 0 && (
+        <div className="mb-4">
+          <h2 className="text-sm font-semibold text-gray-700 uppercase tracking-wide mb-1">
+            Embalagens do fornecedor
+          </h2>
+          <p className="text-xs text-gray-500 mb-3">
+            As que foram para o lixo precisam ser bipadas hoje — amanhã elas não
+            existem mais para ninguém conferir. As que sobraram continuam valendo.
+          </p>
+
+          {bipando ? (
+            <div className="mb-3">
+              <QRScanner
+                onScan={qr => biparEmbalagem(qr)}
+                continuo
+                titulo="Embalagens que acabaram"
+                label={`${respondidas.length} de ${embalagens.length}`}
+                acaoConcluir={{ rotulo: 'Concluir', onClick: () => setBipando(false) }}
+                painel={
+                  <div>
+                    {erroBip && <p className="text-xs font-semibold text-red-700 mb-2">{erroBip}</p>}
+                    <div className="space-y-1">
+                      {respondidas.map(e => (
+                        <div key={e.local_id} className="flex justify-between gap-2 text-xs">
+                          <span className="text-emerald-700 font-semibold truncate">✓ {e.nome}</span>
+                          <span className="text-gray-500 shrink-0">
+                            {(respostas[e.local_id] ?? '0') === '0' ? 'acabou' : 'sobrou'}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                }
+              />
+            </div>
+          ) : (
+            <Button variant="secondary" size="lg" fullWidth onClick={() => { setErroBip(''); setBipando(true) }}
+                    className="mb-3">
+              Bipar embalagens que acabaram
+            </Button>
+          )}
+
+          {erroBip && !bipando && (
+            <p className="text-xs font-semibold text-red-700 mb-2">{erroBip}</p>
+          )}
+
+          <div className="space-y-2">
+            {embalagens.filter(e => e.daSessao || (respostas[e.local_id] ?? '') !== '').map(e => {
+              const r = respostas[e.local_id] ?? ''
+              const acabou = r === '0'
+              return (
+                <Card key={e.local_id} className="p-3">
+                  <div className="flex justify-between items-start gap-3">
+                    <div className="min-w-0">
+                      <p className="text-sm font-medium text-gray-900 truncate">{e.nome}</p>
+                      <p className="text-xs text-gray-400">
+                        {e.lote_codigo ?? '—'} · o sistema acha que há{' '}
+                        {e.conteudo.toLocaleString('pt-BR')} {e.unidade}
+                        {!e.daSessao && ' · não é desta sessão'}
+                      </p>
+                    </div>
+                    {r === '' && <span className="text-xs text-gray-400 shrink-0">sem resposta</span>}
+                  </div>
+
+                  <div className="flex gap-2 mt-2">
+                    <Button variant={acabou ? 'primary' : 'ghost'} size="sm" fullWidth
+                            onClick={() => responder(e.local_id, '0')}>
+                      Acabou
+                    </Button>
+                    <Button variant={r !== '' && !acabou ? 'primary' : 'ghost'} size="sm" fullWidth
+                            onClick={() => responder(e.local_id, r === '0' ? '' : r)}>
+                      Ainda tem
+                    </Button>
+                  </div>
+
+                  {r !== '' && !acabou && (
+                    <Input
+                      label={`Quanto sobrou (${e.unidade})`}
+                      type="number"
+                      inputMode="decimal"
+                      value={r}
+                      onChange={ev => responder(e.local_id, ev.target.value)}
+                      placeholder="Pese ou estime pelo que dá para ver"
+                      className="mt-2"
+                    />
+                  )}
+                </Card>
+              )
+            })}
+          </div>
+
+          {semResposta.length > 0 && (
+            <p className="text-xs text-gray-500 mt-2">
+              {semResposta.length} sem resposta — dá para fechar assim mesmo; elas
+              continuam disponíveis amanhã.
+            </p>
+          )}
+        </div>
+      )}
 
       {/* Resumo */}
       {fatorProdutoGlobal !== null && (
