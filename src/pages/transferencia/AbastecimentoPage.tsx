@@ -112,6 +112,15 @@ export function AbastecimentoPage() {
    */
   const [pesosAntes, setPesosAntes] = useState<Record<string, string>>({})
   const [vazios, setVazios] = useState<Record<string, boolean>>({})
+  /**
+   * Pote que o operador declarou vazio quando o sistema esperava conteúdo.
+   *
+   * Declarar vazio apaga dos livros o que estivesse ali dentro, e é um erro que
+   * só aparece semanas depois, na auditoria. Com o balde voltando pela metade
+   * virando rotina, "chegou vazio" deixa de ser o caso comum e o dedo erra
+   * mais — por isso a pergunta, em vez de só a dica na tela.
+   */
+  const [confirmarVazio, setConfirmarVazio] = useState<Pote | null>(null)
   const [taras, setTaras] = useState<Record<string, string>>({})
 
   // Passo 3
@@ -718,6 +727,9 @@ export function AbastecimentoPage() {
                         variant={vazios[pote.local_id] ? 'primary' : 'ghost'}
                         size="sm" fullWidth
                         onClick={() => {
+                          // Se o sistema espera conteúdo aqui, pergunta antes:
+                          // declarar vazio apaga o que estivesse dentro.
+                          if (pote.ja_tem > 0.0005) { setConfirmarVazio(pote); return }
                           setVazios(v => ({ ...v, [pote.local_id]: true }))
                           setPesosAntes(p => ({ ...p, [pote.local_id]: '' }))
                         }}
@@ -1154,6 +1166,33 @@ export function AbastecimentoPage() {
           </Button>
         </Card>
       )}
+
+      {/* A pergunta que evita apagar conteúdo sem querer. Não é trava: se o
+          balde está mesmo vazio, um toque resolve. */}
+      <ConfirmModal
+        open={confirmarVazio !== null}
+        title="Este balde está mesmo vazio?"
+        description={confirmarVazio && alvo
+          ? `O sistema esperava ${formatQty(confirmarVazio.ja_tem, alvo.unidade)} dentro do `
+            + `${confirmarVazio.nome}. Dizendo que ele chegou vazio, essa quantidade sai do `
+            + `estoque como acerto de recipiente.`
+          : undefined}
+        confirmLabel="Sim, estava vazio"
+        cancelLabel="Vou pesar"
+        onConfirm={() => {
+          const p = confirmarVazio!
+          setVazios(v => ({ ...v, [p.local_id]: true }))
+          setPesosAntes(x => ({ ...x, [p.local_id]: '' }))
+          setConfirmarVazio(null)
+        }}
+        onCancel={() => {
+          // "Vou pesar" já deixa o campo do peso à mostra: o próximo passo da
+          // pessoa é esse, e sem isto ela teria de tocar de novo.
+          const p = confirmarVazio!
+          setVazios(v => ({ ...v, [p.local_id]: false }))
+          setConfirmarVazio(null)
+        }}
+      />
 
       <ConfirmModal
         open={confirmar}
