@@ -32,7 +32,7 @@ interface SkuRow {
   quantidade_planejada: number
   multiplicador: number | null
   ficha_tecnica: { nome: string }
-  ficha_versao: { peso_medio_g: number | null; perda_esperada_g_forma: number | null } | null
+  ficha_versao: { peso_medio_g: number | null; perda_esperada_g_forma: number | null; rendimento_fornada: number | null } | null
   perdida: number
   descartada_gramatura: number
   peso_descartado_g: number
@@ -113,7 +113,7 @@ export function FechamentoSessaoPage() {
     Promise.all([
       supabase.from('sessoes_producao').select('codigo,data_producao').eq('id', id).single(),
       supabase.from('sessoes_producao_skus')
-        .select('*, ficha_tecnica:fichas_tecnicas(nome), ficha_versao:fichas_tecnicas_versoes(peso_medio_g, perda_esperada_g_forma)')
+        .select('*, ficha_tecnica:fichas_tecnicas(nome), ficha_versao:fichas_tecnicas_versoes(peso_medio_g, perda_esperada_g_forma, rendimento_fornada)')
         .eq('sessao_id', id),
     ]).then(([s, sk]) => {
       if (s.data) setSessao(s.data as typeof sessao)
@@ -292,10 +292,27 @@ export function FechamentoSessaoPage() {
     return null
   }
 
-  const totalPlanejado = skus.reduce((acc, s) => acc + s.quantidade_planejada, 0)
-  const totalProduzida = skus.reduce((acc, s) => acc + skuProduzida(s), 0)
-  const totalDescartado = skus.reduce((acc, s) => acc + s.perdida + s.descartada_gramatura, 0)
-  const fatorProdutoGlobal = totalPlanejado > 0 ? (totalDescartado / totalPlanejado * 100) : null
+
+  /**
+   * Os totais do que ESTA tela mede: forno e tacho.
+   *
+   * O resumo antigo somava perda de unidades, que hoje só se conhece na
+   * Pós-produção. Somar aqui o que ainda não aconteceu dava sempre zero.
+   */
+  const totaisDoForno = skus.reduce(
+    (acc, s) => {
+      const formas = numMed(medicao(s.id).formas) || (s.multiplicador ?? 0)
+      const rend = s.ficha_versao?.rendimento_fornada ?? 0
+      return {
+        formas: acc.formas + formas,
+        planejadas: acc.planejadas + (s.multiplicador ?? 0),
+        unidades: acc.unidades + formas * rend,
+        sobra: acc.sobra + numMed(medicao(s.id).sobra),
+        margem: acc.margem + formas * Number(s.ficha_versao?.perda_esperada_g_forma ?? 50),
+      }
+    },
+    { formas: 0, planejadas: 0, unidades: 0, sobra: 0, margem: 0 },
+  )
 
   const hasValidationError = skus.some((s) => skuValidation(s) !== null)
 
@@ -568,19 +585,54 @@ export function FechamentoSessaoPage() {
         </div>
       )}
 
-      {/* Resumo */}
-      {fatorProdutoGlobal !== null && (
+      {/* ── Resumo do que ESTA TELA mede ─────────────────────────
+          Aqui havia um resumo de "perda de produto", calculado a partir de
+          campos que sairam desta tela quando a desenforma virou Pos-producao.
+          Ele mostrava 0,0% em verde e "planejado de planejado" em toda sessao,
+          porque nada do que se digita aqui entrava naquela conta.
+          
+          E era pior que nao ter: 0,0% em verde parece "nao teve perda", quando
+          a verdade e que a perda ainda nem foi contada. */}
+      {totaisDoForno.formas > 0 && (
         <Card className="p-4 mb-4 bg-gray-50 border border-gray-200">
-          <h2 className="text-sm font-semibold text-gray-700 uppercase tracking-wide mb-3">Resumo</h2>
-          <div>
-            <p className="text-xs text-gray-500">Perda de produto</p>
-            <p className={`text-lg font-bold ${fatorProdutoGlobal <= 3 ? 'text-emerald-600' : fatorProdutoGlobal <= 8 ? 'text-yellow-600' : 'text-red-600'}`}>
-              {fatorProdutoGlobal.toFixed(1)}%
-            </p>
-            <p className="text-xs text-gray-400">% do planejado</p>
+          <h2 className="text-sm font-semibold text-gray-700 uppercase tracking-wide mb-3">
+            O que foi ao forno
+          </h2>
+
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <p className="text-xs text-gray-500">Formas assadas</p>
+              <p className="text-lg font-bold text-gray-900">
+                {totaisDoForno.formas}
+                {totaisDoForno.planejadas > 0 && (
+                  <span className="text-sm font-normal text-gray-400">
+                    {' '}de {totaisDoForno.planejadas}
+                  </span>
+                )}
+              </p>
+              <p className="text-xs text-gray-400">
+                {totaisDoForno.unidades > 0
+                  ? `${totaisDoForno.unidades} unidades, se nada quebrar`
+                  : 'rendimento não cadastrado'}
+              </p>
+            </div>
+
+            <div>
+              <p className="text-xs text-gray-500">Massa que sobrou</p>
+              <p className={`text-lg font-bold ${
+                totaisDoForno.sobra > totaisDoForno.margem ? 'text-amber-700' : 'text-gray-900'
+              }`}>
+                {totaisDoForno.sobra} g
+              </p>
+              <p className="text-xs text-gray-400">
+                margem esperada: {totaisDoForno.margem} g
+              </p>
+            </div>
           </div>
-          <p className="text-xs text-gray-500 mt-2 pt-2 border-t border-gray-200">
-            Unidades aproveitadas: <strong>{totalProduzida}</strong> de <strong>{totalPlanejado}</strong> planejadas
+
+          <p className="text-xs text-gray-500 mt-3 pt-3 border-t border-gray-200">
+            <strong>A quebra é contada depois</strong>, na Pós-produção, quando as formas
+            forem desenformadas — é lá que se sabe quantas unidades saíram inteiras.
           </p>
         </Card>
       )}
