@@ -69,9 +69,22 @@ lados: prateleira 12,390 + pote 0,119 = 12,509 = recebido 13,124 − consumido
 **O que falta, e é o trabalho de verdade:**
 
 1. **Ler as migrations 109, 110 e 111**, que reescreveram esse fluxo em 24/08
-   numa outra sessão de trabalho. A `110_a_balanca_manda_no_balde` é a que
-   contém o cálculo da perda. Quem escreveu isto aqui não conhece o desenho
-   novo — e opinar sem ler seria chutar.
+   numa outra sessão de trabalho.
+
+   **Atenção: a área JÁ FOI consertada na véspera, e o conserto não alcançava
+   este caso.** A `110_a_balanca_manda_no_balde` atacou três defeitos sobre *o
+   que o sistema supõe contra o que a balança diz*, e funcionou — os dois
+   `acerto_recipiente` de 0,386 e 0,094 desta mesma recarga são o mecanismo
+   novo dela agindo, separando erro de suposição do número de perda.
+
+   O que ela não questionou foi a premissa do outro lado: **escanear a
+   embalagem significa que ela foi esvaziada.** A 110 mediu melhor o que entrou
+   no pote; ninguém perguntou o que ficou na embalagem.
+
+   **É o mesmo defeito que a 102 consertou na transferência**, no fluxo
+   vizinho, três dias antes — e quem escreveu a 102 (esta sessão) não percebeu
+   que era o mesmo. A pergunta que falta é a que já existe lá: *quanto sobrou
+   na origem?*
 2. **Revisar a regra.** Ela precisa distinguir "a embalagem acabou" de "tirei o
    que cabia no pote e devolvi o resto à prateleira". Provavelmente é a mesma
    pergunta que a migration 102 resolveu para a transferência: perguntar o que
