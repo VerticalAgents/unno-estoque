@@ -186,6 +186,10 @@ export interface Local {
   capacidade_max?: number
   unidade_capacidade?: UnidadeMedida
   qr_code_fixo?: string
+  /** O conteúdo veio do desconto teórico da sessão, não de uma pesagem. */
+  conteudo_estimado?: boolean
+  /** Quando este recipiente foi pesado pela última vez. */
+  conteudo_conferido_em?: string | null
   peso_tara?: number
   ativo: boolean
   observacoes?: string

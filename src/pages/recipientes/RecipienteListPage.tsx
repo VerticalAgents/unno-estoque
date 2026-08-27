@@ -131,10 +131,30 @@ function BotaoEsgotar({ r, esgotando, esgotar }: {
   )
 }
 
-function ConteudoCell({ comp }: { comp?: Composicao }) {
+/**
+ * O conteúdo do pote, dizendo se o número foi pesado ou deduzido.
+ *
+ * O sistema sabe quanto a produção consome, mas não de qual pote saiu — ele
+ * distribui pela fila, e a fila erra. Em 27/08/2026 zerou um pote de farinha
+ * que ninguém tinha tocado, e ele passou dois dias mostrando "0 kg" com 9,930
+ * dentro. Quem olhou não tinha como desconfiar.
+ *
+ * Marcar o número como estimado não conserta a distribuição. Conserta a coisa
+ * mais importante: o chute deixa de se passar por medição.
+ */
+function ConteudoCell({ comp, local }: { comp?: Composicao; local?: Local }) {
   const total = comp?.quantidade_total ?? 0
+  const estimado = local?.conteudo_estimado === true
+  const conferido = local?.conteudo_conferido_em
+
+  // "vazio" é uma afirmação. Sem pesagem por trás, é um palpite — e é
+  // justamente o palpite que já custou dois dias de farinha invisível.
   if (total <= 0) {
-    return <span className="text-xs text-gray-400">vazio</span>
+    return estimado ? (
+      <span className="text-xs font-medium text-unno-amber">vazio, pelo cálculo</span>
+    ) : (
+      <span className="text-xs text-gray-400">vazio</span>
+    )
   }
 
   const qtd = Number(total).toLocaleString('pt-BR', { maximumFractionDigits: 3 })
@@ -142,9 +162,24 @@ function ConteudoCell({ comp }: { comp?: Composicao }) {
 
   return (
     <div className="leading-tight">
-      <span className="text-xs font-medium text-gray-900 dark:text-unno-text">
-        {qtd} {comp?.unidade_medida}
+      <span className={`text-xs font-medium ${
+        estimado ? 'text-unno-amber' : 'text-gray-900 dark:text-unno-text'
+      }`}>
+        {estimado && '≈ '}{qtd} {comp?.unidade_medida}
       </span>
+
+      {estimado ? (
+        <span className="block text-[0.65rem] text-unno-amber">
+          estimado — pese para confirmar
+        </span>
+      ) : conferido ? (
+        <span className="block text-[0.65rem] text-gray-400">
+          pesado em {new Date(conferido).toLocaleDateString('pt-BR', {
+            day: '2-digit', month: '2-digit',
+          })}
+        </span>
+      ) : null}
+
       {misturado && (
         <span className="block text-[0.65rem] font-semibold uppercase tracking-wide text-unno-amber">
           {comp!.qtd_lotes} lotes misturados
@@ -652,7 +687,7 @@ export function RecipienteListPage() {
                   <CartaoRecipiente
                     key={r.id}
                     r={r}
-                    conteudo={<ConteudoCell comp={composicao[r.id]} />}
+                    conteudo={<ConteudoCell comp={composicao[r.id]} local={r} />}
                     acoes={<AcoesTemporario r={r} esgotando={esgotando} esgotar={esgotar} navigate={navigate} />}
                   />
                 ))}
@@ -680,7 +715,7 @@ export function RecipienteListPage() {
                               : <span className="text-gray-400">—</span>}
                           </td>
                           <td className="px-4 py-2.5 text-center">
-                            <ConteudoCell comp={composicao[r.id]} />
+                            <ConteudoCell comp={composicao[r.id]} local={r} />
                           </td>
                           <td className="px-4 py-2.5 text-right">
                             <AcoesTemporario r={r} esgotando={esgotando} esgotar={esgotar} navigate={navigate} />
@@ -741,7 +776,7 @@ export function RecipienteListPage() {
                       <CartaoRecipiente
                         key={r.id}
                         r={r}
-                        conteudo={<ConteudoCell comp={composicao[r.id]} />}
+                        conteudo={<ConteudoCell comp={composicao[r.id]} local={r} />}
                         acoes={
                           <>
                             {(composicao[r.id]?.quantidade_total ?? 0) > 0 && (
@@ -780,7 +815,7 @@ export function RecipienteListPage() {
                               : <span className="text-gray-400">—</span>}
                           </td>
                           <td className="px-4 py-2.5 text-center">
-                            <ConteudoCell comp={composicao[r.id]} />
+                            <ConteudoCell comp={composicao[r.id]} local={r} />
                           </td>
                           <td className="px-4 py-2.5 text-right">
                             <div className="flex items-center justify-end gap-2">
