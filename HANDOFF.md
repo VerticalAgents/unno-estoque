@@ -45,6 +45,51 @@ acabado (SESS-0001 e 0002) são exatamente 1.438 + 3.584 — a produção dos di
 **Eles não existem fisicamente** e o reset tem de zerá-los. Vale a mesma coisa
 para os 2.558 do dia 12, se a pós-produção chegar a criá-los.
 
+### ⚠ A recarga trata como perda o que fica na embalagem
+
+**Este é o assunto para abrir a próxima sessão.** Encontrado em 27/08/2026.
+
+O Lucca estranhou que a Essência de Doce de Leite tinha pouco no sistema. O
+rastro fechou em cima de um lançamento só:
+
+| 25/08 20:13 | `perda_insumo` | **9,944 kg** |
+
+com a justificativa gravada *"Diferença entre o que saiu das embalagens e o que
+entrou nos recipientes"*.
+
+**A regra assume que a embalagem é esvaziada por inteiro.** O pote de essência
+comporta 1,5 kg e a embalagem tem 13 kg — ninguém despeja treze litros num pote
+de um e meio. O que ficou na embalagem foi contado como desperdício.
+
+**Já corrigido:** os 9,944 kg voltaram ao lote, junto com dois acertos da mesma
+recarga (0,386 e 0,094), como `ajuste_inventario`. O saldo fecha exato dos dois
+lados: prateleira 12,390 + pote 0,119 = 12,509 = recebido 13,124 − consumido
+0,615. A perda original continua no histórico, com a devolução ao lado.
+
+**O que falta, e é o trabalho de verdade:**
+
+1. **Ler as migrations 109, 110 e 111**, que reescreveram esse fluxo em 24/08
+   numa outra sessão de trabalho. A `110_a_balanca_manda_no_balde` é a que
+   contém o cálculo da perda. Quem escreveu isto aqui não conhece o desenho
+   novo — e opinar sem ler seria chutar.
+2. **Revisar a regra.** Ela precisa distinguir "a embalagem acabou" de "tirei o
+   que cabia no pote e devolvi o resto à prateleira". Provavelmente é a mesma
+   pergunta que a migration 102 resolveu para a transferência: perguntar o que
+   SOBROU na origem, em vez de deduzir.
+3. **Varrer os outros insumos** com embalagem muito maior que o pote — Essência
+   de Baunilha, Glicerina, Extrato de Alecrim, Sorbato. Se a mesma recarga
+   passou por eles, há perda fantasma lá também. Consulta boa para começar:
+
+```sql
+SELECT i.codigo, i.nome, m.codigo AS mov, mi.quantidade, m.created_at
+  FROM movimentacoes_itens mi
+  JOIN movimentacoes m ON m.id = mi.movimentacao_id
+  JOIN lotes l ON l.id = mi.lote_id
+  JOIN insumos i ON i.id = l.insumo_id
+ WHERE m.tipo = 'perda_insumo'
+ ORDER BY mi.quantidade DESC;
+```
+
 ### Pendências abertas na abertura de estoque
 
 Encontradas em 23/08 enquanto o Lucca contava. Nenhuma trava a contagem, e por
@@ -397,7 +442,13 @@ comentários — não foram editadas para não mexer em migration já aplicada.
 ## Migrations
 
 A lista viva é a própria pasta `supabase/migrations/` — os nomes dizem o que
-cada uma faz. Estamos na **098**; todas aplicadas no banco.
+cada uma faz. Estamos na **112**; todas aplicadas no banco.
+
+**Duas sessões de trabalho mexem neste repositório.** As migrations 108 a 111
+saíram de outra, em 24/08, e por isso houve colisão de número: a 112 nasceu
+como 108 e foi renumerada. **Conferir a pasta antes de numerar uma migration
+nova** — e, mais importante, gerar sempre a partir de `pg_get_functiondef`, que
+é o que salvou o conteúdo de estar errado.
 
 As que importam para o trabalho de agora:
 
