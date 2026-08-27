@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../contexts/AuthContext'
@@ -117,6 +117,20 @@ export function TransferenciaPage() {
   const [destino, setDestino] = useState<Destino | null>(null)
 
   // Alias for reembalagem compatibility
+  /**
+   * A defesa contra o leitor que dispara duas vezes.
+   *
+   * Já havia uma checagem de duplicata, mas ela lia `lotes` do estado: em duas
+   * leituras rápidas as duas rodam antes de qualquer `setLotes` gravar, as duas
+   * veem a lista velha e as duas passam. Aconteceu com a Lu, e a única saída
+   * era recomeçar a transferência inteira.
+   *
+   * Ref é síncrono: escreve e já vale para a leitura seguinte, mesmo no mesmo
+   * quadro. Aqui o estado do React chega tarde demais.
+   */
+  const idsLidos = useRef<Set<string>>(new Set())
+  const ultimaLeitura = useRef<{ qr: string; em: number }>({ qr: '', em: 0 })
+
   const lote = lotes[0] ?? null
 
   /**
@@ -202,6 +216,13 @@ export function TransferenciaPage() {
    * insumo. A conta é feita antes de o operador carregar qualquer peso.
    */
   async function adicionarLote(qr: string, justificativa?: string) {
+    // O MESMO QR duas vezes em menos de dois segundos é o leitor repetindo, não
+    // a pessoa escaneando de novo. Ninguém aponta a câmera duas vezes para a
+    // mesma etiqueta nesse intervalo — e a repetição é comum no celular.
+    const agora = Date.now()
+    if (ultimaLeitura.current.qr === qr && agora - ultimaLeitura.current.em < 2000) return
+    ultimaLeitura.current = { qr, em: agora }
+
     setScanError('')
 
     const { data: loteData } = await supabase
@@ -236,10 +257,13 @@ export function TransferenciaPage() {
 
     const novo = loteData as LoteWithInsumo
 
-    if (lotes.some(l => l.id === novo.id)) {
+    // Checado no ref e não em `lotes`: o estado do React só chega no próximo
+    // quadro, e duas leituras rápidas leriam a lista velha as duas vezes.
+    if (idsLidos.current.has(novo.id)) {
       setScanError('Este lote já foi escaneado.')
       return
     }
+    idsLidos.current.add(novo.id)
 
     const { data, error } = await supabase.rpc('validar_scan_lote', {
       p_empresa_id:    profile!.empresa_id,
@@ -284,7 +308,7 @@ export function TransferenciaPage() {
       total_com_este:   Number(resp.total_com_este ?? 0),
       volta_ao_estoque: Number(resp.volta_ao_estoque ?? 0),
     })
-    setLotes(prev => [...prev, novo])
+    setLotes(prev => prev.some(l => l.id === novo.id) ? prev : [...prev, novo])
 
     // O pacote do fornecedor não tem recipiente de destino: ele É o destino.
     // Continua aceitando mais sublotes (duas garrafas de baunilha viram dois
@@ -444,9 +468,33 @@ export function TransferenciaPage() {
     setStep('sucesso')
   }
 
+  /**
+   * Tira um lote da lista sem jogar fora o resto do trabalho.
+   *
+   * Faltava esta saída: quando o leitor repetiu, a Lu teve de recomeçar a
+   * transferência inteira. Errar a leitura é normal; recomeçar tudo por causa
+   * disso é que não.
+   */
+  function removerLote(id: string) {
+    idsLidos.current.delete(id)
+    setLotes(prev => {
+      const restam = prev.filter(l => l.id !== id)
+      // Sem nenhum lote não há o que transferir: volta para a primeira leitura.
+      if (restam.length === 0) {
+        setStep('scan_lote')
+        setValidacao(null)
+        setLocal(null)
+      }
+      return restam
+    })
+    setScanError('')
+  }
+
   function handleReset() {
     setStep('scan_lote')
     setLotes([])
+    idsLidos.current.clear()
+    ultimaLeitura.current = { qr: '', em: 0 }
     setLocal(null)
     setRo003Error('')
     setScanError('')
@@ -684,9 +732,25 @@ export function TransferenciaPage() {
             <p className="text-xs text-gray-500 font-medium mb-2">SUBLOTES ESCANEADOS</p>
             <div className="space-y-1.5 mb-3">
               {lotes.map(l => (
-                <div key={l.id} className="flex justify-between text-sm">
-                  <span className="font-mono text-gray-700">{l.codigo}</span>
-                  <span className="text-gray-600">{formatQty(l.quantidade_disponivel, l.unidade)}</span>
+                <div key={l.id} className="flex items-center justify-between gap-2 text-sm">
+                  <span className="font-mono text-gray-700 truncate">{l.codigo}</span>
+                  <span className="flex items-center gap-2 shrink-0">
+                    <span className="text-gray-600">
+                      {formatQty(l.quantidade_disponivel, l.unidade)}
+                    </span>
+                    {/* Alvo grande: quem usa isto está de luva, com o celular
+                        numa mão e o balde na outra. */}
+                    <button
+                      type="button"
+                      onClick={() => removerLote(l.id)}
+                      title="Tirar este lote da lista"
+                      aria-label={`Tirar ${l.codigo} da lista`}
+                      className="w-9 h-9 -my-1 rounded-controle text-gray-400 hover:text-red-600
+                                 hover:bg-red-50 dark:hover:bg-red-500/10 transition-colors"
+                    >
+                      ✕
+                    </button>
+                  </span>
                 </div>
               ))}
             </div>
