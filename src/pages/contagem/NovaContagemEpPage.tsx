@@ -8,7 +8,8 @@ import { Input } from '../../components/ui/Input'
 import type { ContagemInsumo, ContagemEpLocal, StatusFisico } from '../../types/contagem'
 import { bancada, daBancada, emBancada, usaTara } from '../../lib/unidades'
 import { NavegadorInsumos } from './NavegadorInsumos'
-import { ordemNatural } from '../../lib/utils'
+import { formatQty, ordemNatural } from '../../lib/utils'
+import type { UnidadeMedida } from '../../types/database.types'
 import { resolverLocalPorQr } from '../../lib/qr'
 import { avisoCancelamento, cancelarContagem } from '../../lib/contagem'
 import { ConfirmModal } from '../../components/ui/ConfirmModal'
@@ -396,6 +397,26 @@ export function NovaContagemEpPage() {
         <p className="text-xs text-gray-500 mt-0.5">
           {currentItem.insumo.codigo} · Recipientes: {totalLocais} · Escaneados: {escaneados}
         </p>
+
+        {/* O mesmo resumo do EC: o peso somado é por onde se bate o olho antes
+            de pesar pote por pote.
+
+            Aqui só o esperado, e não o "já pesado" que o EC mostra. Um pote
+            marcado como CHEIO vale a capacidade dele, que esta tela não carrega
+            — ela só é buscada ao finalizar o insumo. Um número que ignorasse
+            isso ficaria menor que a verdade sem dizer, e número errado numa
+            auditoria é pior do que número nenhum. */}
+        <div className="mt-3 pt-3 border-t border-gray-100">
+          <p className="text-[0.6rem] font-semibold uppercase tracking-[1px] text-gray-400">
+            O sistema espera, somando os recipientes
+          </p>
+          <p className="text-xl font-bold text-gray-900 tabular-nums leading-tight">
+            {formatQty(
+              locais.reduce((s, l) => s + Number(l.qtd_estado_atual ?? 0), 0),
+              unidade as UnidadeMedida,
+            )}
+          </p>
+        </div>
         {currentItem.status === 'finalizado' && (
           <p className="text-xs text-amber-700 mt-1.5">
             Já conferido. Escanear ou refazer aqui reabre este insumo.

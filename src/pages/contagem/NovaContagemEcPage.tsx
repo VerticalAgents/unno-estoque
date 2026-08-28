@@ -5,7 +5,8 @@ import { QRScanner } from '../../components/qr/QRScanner'
 import { Button } from '../../components/ui/Button'
 import { parseQRLoteCodigo } from '../../lib/qr'
 import { NavegadorInsumos } from './NavegadorInsumos'
-import { ordemNatural } from '../../lib/utils'
+import { formatQty, ordemNatural } from '../../lib/utils'
+import type { UnidadeMedida } from '../../types/database.types'
 import { avisoCancelamento, cancelarContagem } from '../../lib/contagem'
 import { ConfirmModal } from '../../components/ui/ConfirmModal'
 import type { ContagemInsumo, ContagemEcLote } from '../../types/contagem'
@@ -329,6 +330,23 @@ export function NovaContagemEcPage() {
   const tamEmb = currentItem.insumo.tamanho_embalagem
   const encontrados = lotes.filter(l => l.encontrado).length
   const totalLotes = lotes.length
+
+  /**
+   * O total esperado, e o que já foi achado.
+   *
+   * A lista diz quanto tem em cada fardo, e o cabeçalho dizia quantos fardos —
+   * mas o número que a pessoa usa para bater o olho na prateleira é a SOMA. O
+   * Lucca contando açúcar via "21 lotes esperados" e tinha de somar 21 linhas
+   * de cabeça para saber se aquilo parecia certo.
+   *
+   * Somar `saldoAtual` e não `qtd_lote`: é o mesmo número que cada linha
+   * mostra, e numa contagem que fica dias aberta a fotografia do início
+   * envelhece.
+   */
+  const totalEsperado = lotes.reduce((s, l) => s + saldoAtual(l), 0)
+  const totalEncontrado = lotes
+    .filter(l => l.encontrado)
+    .reduce((s, l) => s + saldoAtual(l), 0)
   const finalizados = itens.filter(i => i.status === 'finalizado').length
   const conferidos = finalizados
   const faltamConferir = itens.length - finalizados
@@ -376,6 +394,30 @@ export function NovaContagemEcPage() {
         <p className="text-xs text-gray-500 mt-0.5">
           {currentItem.insumo.codigo} · Lotes esperados: {totalLotes} · Escaneados: {encontrados}
         </p>
+
+        {/* O peso somado, que é por onde se bate o olho. Grande e tabular: são
+            dois números para comparar de relance, um embaixo do outro. */}
+        <div className="mt-3 pt-3 border-t border-gray-100 flex items-end justify-between gap-4">
+          <div>
+            <p className="text-[0.6rem] font-semibold uppercase tracking-[1px] text-gray-400">
+              O sistema espera
+            </p>
+            <p className="text-xl font-bold text-gray-900 tabular-nums leading-tight">
+              {formatQty(totalEsperado, currentItem.insumo.unidade_medida as UnidadeMedida)}
+            </p>
+          </div>
+          <div className="text-right">
+            <p className="text-[0.6rem] font-semibold uppercase tracking-[1px] text-gray-400">
+              Já escaneado
+            </p>
+            <p className={`text-xl font-bold tabular-nums leading-tight ${
+              encontrados > 0 ? 'text-brand-700' : 'text-gray-300'
+            }`}>
+              {formatQty(totalEncontrado, currentItem.insumo.unidade_medida as UnidadeMedida)}
+            </p>
+          </div>
+        </div>
+
         {currentItem.status === 'finalizado' && (
           <p className="text-xs text-amber-700 mt-1.5">
             Já conferido. Escanear ou desmarcar aqui reabre este insumo.
