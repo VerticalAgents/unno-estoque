@@ -45,6 +45,16 @@ function saldoAtual(l: LoteEsperado): number {
 }
 
 /**
+ * O que este lote tem, segundo a contagem.
+ *
+ * Quem declarou um número manda; quem só bipou está confirmando o do sistema.
+ * `null` não é zero — é "não declarei", e por isso o `??` e não um `||`.
+ */
+function contado(l: LoteEsperado): number {
+  return l.qtd_contada ?? saldoAtual(l)
+}
+
+/**
  * Quanto cabe na embalagem cheia.
  *
  * O tamanho vem do cadastro do insumo. Quando o lote nasceu de uma embalagem
@@ -94,6 +104,13 @@ export function NovaContagemEcPage() {
   /** Qual saída está esperando confirmação — as duas usam o modal do sistema. */
   const [confirmando, setConfirmando] = useState<'encerrar' | 'cancelar' | null>(null)
   const [lotes, setLotes] = useState<LoteEsperado[]>([])
+  /**
+   * O que está sendo digitado no campo de quantidade, por lote.
+   *
+   * Texto, e não número: converter cedo transforma "12," em 12 e a pessoa
+   * perde a vírgula no meio da digitação.
+   */
+  const [qtdDigitada, setQtdDigitada] = useState<Record<string, string>>({})
   const [loading, setLoading] = useState(true)
   const [scanError, setScanError] = useState('')
   const [saving, setSaving] = useState(false)
@@ -193,8 +210,25 @@ export function NovaContagemEcPage() {
   /** Marcado por engano tem volta — antes não tinha. */
   async function desmarcarLote(loteId: string) {
     await reabrirSeConferido()
-    await supabase.from('contagem_ec_lotes').update({ encontrado: false }).eq('id', loteId)
-    setLotes(prev => prev.map(l => (l.id === loteId ? { ...l, encontrado: false } : l)))
+    await supabase.from('contagem_ec_lotes')
+      .update({ encontrado: false, qtd_contada: null }).eq('id', loteId)
+    setLotes(prev => prev.map(l =>
+      (l.id === loteId ? { ...l, encontrado: false, qtd_contada: null } : l)))
+  }
+
+  /**
+   * "Contei, e tem outra quantidade."
+   *
+   * `null` devolve o lote ao estado de só-bipado: o saldo do sistema vale.
+   * Salva a cada dígito, como o resto da tela — contagem que perde o que foi
+   * digitado é contagem refeita.
+   */
+  async function declararQtd(loteId: string, valor: number | null) {
+    await reabrirSeConferido()
+    await supabase.from('contagem_ec_lotes')
+      .update({ qtd_contada: valor, encontrado: true }).eq('id', loteId)
+    setLotes(prev => prev.map(l =>
+      (l.id === loteId ? { ...l, qtd_contada: valor, encontrado: true } : l)))
   }
 
   // Carrega lotes do insumo atual
@@ -273,7 +307,10 @@ export function NovaContagemEcPage() {
     // fotografia do início. E recalcula o teórico junto, senão o resumo
     // compararia épocas diferentes e acusaria divergência onde não há: numa
     // contagem aberta há dias, qualquer transferência viraria "falta".
-    const qtdFisica = lotes.filter(l => l.encontrado).reduce((s, l) => s + saldoAtual(l), 0)
+    // `contado` e não `saldoAtual`: quem declarou um número na mão manda sobre
+    // o do sistema, senão o resumo da contagem mostraria o teórico de novo e
+    // a divergência que a pessoa acabou de registrar sumiria do relatório.
+    const qtdFisica = lotes.filter(l => l.encontrado).reduce((s, l) => s + contado(l), 0)
     const qtdTeorica = lotes.reduce((s, l) => s + saldoAtual(l), 0)
 
     await supabase.from('contagem_insumos').update({
@@ -346,7 +383,9 @@ export function NovaContagemEcPage() {
   const totalEsperado = lotes.reduce((s, l) => s + saldoAtual(l), 0)
   const totalEncontrado = lotes
     .filter(l => l.encontrado)
-    .reduce((s, l) => s + saldoAtual(l), 0)
+    .reduce((s, l) => s + contado(l), 0)
+  const divergencia = Number((totalEncontrado - totalEsperado).toFixed(3))
+  const tudoBipado = encontrados === totalLotes && totalLotes > 0
   const finalizados = itens.filter(i => i.status === 'finalizado').length
   const conferidos = finalizados
   const faltamConferir = itens.length - finalizados
@@ -408,7 +447,7 @@ export function NovaContagemEcPage() {
           </div>
           <div className="text-right">
             <p className="text-[0.6rem] font-semibold uppercase tracking-[1px] text-gray-400">
-              Já escaneado
+              Você contou
             </p>
             <p className={`text-xl font-bold tabular-nums leading-tight ${
               encontrados > 0 ? 'text-brand-700' : 'text-gray-300'
@@ -417,6 +456,22 @@ export function NovaContagemEcPage() {
             </p>
           </div>
         </div>
+
+        {/* A conta só fecha quando tudo foi bipado: com metade da prateleira
+            lida, "faltam 80 kg" é o que ainda não passou pela câmera, não uma
+            divergência. Dizer isso antes da hora só assusta. */}
+        {tudoBipado && Math.abs(divergencia) > 0.0005 && (
+          <p className="mt-2 text-xs font-semibold text-amber-700">
+            {divergencia > 0 ? 'Sobrou ' : 'Faltou '}
+            {formatQty(Math.abs(divergencia), currentItem.insumo.unidade_medida as UnidadeMedida)}
+            {' '}em relação ao que o sistema esperava.
+          </p>
+        )}
+        {tudoBipado && Math.abs(divergencia) <= 0.0005 && (
+          <p className="mt-2 text-xs font-semibold text-emerald-700">
+            Bateu com o sistema.
+          </p>
+        )}
 
         {currentItem.status === 'finalizado' && (
           <p className="text-xs text-amber-700 mt-1.5">
@@ -431,12 +486,13 @@ export function NovaContagemEcPage() {
           <div
             key={lote.id}
             className={[
-              'flex items-center justify-between px-3 py-2 rounded-lg border text-sm',
+              'px-3 py-2 rounded-lg border text-sm',
               lote.encontrado
                 ? 'bg-emerald-50 border-emerald-200'
                 : 'bg-gray-50 border-gray-200',
             ].join(' ')}
           >
+            <div className="flex items-center justify-between">
             <div className="min-w-0">
               <span className={lote.encontrado ? 'text-emerald-800 font-medium' : 'text-gray-600'}>
                 {lote.lote_codigo}
@@ -466,6 +522,70 @@ export function NovaContagemEcPage() {
               </button>
             ) : (
               <span className="text-xs text-gray-400">Pendente</span>
+            )}
+            </div>
+
+            {/* "Bipei, mas tem outra quantidade."
+                Só aparece depois de bipar: antes disso a pergunta é se o lote
+                está lá, e responder quanto tem num lote que não se achou não
+                quer dizer nada. Fica fechado por padrão — confirmar o número
+                do sistema é o caso comum, e um campo aberto em cada linha
+                convida a digitar onde não precisa. */}
+            {lote.encontrado && (
+              <div className="mt-2 pt-2 border-t border-emerald-200/70">
+                {lote.qtd_contada === null ? (
+                  <button
+                    onClick={() => void declararQtd(lote.id, saldoAtual(lote))}
+                    className="text-xs text-emerald-800 underline underline-offset-2"
+                  >
+                    Tem outra quantidade?
+                  </button>
+                ) : (
+                  <div className="flex items-center gap-2">
+                    <label className="text-xs text-emerald-900 shrink-0">Contei</label>
+                    <input
+                      type="number"
+                      inputMode="decimal"
+                      step="any"
+                      autoFocus
+                      value={qtdDigitada[lote.id] ?? String(lote.qtd_contada)}
+                      onChange={e => {
+                        const txt = e.target.value
+                        setQtdDigitada(v => ({ ...v, [lote.id]: txt }))
+                        const n = parseFloat(txt.replace(',', '.'))
+                        if (!isNaN(n) && n >= 0) void declararQtd(lote.id, n)
+                      }}
+                      className="w-24 px-2 py-1 rounded-controle border border-emerald-300 bg-white
+                                 text-sm tabular-nums focus:outline-none focus:ring-2 focus:ring-emerald-400"
+                    />
+                    <span className="text-xs text-emerald-900">
+                      {currentItem.insumo.unidade_medida}
+                    </span>
+                    <button
+                      onClick={() => {
+                        setQtdDigitada(v => { const n = { ...v }; delete n[lote.id]; return n })
+                        void declararQtd(lote.id, null)
+                      }}
+                      className="ml-auto text-xs text-gray-500 hover:underline shrink-0"
+                    >
+                      cancelar
+                    </button>
+                  </div>
+                )}
+
+                {lote.qtd_contada !== null
+                  && Math.abs(lote.qtd_contada - saldoAtual(lote)) > 0.0005 && (
+                  <p className="mt-1 text-xs font-semibold text-amber-700">
+                    {lote.qtd_contada > saldoAtual(lote) ? '+' : '−'}
+                    {formatQty(
+                      Math.abs(lote.qtd_contada - saldoAtual(lote)),
+                      currentItem.insumo.unidade_medida as UnidadeMedida,
+                    )}
+                    {' '}em relação ao sistema
+                    {lote.qtd_contada === 0 && ' · vai ficar esgotado'}
+                  </p>
+                )}
+              </div>
             )}
           </div>
         ))}

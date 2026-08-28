@@ -37,6 +37,14 @@ export interface ContagemEcLote {
   lote_codigo: string
   qtd_lote: number
   encontrado: boolean
+  /**
+   * Quanto a pessoa contou neste lote (migration 115).
+   *
+   * `null` = não declarou número, e o saldo do sistema fica como está — é o
+   * que uma bipada sozinha significa. Zero é afirmação: a embalagem está
+   * vazia, e o lote esgota.
+   */
+  qtd_contada: number | null
   created_at: string
 }
 
