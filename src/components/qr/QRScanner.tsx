@@ -255,8 +255,17 @@ export function QRScanner({
   // ── Lendo: camada em tela cheia ─────────────────────────────
 
   if (lendo) {
+    // DEITADO, O CELULAR VIRA DUAS COLUNAS.
+    //
+    // Empilhado, um aparelho deitado tem ~390px de altura para caber mira,
+    // painel e botões — e ainda sobra tela vazia dos dois lados. Lado a lado,
+    // a mira fica à esquerda e a lista à direita, com a altura inteira.
+    //
+    // Travar o giro por código não é opção: o Safari do iPhone não implementa
+    // `screen.orientation.lock`, e no iPhone é onde isto roda.
     return (
-      <div className="fixed inset-0 z-50 bg-black flex flex-col">
+      <div className="fixed inset-0 z-50 bg-black flex flex-col landscape:flex-row">
+        <div className="flex flex-col min-h-0 landscape:flex-1 landscape:min-w-0">
         {/* Cabeçalho: o que escanear, e o que é. Fica no fluxo (não absoluto)
             para o painel poder crescer sem cobrir a mira. */}
         <div className="shrink-0 px-4 pt-4 pb-3 flex items-start justify-between gap-3">
@@ -287,6 +296,12 @@ export function QRScanner({
         <div className="flex-1 min-h-0 flex items-center justify-center overflow-hidden">
           <div id={containerId.current} className="w-full max-w-md" />
         </div>
+        </div>
+
+        {/* A coluna de leitura: some no retrato (é só o resto da pilha) e vira
+            a metade direita quando o aparelho está deitado. */}
+        <div className="flex flex-col min-h-0 landscape:w-[44%] landscape:max-w-sm
+                        landscape:overflow-y-auto landscape:pt-4">
 
         {/* Confirmação da última leitura, em modo contínuo. */}
         {continuo && ultimoOk && (
@@ -299,7 +314,7 @@ export function QRScanner({
 
         {/* Painel de quem chamou: a lista que se marca sozinha. */}
         {painel && (
-          <div className="shrink-0 max-h-[32vh] overflow-y-auto mx-4 mb-2 rounded-xl bg-white/95 p-3">
+          <div className="shrink-0 max-h-[32vh] landscape:max-h-none landscape:shrink overflow-y-auto mx-4 mb-2 rounded-xl bg-white/95 p-3">
             {painel}
           </div>
         )}
@@ -342,6 +357,7 @@ export function QRScanner({
           >
             Digitar código
           </button>
+        </div>
         </div>
       </div>
     )

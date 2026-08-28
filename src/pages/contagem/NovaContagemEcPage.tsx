@@ -111,6 +111,16 @@ export function NovaContagemEcPage() {
    * perde a vírgula no meio da digitação.
    */
   const [qtdDigitada, setQtdDigitada] = useState<Record<string, string>>({})
+  /**
+   * O último lote lido, para o painel da câmera falar dele.
+   *
+   * A câmera é uma camada por cima de tudo: quem está bipando não vê a lista
+   * da página, vê o painel. O campo de quantidade existia só na lista, e por
+   * isso o Lucca bipou e "continuou a mesma tela" — a pergunta estava atrás da
+   * câmera. Ela tem de aparecer no instante em que a pessoa está com a
+   * embalagem na mão, que é o único momento em que ela sabe a resposta.
+   */
+  const [ultimoLido, setUltimoLido] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
   const [scanError, setScanError] = useState('')
   const [saving, setSaving] = useState(false)
@@ -236,6 +246,8 @@ export function NovaContagemEcPage() {
 
   useEffect(() => {
     if (!currentItem) return
+    // Trocou de insumo: o destaque do último lido é do insumo anterior.
+    setUltimoLido(null)
     supabase
       .from('contagem_ec_lotes')
       .select('*, lote:lotes(quantidade_recebida, quantidade_disponivel, observacoes, embalagem_aberta)')
@@ -297,6 +309,7 @@ export function NovaContagemEcPage() {
       .eq('id', match.id)
 
     setLotes(prev => prev.map(l => l.id === match.id ? { ...l, encontrado: true } : l))
+    setUltimoLido(match.id)
   }
 
   async function finalizarInsumo() {
@@ -611,6 +624,80 @@ export function NovaContagemEcPage() {
               {scanError && (
                 <p className="text-xs font-semibold text-red-700 mb-2">{scanError}</p>
               )}
+
+              {/* O lote que acabou de ser lido, com a pergunta da quantidade.
+                  Fica aqui e não só na lista de baixo porque a câmera cobre a
+                  tela: é aqui que a pessoa está olhando, com a embalagem na
+                  mão. */}
+              {(() => {
+                const l = lotes.find(x => x.id === ultimoLido)
+                if (!l) return null
+                const dif = l.qtd_contada === null ? 0 : l.qtd_contada - saldoAtual(l)
+                return (
+                  <div className="mb-2 rounded-lg bg-emerald-50 border border-emerald-300 p-2.5">
+                    <div className="flex items-baseline justify-between gap-2">
+                      <span className="text-xs font-semibold text-emerald-900 truncate">
+                        ✓ {l.lote_codigo}
+                      </span>
+                      <span className="text-xs text-emerald-700 shrink-0 tabular-nums">
+                        sistema: {saldoAtual(l)} {currentItem.insumo.unidade_medida}
+                      </span>
+                    </div>
+
+                    {l.qtd_contada === null ? (
+                      <button
+                        onClick={() => void declararQtd(l.id, saldoAtual(l))}
+                        className="mt-1.5 w-full rounded-controle border border-emerald-400 bg-white
+                                   py-2 text-xs font-semibold uppercase tracking-wide text-emerald-800"
+                      >
+                        Tem outra quantidade?
+                      </button>
+                    ) : (
+                      <div className="mt-1.5 flex items-center gap-2">
+                        <span className="text-xs text-emerald-900 shrink-0">Contei</span>
+                        <input
+                          type="number"
+                          inputMode="decimal"
+                          step="any"
+                          autoFocus
+                          value={qtdDigitada[l.id] ?? String(l.qtd_contada)}
+                          onChange={e => {
+                            const txt = e.target.value
+                            setQtdDigitada(v => ({ ...v, [l.id]: txt }))
+                            const n = parseFloat(txt.replace(',', '.'))
+                            if (!isNaN(n) && n >= 0) void declararQtd(l.id, n)
+                          }}
+                          className="w-24 rounded-controle border border-emerald-400 bg-white px-2 py-1.5
+                                     text-sm tabular-nums focus:outline-none focus:ring-2 focus:ring-emerald-400"
+                        />
+                        <span className="text-xs text-emerald-900">
+                          {currentItem.insumo.unidade_medida}
+                        </span>
+                        <button
+                          onClick={() => {
+                            setQtdDigitada(v => { const n = { ...v }; delete n[l.id]; return n })
+                            void declararQtd(l.id, null)
+                          }}
+                          className="ml-auto text-xs text-gray-500 shrink-0"
+                        >
+                          cancelar
+                        </button>
+                      </div>
+                    )}
+
+                    {Math.abs(dif) > 0.0005 && (
+                      <p className="mt-1 text-xs font-semibold text-amber-700">
+                        {dif > 0 ? '+' : '−'}
+                        {formatQty(Math.abs(dif),
+                          currentItem.insumo.unidade_medida as UnidadeMedida)}
+                        {' '}em relação ao sistema
+                        {l.qtd_contada === 0 && ' · vai ficar esgotado'}
+                      </p>
+                    )}
+                  </div>
+                )
+              })()}
+
               <div className="space-y-1">
                 {lotes.map(lote => (
                   <div key={lote.id} className="flex items-center justify-between gap-2 text-xs">
@@ -622,8 +709,12 @@ export function NovaContagemEcPage() {
                         </span>
                       )}
                     </span>
-                    <span className="text-gray-400 shrink-0">
-                      {saldoAtual(lote)} {currentItem.insumo.unidade_medida}
+                    <span className={`shrink-0 tabular-nums ${
+                      lote.qtd_contada !== null
+                      && Math.abs(lote.qtd_contada - saldoAtual(lote)) > 0.0005
+                        ? 'font-semibold text-amber-700' : 'text-gray-400'
+                    }`}>
+                      {contado(lote)} {currentItem.insumo.unidade_medida}
                     </span>
                   </div>
                 ))}
