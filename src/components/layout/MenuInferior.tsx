@@ -1,8 +1,16 @@
 import { useEffect, useRef } from 'react'
-import { NavLink, useLocation } from 'react-router-dom'
+import { NavLink, useLocation, useNavigate } from 'react-router-dom'
 import { useAuth } from '../../contexts/AuthContext'
 import { canAccess } from '../../lib/permissions'
 import { gruposNav, itemDashboard, type NavItem } from './Sidebar'
+
+/** Os mesmos rótulos curtos do bloco de usuário do computador. */
+const PAPEIS: Record<string, string> = {
+  admin: 'Admin',
+  gestao: 'Gestão',
+  producao: 'Produção',
+  compras: 'Compras',
+}
 
 /**
  * O "Mais" da barra de baixo.
@@ -48,8 +56,9 @@ const FRACAO_PARA_FECHAR = 0.3
 const VELOCIDADE_PARA_FECHAR = 0.5
 
 export function MenuInferior({ aberto, onFechar }: { aberto: boolean; onFechar: () => void }) {
-  const { profile, permissoes } = useAuth()
+  const { profile, permissoes, logout } = useAuth()
   const { pathname } = useLocation()
+  const navigate = useNavigate()
   const painelRef = useRef<HTMLDivElement>(null)
   const fundoRef = useRef<HTMLDivElement>(null)
 
@@ -145,6 +154,12 @@ export function MenuInferior({ aberto, onFechar }: { aberto: boolean; onFechar: 
     }
   }, [aberto, onFechar])
 
+  async function sair() {
+    onFechar()
+    await logout()
+    navigate('/login')
+  }
+
   if (!aberto) return null
 
   const papel = profile?.papel ?? 'producao'
@@ -237,6 +252,48 @@ export function MenuInferior({ aberto, onFechar }: { aberto: boolean; onFechar: 
               </div>
             </div>
           ))}
+
+          {/* Quem está usando, e como sair.
+              Existia só no avatar do cabeçalho — um círculo com a inicial, sem
+              rótulo, e o nome escondido em tela menor que 640px. No celular
+              ninguém procura ali: procura no menu. A Lu não achou como sair. */}
+          <div className="pt-1 border-t border-gray-100 dark:border-white/[.06]">
+            <p className="text-[0.6rem] font-semibold uppercase tracking-[1.5px] text-gray-400 dark:text-unno-dim mb-2 pt-4">
+              Conta
+            </p>
+
+            <div className="flex items-center gap-3 px-1 pb-3">
+              <span className="w-10 h-10 shrink-0 rounded-full bg-brand-400/20 border border-brand-400/30
+                               flex items-center justify-center">
+                <span className="font-display text-sm font-bold text-brand-700 dark:text-brand-300">
+                  {profile?.nome?.[0]?.toUpperCase() ?? '?'}
+                </span>
+              </span>
+              <div className="min-w-0">
+                <p className="text-sm font-medium text-gray-900 dark:text-unno-text truncate">
+                  {profile?.nome ?? '—'}
+                </p>
+                <p className="text-xs text-gray-500 dark:text-unno-muted truncate">
+                  {PAPEIS[profile?.papel ?? ''] ?? profile?.papel}
+                  {profile?.email ? ` · ${profile.email}` : ''}
+                </p>
+              </div>
+            </div>
+
+            {/* Alvo grande: quem sai do sistema está de pé, com a mão suja. */}
+            <button
+              onClick={sair}
+              className="w-full flex items-center justify-center gap-2 rounded-2xl py-3.5
+                         bg-gray-50 dark:bg-white/[.04]
+                         text-[0.7rem] font-semibold uppercase tracking-[1px] text-destructive
+                         active:bg-gray-100 dark:active:bg-white/[.08] transition-colors"
+            >
+              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 9V5.25A2.25 2.25 0 0013.5 3h-6a2.25 2.25 0 00-2.25 2.25v13.5A2.25 2.25 0 007.5 21h6a2.25 2.25 0 002.25-2.25V15M12 9l-3 3m0 0l3 3m-3-3h12.75" />
+              </svg>
+              Sair da conta
+            </button>
+          </div>
         </div>
       </div>
     </div>

@@ -112,11 +112,29 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     await loadPermissoes(profile.empresa_id)
   }
 
+  /**
+   * Sair. A ordem aqui não é detalhe.
+   *
+   * O estado local é limpo ANTES de falar com o servidor, e `idAtual` volta a
+   * ser nulo junto. Esperar a rede primeiro deixava dois buracos numa fábrica
+   * com wi-fi irregular: se `signOut` demorasse, a tela ficava parada como se o
+   * toque não tivesse acontecido; se falhasse, a pessoa continuava logada sem
+   * nenhum aviso.
+   *
+   * `idAtual` é o que faz `aplicarSessao` ignorar sessão repetida. Sem zerá-lo
+   * aqui, uma saída que falhasse na rede deixaria o id antigo guardado — e o
+   * próximo login DA MESMA PESSOA seria tratado como "nada mudou", com o app
+   * preso na tela de carregamento.
+   *
+   * O erro do `signOut` é engolido de propósito: o token expira sozinho, e não
+   * há nada de útil a fazer com quem já saiu da tela.
+   */
   async function logout() {
-    await supabase.auth.signOut()
+    idAtual.current = null
     setUser(null)
     setProfile(null)
     setPermissoes({})
+    try { await supabase.auth.signOut() } catch { /* já saiu daqui */ }
   }
 
   return (

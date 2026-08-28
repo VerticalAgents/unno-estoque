@@ -61,6 +61,11 @@ export function BlocoUsuario({ darkMode, paraCima = false, largo = false, classN
         <button
           type="button"
           onClick={() => setAberto(a => !a)}
+          // Em tela menor que 640px sobra só a inicial num círculo: sem rótulo,
+          // ninguém adivinha que dali se sai do sistema. No celular a saída de
+          // verdade é a do menu de baixo; aqui o rótulo é o mínimo.
+          aria-label="Sua conta e sair"
+          title="Sua conta"
           className={[
             'flex items-center gap-2 pl-1.5 pr-2 py-1.5 rounded-full min-w-0 h-10',
             'hover:bg-accent hover:text-accent-foreground transition-colors',
