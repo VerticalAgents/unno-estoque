@@ -6,7 +6,7 @@
 > **As regras que não mudam estão no `CLAUDE.md`** — convenções, armadilhas
 > conhecidas, regras de negócio, como aplicar migration. Não repetir aqui.
 
-**Última atualização:** 27/08/2026
+**Última atualização:** 28/08/2026
 
 ---
 
@@ -44,6 +44,78 @@ acabado (SESS-0001 e 0002) são exatamente 1.438 + 3.584 — a produção dos di
 10 e 11. O Lucca confirmou que tudo que a semana produziu, a semana vendeu.
 **Eles não existem fisicamente** e o reset tem de zerá-los. Vale a mesma coisa
 para os 2.558 do dia 12, se a pós-produção chegar a criá-los.
+
+### ⚠ As duas balanças não fecham, e o sistema dá dois nomes opostos a isso
+
+**Este é o assunto para retomar.** Diagnosticado em 28/08/2026, durante a
+auditoria física do Lucca. **É UM defeito só, não dois** — e foi ele quem
+enxergou isso, perguntando de onde vinha um fardo de "25,124 kg".
+
+No `registrar_abastecimento`, o que saiu das embalagens (declarado) quase nunca
+bate com o que a balança do pote mediu. A diferença ganha dois destinos, e o que
+decide é só o **sinal**:
+
+| A balança do pote acusa | O sistema escreve | Onde vai parar |
+|---|---|---|
+| **menos** do que as embalagens deram | `perda_insumo` | vira desperdício |
+| **mais** do que as embalagens deram | "a embalagem tinha mais" | sobe `quantidade_recebida` |
+
+Nenhum dos dois é o nome certo, que seria *"as duas balanças não fecharam"*. E o
+ajuste do lado de cima **só sobe, nunca desce** — o erro se acumula numa direção.
+
+**Os 47 kg de perda fantasma (migration 113) e os fardos com recebido inflado
+são o mesmo defeito, vistos de lados diferentes.** A 113 consertou só a metade
+de baixo, e só a parte que vinha de "Zerou" sem querer.
+
+#### Os dois casos medidos, que mostram a diferença de escala
+
+**Açúcar, 27/08 15:14 (MOV-0219) — buraco de verdade.** Pote G Açúcar #1, duas
+embalagens bipadas (9/18 e 15/18). A balança disse 14,445 kg; o declarado dava
+10,986. Faltaram **3,459 kg = 31%**. Justificativa gravada: *"Tudo ok"*. O
+sistema repartiu entre os dois lotes: 9/18 virou "recebeu 11,893" e 15/18
+"recebeu 11,566" — de fardos de 10 kg. Provável embalagem despejada sem bipar.
+
+**Farinha, 27/08 15:00 (MOV-0218) — ruído honesto.** Dois potes, dois fardos
+(3/6 e 6/6). A balança disse 20,165 kg; o declarado dava 20,000. Diferença de
+**165 g = 0,8%** — duas balanças medindo a mesma coisa, que é a regra da casa.
+Rateada como 41 g e 124 g, virou o "fardo de 25,124 kg" que o Lucca estranhou.
+
+**A lição das duas juntas:** o mesmo mecanismo trata 0,8% e 31% igual.
+
+#### O caminho, quando retomar
+
+1. **A folga de balança existe e está DESLIGADA.**
+   `configuracoes_sistema.folga_balanca_pct`, com tela em Configurações. A 110 a
+   fez nascer NULL de propósito ("vale exato o que foi pesado"). Em 1%, a
+   farinha teria passado batido e o açúcar continuaria sendo pego.
+   **É decisão do Lucca, e ele ainda não respondeu qual número quer.**
+2. **Excesso grande não é "a embalagem tinha mais".** Precisa de destino
+   próprio — uma entrada sem origem conhecida, que não suje
+   `quantidade_recebida`. Hoje suja, e é isso que faz a tela de contagem dizer
+   "já saíram 6,566 de 11,566" de um fardo de 10 kg.
+3. **Os lotes já sujos.** A consulta que os encontra:
+
+```sql
+SELECT i.codigo, l.codigo, i.tamanho_embalagem, l.quantidade_recebida,
+       round(l.quantidade_recebida - i.tamanho_embalagem, 3) AS a_mais
+  FROM lotes l JOIN insumos i ON i.id = l.insumo_id
+ WHERE i.tamanho_embalagem > 0
+   AND l.quantidade_recebida > i.tamanho_embalagem + 0.001
+ ORDER BY (l.quantidade_recebida / i.tamanho_embalagem) DESC;
+```
+
+Em 28/08 dava 25 lotes. Acima de 10%: INS001-0001.9/18 (+1,893),
+INS012-0001.5/12 (+1,635), INS001-0001.15/18 (+1,566), INS016-0001.3/4 (+0,126),
+INS012-0001.4/12 (+0,996). O resto está abaixo de 3% e é ruído de balança.
+
+**Cuidado ao corrigir:** baixar `quantidade_recebida` de volta para o tamanho do
+fardo deixaria o lote devendo quantidade a si mesmo — do 9/18 saíram 11,893 kg
+de verdade, para dentro dos potes. O excedente precisa de outro lugar para
+morar, não de ser apagado. É o item 2.
+
+**Os cinco lançamentos de perda fantasma** (farinha 19,248 · açúcar invertido
+6,936 · cobertura ao leite 5,242 · açúcar refinado 3,940 · ovo em pó 2,000)
+seguem de pé, esperando os números que a auditoria de 28/08 levantou na mão.
 
 ### A recarga dava como lixo o que voltava para a prateleira
 
