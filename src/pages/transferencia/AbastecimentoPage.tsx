@@ -72,6 +72,18 @@ type LoteBipado = {
   aberto: boolean
 }
 
+/**
+ * O que foi feito com a embalagem depois de encher os potes.
+ *
+ * As três dizem coisas diferentes, e a diferença é o que separa saldo de perda:
+ *
+ *   nao_pesei  guardei o resto sem pesar. O quanto saiu vem da balança do pote,
+ *              e o saldo que fica é deduzido — o lote sai marcado como estimado.
+ *   pesou      pesei a sobra. Número firme, e é ele que manda.
+ *   zerou      acabou, foi para o lixo. O que não entrou no pote é perda.
+ */
+type RespostaEmbalagem = 'nao_pesei' | 'pesou' | 'zerou'
+
 /** Quanto foi declarado num pote, ou o motivo de o número não servir. */
 type Colocado =
   | { estado: 'vazio' }
@@ -131,8 +143,20 @@ export function AbastecimentoPage() {
   } | null>(null)
   const [justFefo, setJustFefo] = useState('')
 
-  // Passo 4 — vazio = ainda não respondeu; '0' = zerou.
+  /**
+   * Passo 4 — o que aconteceu com cada embalagem.
+   *
+   * `nao_pesei` é o padrão porque é o caso comum: ninguém põe um fardo de 25 kg
+   * na balança para devolvê-lo à prateleira. Enquanto essa resposta não existiu,
+   * quem não tinha o número só conseguia seguir por "Zerou" — e "Zerou" manda
+   * para o lixo tudo o que não entrou no pote. Foram 47 kg de insumo escritos
+   * como desperdício em quatro dias (migration 113).
+   */
+  const [respostas, setRespostas] = useState<Record<string, RespostaEmbalagem>>({})
+  /** O peso digitado, quando a resposta foi `pesou`. */
   const [sobras, setSobras] = useState<Record<string, string>>({})
+  /** Embalagem que o operador declarou vazia — pergunta antes, como no balde. */
+  const [confirmarZerou, setConfirmarZerou] = useState<LoteBipado | null>(null)
   // Explicação exigida quando os potes recebem muito mais do que saiu.
   const [justExcesso, setJustExcesso] = useState('')
 
@@ -439,7 +463,13 @@ export function AbastecimentoPage() {
 
   // ── Passo 4: o que zerou e o que sobrou ───────────────────
 
+  const respostaDe = (lote: LoteBipado): RespostaEmbalagem =>
+    respostas[lote.id] ?? 'nao_pesei'
+
+  /** A sobra que o operador MEDIU. `null` quando ninguém pesou. */
   function sobraDe(lote: LoteBipado): number | null {
+    if (respostaDe(lote) === 'zerou') return 0
+    if (respostaDe(lote) !== 'pesou') return null
     const txt = (sobras[lote.id] ?? '').replace(',', '.').trim()
     if (txt === '') return null
     const n = parseFloat(txt)
@@ -447,13 +477,41 @@ export function AbastecimentoPage() {
     return daBancada(n, b.fator)
   }
 
-  const respondidos = lotes.filter(l => sobraDe(l) !== null)
+  /** Só falta responder quem escolheu "Sobrou" e ainda não digitou o peso. */
+  const respondidos = lotes.filter(l => respostaDe(l) !== 'pesou' || sobraDe(l) !== null)
   const sobraExcedida = lotes.some(l => {
     const s = sobraDe(l)
     return s !== null && s > l.saldo + 0.001
   })
-  const consumido = respondidos.reduce((s, l) => s + (l.saldo - (sobraDe(l) ?? 0)), 0)
+
+  const naoPesados = lotes.filter(l => respostaDe(l) === 'nao_pesei')
+  const medidos = lotes.filter(l => respostaDe(l) !== 'nao_pesei')
+
+  /**
+   * O mesmo cálculo da migration 113, para a tela não prometer um número
+   * diferente do que o banco vai gravar.
+   *
+   * Quem foi pesado manda. O que entrou nos potes e não veio dessas embalagens
+   * saiu das que ninguém pesou — a balança do pote é quem responde por elas,
+   * esvaziando a mais velha antes de abrir a próxima.
+   */
+  const consumidoMedido = medidos.reduce((s, l) => s + (l.saldo - (sobraDe(l) ?? 0)), 0)
+  let porAtribuir = Math.max(0, Number((colocado - consumidoMedido).toFixed(3)))
+  const saiuDeCada = new Map<string, number>()
+  for (const l of naoPesados) {
+    const leva = Math.min(porAtribuir, l.saldo)
+    saiuDeCada.set(l.id, leva)
+    porAtribuir = Number((porAtribuir - leva).toFixed(3))
+  }
+  const consumido = Number(
+    (consumidoMedido + [...saiuDeCada.values()].reduce((a, x) => a + x, 0)).toFixed(3))
   const perda = Math.max(0, Number((consumido - colocado).toFixed(3)))
+
+  /** Quanto saiu desta embalagem — medido para quem pesou, deduzido para o resto. */
+  const saiuDe = (l: LoteBipado): number =>
+    respostaDe(l) === 'nao_pesei'
+      ? (saiuDeCada.get(l.id) ?? 0)
+      : l.saldo - (sobraDe(l) ?? 0)
 
   /**
    * A folga de balança — mesma regra da migration 084, 2% do que saiu.
@@ -465,8 +523,8 @@ export function AbastecimentoPage() {
   const excesso = Number((colocado - consumido).toFixed(3))
   const folga = Number((consumido * 0.02).toFixed(3))
   const precisaExplicar = excesso > folga
-  /** Só dá para nomear o lote ajustado quando um único deles tem sobra. */
-  const unicoComSobra = respondidos.filter(l => (sobraDe(l) ?? 0) > 0)
+  /** Só dá para nomear o lote ajustado quando um único deles tem sobra medida. */
+  const unicoComSobra = medidos.filter(l => (sobraDe(l) ?? 0) > 0)
 
   const podeFechar =
     respondidos.length === lotes.length
@@ -493,7 +551,9 @@ export function AbastecimentoPage() {
         depois:   x.res.conteudoFinal,
         medido:   vazios[x.pote.local_id] ? 'vazio' : 'pesado',
       })),
-      p_lotes: lotes.map(l => ({ lote_id: l.id, sobra: sobraDe(l) ?? 0 })),
+      // `null` não é zero: zero afirma que a embalagem foi esvaziada, e é o
+      // banco que deduz quanto saiu de quem ninguém pesou (migration 113).
+      p_lotes: lotes.map(l => ({ lote_id: l.id, sobra: sobraDe(l) })),
       p_justificativa: justExcesso.trim() || null,
     })
 
@@ -532,7 +592,7 @@ export function AbastecimentoPage() {
   function recomecar() {
     setPasso('insumo')
     setAlvo(null)
-    setPesos({}); setPesosAntes({}); setVazios({}); setTaras({}); setLotes([]); setSobras({})
+    setPesos({}); setPesosAntes({}); setVazios({}); setTaras({}); setLotes([]); setSobras({}); setRespostas({})
     setErro(''); setErroScan(''); setTravaFefo(null); setJustFefo('')
     setJustExcesso('')
     setSucesso(null)
@@ -612,7 +672,7 @@ export function AbastecimentoPage() {
                 className={`p-4 ${cheio ? 'opacity-60' : ''}`}
                 onClick={() => {
                   setAlvo(ins)
-                  setPesos({}); setPesosAntes({}); setVazios({}); setTaras({}); setLotes([]); setSobras({})
+                  setPesos({}); setPesosAntes({}); setVazios({}); setTaras({}); setLotes([]); setSobras({}); setRespostas({})
                   setJustExcesso(''); setErro('')
                   setPasso('potes')
                 }}
@@ -953,17 +1013,19 @@ export function AbastecimentoPage() {
           <Card className="p-4">
             <p className="text-xs text-gray-500 font-medium">ÚLTIMO PASSO</p>
             <p className="font-semibold text-gray-900 dark:text-unno-text">
-              Cada embalagem zerou ou sobrou quanto?
+              O que aconteceu com cada embalagem?
             </p>
             <p className="text-xs text-gray-500 dark:text-unno-muted mt-1">
-              Pese a sobra e volte com ela para o estoque. Não precisa descontar o
-              peso da embalagem.
+              Guardou o resto sem pesar? É o normal — deixe em "Não pesei". Se
+              pesou, o número medido manda (não precisa descontar o peso da
+              embalagem). "Zerou" é só quando ela foi para o lixo.
             </p>
           </Card>
 
           {lotes.map(l => {
             const s = sobraDe(l)
-            const zerou = (sobras[l.id] ?? '') === '0'
+            const r = respostaDe(l)
+            const zerou = r === 'zerou'
             const excedeu = s !== null && s > l.saldo + 0.001
             return (
               <Card key={l.id} className="p-4">
@@ -978,26 +1040,36 @@ export function AbastecimentoPage() {
                   </div>
                 </div>
 
+                {/* "Não pesei" vem primeiro e nasce marcado: é o que acontece
+                    quase sempre, e era justamente a resposta que faltava. */}
                 <div className="flex gap-2 mb-2">
+                  <Button
+                    variant={r === 'nao_pesei' ? 'primary' : 'ghost'}
+                    size="sm"
+                    fullWidth
+                    onClick={() => setRespostas(v => ({ ...v, [l.id]: 'nao_pesei' }))}
+                  >
+                    Não pesei
+                  </Button>
+                  <Button
+                    variant={r === 'pesou' ? 'primary' : 'ghost'}
+                    size="sm"
+                    fullWidth
+                    onClick={() => setRespostas(v => ({ ...v, [l.id]: 'pesou' }))}
+                  >
+                    Pesei
+                  </Button>
                   <Button
                     variant={zerou ? 'primary' : 'ghost'}
                     size="sm"
                     fullWidth
-                    onClick={() => setSobras(v => ({ ...v, [l.id]: '0' }))}
+                    onClick={() => setConfirmarZerou(l)}
                   >
                     Zerou
                   </Button>
-                  <Button
-                    variant={s !== null && !zerou ? 'primary' : 'ghost'}
-                    size="sm"
-                    fullWidth
-                    onClick={() => setSobras(v => ({ ...v, [l.id]: v[l.id] === '0' ? '' : (v[l.id] ?? '') }))}
-                  >
-                    Sobrou
-                  </Button>
                 </div>
 
-                {!zerou && (
+                {r === 'pesou' && (
                   <Input
                     label={`Peso da sobra (${b.rotulo})`}
                     type="number"
@@ -1011,7 +1083,18 @@ export function AbastecimentoPage() {
                   />
                 )}
 
-                {s !== null && !excedeu && (
+                {/* Deduzido não pode ter a mesma cara de medido — mesma regra do
+                    "≈" nos potes (migration 112). */}
+                {r === 'nao_pesei' && (
+                  <p className="text-xs text-gray-600 dark:text-unno-muted">
+                    O resto volta para a prateleira. Saiu daqui, pela balança do
+                    pote: <strong>≈ {formatQty(saiuDe(l), l.unidade)}</strong>, e a
+                    embalagem fica com <strong>≈ {formatQty(l.saldo - saiuDe(l), l.unidade)}</strong>
+                    {' '}— número aproximado, até alguém pesar.
+                  </p>
+                )}
+
+                {r !== 'nao_pesei' && s !== null && !excedeu && (
                   <p className="text-xs text-gray-600 dark:text-unno-muted mt-2">
                     Saiu desta embalagem: <strong>{formatQty(l.saldo - s, l.unidade)}</strong>
                     {s === 0 && ' — vai ficar esgotada'}
@@ -1056,8 +1139,14 @@ export function AbastecimentoPage() {
             )}
             {respondidos.length < lotes.length && (
               <p className="text-xs text-gray-500">
-                Falta responder {lotes.length - respondidos.length} embalagem
+                Falta o peso de {lotes.length - respondidos.length} embalagem
                 {lotes.length - respondidos.length === 1 ? '' : 's'}.
+              </p>
+            )}
+            {naoPesados.length > 0 && perda === 0 && (
+              <p className="text-xs text-gray-500">
+                Nada foi dado como perda: o que não entrou nos potes continua nas
+                embalagens, na prateleira.
               </p>
             )}
           </Card>
@@ -1191,6 +1280,29 @@ export function AbastecimentoPage() {
           const p = confirmarVazio!
           setVazios(v => ({ ...v, [p.local_id]: false }))
           setConfirmarVazio(null)
+        }}
+      />
+
+      {/* "Zerou" é a única resposta que gera perda, e por muito tempo foi a
+          única saída de quem não tinha o peso. Agora ela diz, antes, quanto vai
+          para o lixo. */}
+      <ConfirmModal
+        open={confirmarZerou !== null}
+        title="Esta embalagem foi para o lixo?"
+        description={confirmarZerou && alvo
+          ? `Ela tinha ${formatQty(confirmarZerou.saldo, alvo.unidade)}. Dizendo que `
+            + `zerou, o que não entrou nos potes é registrado como perda. Se você `
+            + `guardou o resto, use "Não pesei".`
+          : undefined}
+        confirmLabel="Sim, foi pro lixo"
+        cancelLabel="Guardei o resto"
+        onConfirm={() => {
+          setRespostas(v => ({ ...v, [confirmarZerou!.id]: 'zerou' }))
+          setConfirmarZerou(null)
+        }}
+        onCancel={() => {
+          setRespostas(v => ({ ...v, [confirmarZerou!.id]: 'nao_pesei' }))
+          setConfirmarZerou(null)
         }}
       />
 

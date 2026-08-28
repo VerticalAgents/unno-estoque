@@ -297,7 +297,17 @@ export function InsumoDetalhePanel({
                       <div key={lote.id} className="rounded-lg border border-gray-200 p-3 flex items-start justify-between gap-3">
                         <div className="space-y-0.5 min-w-0">
                           <p className="font-mono text-xs font-semibold text-gray-700">{lote.codigo}</p>
-                          <p className="text-sm font-medium text-gray-900">{formatQty(lote.quantidade_disponivel, lote.unidade)}</p>
+                          {/* Deduzido não pode ter a mesma cara de medido — a
+                              mesma marca que os potes já usam (migration 112/113). */}
+                          <p className={`text-sm font-medium ${lote.saldo_estimado ? 'text-amber-700' : 'text-gray-900'}`}>
+                            {lote.saldo_estimado && '≈ '}
+                            {formatQty(lote.quantidade_disponivel, lote.unidade)}
+                          </p>
+                          {lote.saldo_estimado && (
+                            <p className="text-xs text-amber-700">
+                              estimado — a embalagem não foi pesada
+                            </p>
+                          )}
                           <div>{validadeTag(lote.validade_pos_abertura)}</div>
                           {lote.validade_original !== lote.validade_pos_abertura && (
                             <p className="text-xs text-gray-400">Val. original: {formatDate(lote.validade_original)}</p>

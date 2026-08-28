@@ -6,7 +6,7 @@
 > **As regras que não mudam estão no `CLAUDE.md`** — convenções, armadilhas
 > conhecidas, regras de negócio, como aplicar migration. Não repetir aqui.
 
-**Última atualização:** 23/08/2026
+**Última atualização:** 27/08/2026
 
 ---
 
@@ -45,53 +45,58 @@ acabado (SESS-0001 e 0002) são exatamente 1.438 + 3.584 — a produção dos di
 **Eles não existem fisicamente** e o reset tem de zerá-los. Vale a mesma coisa
 para os 2.558 do dia 12, se a pós-produção chegar a criá-los.
 
-### ⚠ A recarga trata como perda o que fica na embalagem
+### A recarga dava como lixo o que voltava para a prateleira
 
-**Este é o assunto para abrir a próxima sessão.** Encontrado em 27/08/2026.
+**Consertado em 27/08/2026** pela migration `113_nao_pesar_nao_e_dizer_que_acabou`.
 
-O Lucca estranhou que a Essência de Doce de Leite tinha pouco no sistema. O
-rastro fechou em cima de um lançamento só:
+O Lucca estranhou que a Essência de Doce de Leite tinha pouco no sistema. A
+varredura mostrou que não era caso isolado — eram **47 kg de insumo escritos
+como desperdício em quatro dias**:
 
-| 25/08 20:13 | `perda_insumo` | **9,944 kg** |
+| Insumo | Quando | Deu como perda | Entrou nos potes |
+|---|---|---|---|
+| Farinha de Trigo | 25/08 14:27 | 19,248 kg | 10,752 |
+| Essência de Doce de Leite | 25/08 17:13 | 9,944 kg | 0,584 |
+| Açúcar Invertido | 25/08 16:57 | 6,936 kg | 4,766 |
+| Cobertura Ao Leite | 26/08 10:03 | 5,242 kg | 24,758 |
+| Açúcar Refinado | 25/08 11:57 | 3,940 kg | 16,060 |
+| Ovo em Pó | 24/08 09:40 | 2,000 kg | 7,000 |
 
-com a justificativa gravada *"Diferença entre o que saiu das embalagens e o que
-entrou nos recipientes"*.
+Abaixo disso a lista cai para 0,6 kg e menos — essas são folga entre duas
+balanças, e estão certas.
 
-**A regra assume que a embalagem é esvaziada por inteiro.** O pote de essência
-comporta 1,5 kg e a embalagem tem 13 kg — ninguém despeja treze litros num pote
-de um e meio. O que ficou na embalagem foi contado como desperdício.
+**A causa.** O último passo de Transferência → Reabastecer recipientes perguntava
+*"cada embalagem zerou ou sobrou quanto?"*. "Sobrou" exigia um peso; ninguém pesa
+um fardo de 25 kg para devolvê-lo à prateleira. **Quem não tinha o número só
+conseguia seguir por "Zerou"** — e "Zerou" manda para o lixo tudo o que não entrou
+no pote. A resposta mais comum de todas não existia.
 
-**Já corrigido:** os 9,944 kg voltaram ao lote, junto com dois acertos da mesma
-recarga (0,386 e 0,094), como `ajuste_inventario`. O saldo fecha exato dos dois
-lados: prateleira 12,390 + pote 0,119 = 12,509 = recebido 13,124 − consumido
-0,615. A perda original continua no histórico, com a devolução ao lado.
+**A 110 já tinha mexido nesta costura na véspera e não alcançou este caso.** Ela
+mediu melhor o que ENTRAVA no pote (e funcionou — os `acerto_recipiente` de 0,386
+e 0,094 da recarga da essência são o mecanismo dela agindo). O que ninguém
+questionou foi a premissa do outro lado: bipar a embalagem significa que ela foi
+esvaziada. **Era o mesmo defeito que a 102 consertou na transferência três dias
+antes**, no fluxo vizinho.
 
-**O que falta, e é o trabalho de verdade:**
+**O que a 113 fez.** Uma terceira resposta, e ela nasce marcada: **"Não pesei"**.
+`sobra` passou a aceitar NULL, e NULL não é zero — zero afirma que a embalagem foi
+esvaziada. Para o lote não pesado quem decide quanto saiu é a balança do POTE, que
+mediu de verdade. Perda zero. O saldo que resta é deduzido, e o lote sai marcado
+com `saldo_estimado` — o `≈` aparece na lista de lotes, mesma distinção que a 112
+fez para o pote. "Zerou" agora pede confirmação dizendo quanto vai para o lixo.
 
-1. **Ler as migrations 109, 110 e 111**, que reescreveram esse fluxo em 24/08
-   numa outra sessão de trabalho.
+Sete ensaios em `begin … rollback` antes de aplicar, todos passando.
 
-   **Atenção: a área JÁ FOI consertada na véspera, e o conserto não alcançava
-   este caso.** A `110_a_balanca_manda_no_balde` atacou três defeitos sobre *o
-   que o sistema supõe contra o que a balança diz*, e funcionou — os dois
-   `acerto_recipiente` de 0,386 e 0,094 desta mesma recarga são o mecanismo
-   novo dela agindo, separando erro de suposição do número de perda.
+**Saldo da essência já reposto** (27/08): os 9,944 kg voltaram ao lote junto com
+os dois acertos, como `ajuste_inventario`. Fecha exato dos dois lados: prateleira
+12,390 + pote 0,119 = 12,509 = recebido 13,124 − consumido 0,615.
 
-   O que ela não questionou foi a premissa do outro lado: **escanear a
-   embalagem significa que ela foi esvaziada.** A 110 mediu melhor o que entrou
-   no pote; ninguém perguntou o que ficou na embalagem.
-
-   **É o mesmo defeito que a 102 consertou na transferência**, no fluxo
-   vizinho, três dias antes — e quem escreveu a 102 (esta sessão) não percebeu
-   que era o mesmo. A pergunta que falta é a que já existe lá: *quanto sobrou
-   na origem?*
-2. **Revisar a regra.** Ela precisa distinguir "a embalagem acabou" de "tirei o
-   que cabia no pote e devolvi o resto à prateleira". Provavelmente é a mesma
-   pergunta que a migration 102 resolveu para a transferência: perguntar o que
-   SOBROU na origem, em vez de deduzir.
-3. **Varrer os outros insumos** com embalagem muito maior que o pote — Essência
-   de Baunilha, Glicerina, Extrato de Alecrim, Sorbato. Se a mesma recarga
-   passou por eles, há perda fantasma lá também. Consulta boa para começar:
+**O que falta:** os outros cinco lançamentos da tabela acima continuam de pé.
+Não foram desfeitos de propósito — **só o Lucca sabe se alguma daquela embalagem
+foi mesmo para o lixo**, e a pergunta é caso a caso. A farinha é a mais delicada:
+a contagem dos três potes aplicada em 27/08 já mexeu no EP daquele insumo, então
+a devolução ao lote precisa ser conferida contra o que está na prateleira hoje.
+Consulta para retomar:
 
 ```sql
 SELECT i.codigo, i.nome, m.codigo AS mov, mi.quantidade, m.created_at
@@ -100,6 +105,7 @@ SELECT i.codigo, i.nome, m.codigo AS mov, mi.quantidade, m.created_at
   JOIN lotes l ON l.id = mi.lote_id
   JOIN insumos i ON i.id = l.insumo_id
  WHERE m.tipo = 'perda_insumo'
+   AND m.observacoes LIKE 'Diferen%a entre o que saiu das embalagens%'
  ORDER BY mi.quantidade DESC;
 ```
 

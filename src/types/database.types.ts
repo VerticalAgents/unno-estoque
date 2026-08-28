@@ -236,6 +236,13 @@ export interface Lote {
   marca_id?: string
   /** Embalagem incompleta: sobra de um fardo (migration 077). */
   embalagem_aberta?: boolean
+  /**
+   * O saldo foi DEDUZIDO da balança do recipiente, não pesado: a embalagem
+   * voltou para a prateleira sem passar na balança (migration 113).
+   */
+  saldo_estimado?: boolean
+  /** Quando esta embalagem foi pesada pela última vez. */
+  saldo_conferido_em?: string | null
   /** Medida na chegada, em °C — só nos insumos que exigem (migration 078). */
   temperatura_recebimento?: number
   observacoes?: string
