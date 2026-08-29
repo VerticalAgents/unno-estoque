@@ -29,7 +29,45 @@ type LoteEsperado = ContagemEcLote & {
     quantidade_disponivel: number
     observacoes: string | null
     embalagem_aberta?: boolean
+    validade_original: string
+    validade_pos_abertura: string
   } | null
+}
+
+/**
+ * O recebimento de que este fardo veio — o pedaço do código antes do ponto.
+ *
+ * `INS002-0003.2/3` → `INS002-0003`. Fardo sem ponto no código é grupo de um.
+ *
+ * Dentro de um grupo, os fardos são INDISTINGUÍVEIS: mesma validade, mesma
+ * nota, mesma marca, mesmo peso — conferido em 29/08/2026, em todos os 33
+ * grupos do estoque. É o que permite contá-los com o olho em vez de bipar cada
+ * um.
+ */
+function grupoDo(l: LoteEsperado): string {
+  return l.lote_codigo.split('.')[0]
+}
+
+/**
+ * A validade que vale para quem está de pé na prateleira.
+ *
+ * Fardo LACRADO vale a data impressa na embalagem — `validade_original`.
+ *
+ * `validade_pos_abertura` não serve aqui: ela é calculada na CHEGADA, somando
+ * o prazo pós-abertura à data de recebimento, como se todo fardo fosse aberto
+ * no dia em que entrou. Um saco de farinha lacrado, bom até 03/12, aparece
+ * como 27/09. O Lucca pegou isso contando em 29/08/2026 — ele sabia que tinha
+ * farinha para o fim do ano e a tela dizia setembro.
+ *
+ * Depois de aberto o prazo curto passa a valer de verdade, e aí é o menor dos
+ * dois que manda.
+ */
+function validadeReal(l: LoteEsperado, tamanhoEmbalagem?: number | null): string {
+  const orig = l.lote?.validade_original
+  const pos = l.lote?.validade_pos_abertura
+  if (!orig) return pos ?? ''
+  if (!pos) return orig
+  return foiAberto(l, tamanhoEmbalagem) ? (pos < orig ? pos : orig) : orig
 }
 
 /**
@@ -121,6 +159,16 @@ export function NovaContagemEcPage() {
    * embalagem na mão, que é o único momento em que ela sabe a resposta.
    */
   const [ultimoLido, setUltimoLido] = useState<string | null>(null)
+  /** Quantos fardos fechados a pessoa disse ver, por recebimento. */
+  const [contagemGrupo, setContagemGrupo] = useState<Record<string, string>>({})
+  /**
+   * Recebimento que já foi respondido.
+   *
+   * Separado do número porque ZERO é resposta: "não vi nenhum fardo deste
+   * recebimento" é diferente de "ainda não olhei", e um contador sozinho não
+   * distingue os dois.
+   */
+  const [respondeuGrupo, setRespondeuGrupo] = useState<Record<string, boolean>>({})
   const [loading, setLoading] = useState(true)
   const [scanError, setScanError] = useState('')
   const [saving, setSaving] = useState(false)
@@ -250,12 +298,42 @@ export function NovaContagemEcPage() {
     setUltimoLido(null)
     supabase
       .from('contagem_ec_lotes')
-      .select('*, lote:lotes(quantidade_recebida, quantidade_disponivel, observacoes, embalagem_aberta)')
+      .select('*, lote:lotes(quantidade_recebida, quantidade_disponivel, observacoes, embalagem_aberta, validade_original, validade_pos_abertura)')
       .eq('contagem_insumo_id', currentItem.id)
       .then(({ data }) => {
         // Ordem natural: no banco, "INS002-0001.10/12" vem antes de ".2/12".
-        setLotes(((data ?? []) as unknown as LoteEsperado[])
-          .sort((a, b) => ordemNatural(a.lote_codigo, b.lote_codigo)))
+        const carregados = ((data ?? []) as unknown as LoteEsperado[])
+          .sort((a, b) => ordemNatural(a.lote_codigo, b.lote_codigo))
+        setLotes(carregados)
+
+        /**
+         * Reconstrói o que já foi respondido para os fardos fechados.
+         *
+         * A contagem fica aberta por dias e a pessoa vai e volta entre os
+         * insumos; sem isto, cada volta mostrava o campo em branco e ela
+         * recontaria a prateleira inteira.
+         *
+         * Só conta como respondido o recebimento em que ALGUM fardo foi
+         * marcado. Grupo inteiro em branco é grupo que ninguém olhou — que é
+         * diferente de "olhei e não achei nenhum", e este segundo caso a
+         * pessoa registra digitando zero.
+         */
+        const tam = currentItem.insumo.tamanho_embalagem
+        const vistos: Record<string, string> = {}
+        const respondidos: Record<string, boolean> = {}
+        for (const l of carregados) {
+          if (foiAberto(l, tam)) continue
+          const g = grupoDo(l)
+          if (l.encontrado) {
+            vistos[g] = String((parseInt(vistos[g] ?? '0', 10)) + 1)
+            respondidos[g] = true
+          } else {
+            vistos[g] ??= '0'
+          }
+        }
+        setContagemGrupo(Object.fromEntries(
+          Object.entries(vistos).filter(([g]) => respondidos[g])))
+        setRespondeuGrupo(respondidos)
       })
 
     // Marca como em_contagem se ainda pendente
@@ -310,6 +388,17 @@ export function NovaContagemEcPage() {
 
     setLotes(prev => prev.map(l => l.id === match.id ? { ...l, encontrado: true } : l))
     setUltimoLido(match.id)
+
+    // Bipar continua valendo para o fardo fechado — quem prefere a câmera não
+    // fica preso. A leitura conta como resposta daquele recebimento e soma um
+    // ao número, senão o cartão pediria para digitar o que a câmera já sabe.
+    if (!foiAberto(match, currentItem.insumo.tamanho_embalagem)) {
+      const g = grupoDo(match)
+      const jaVistos = lotes.filter(
+        l => grupoDo(l) === g && l.encontrado && l.id !== match.id).length
+      setContagemGrupo(v => ({ ...v, [g]: String(jaVistos + 1) }))
+      setRespondeuGrupo(v => ({ ...v, [g]: true }))
+    }
   }
 
   async function finalizarInsumo() {
@@ -398,7 +487,77 @@ export function NovaContagemEcPage() {
     .filter(l => l.encontrado)
     .reduce((s, l) => s + contado(l), 0)
   const divergencia = Number((totalEncontrado - totalEsperado).toFixed(3))
-  const tudoBipado = encontrados === totalLotes && totalLotes > 0
+
+  /**
+   * A prateleira dividida em duas naturezas.
+   *
+   * FARDO FECHADO é intercambiável com os irmãos do mesmo recebimento — mesma
+   * validade, mesma nota, mesmo peso. Bipar os doze QR de doze sacos idênticos
+   * não descobre nada que contar com o olho não descubra, e obrigava a tirar
+   * caixa da frente para alcançar a etiqueta. Vira UMA linha por recebimento,
+   * com um número.
+   *
+   * FARDO ABERTO é único: tem um saldo próprio, e é sobre ele que a contagem
+   * tem algo a descobrir. Continua com bipe e com a pergunta da quantidade.
+   *
+   * Medido em 29/08/2026: das 147 bipadas de uma contagem completa, 132 eram
+   * de fardo fechado.
+   */
+  const abertos = lotes.filter(l => foiAberto(l, tamEmb))
+  const grupos = Object.values(
+    lotes.filter(l => !foiAberto(l, tamEmb)).reduce((acc, l) => {
+      const g = grupoDo(l)
+      ;(acc[g] ??= { grupo: g, itens: [] as LoteEsperado[] }).itens.push(l)
+      return acc
+    }, {} as Record<string, { grupo: string; itens: LoteEsperado[] }>),
+  ).sort((a, b) => ordemNatural(a.grupo, b.grupo))
+
+  /**
+   * "Vejo N fardos deste recebimento."
+   *
+   * Como os fardos do grupo são indistinguíveis, QUAIS N não importa — mas a
+   * escolha precisa ser sempre a mesma para a tela não embaralhar sozinha a
+   * cada toque. Os N primeiros na ordem do código ficam; o resto vai para
+   * não-encontrado, que é o caminho que a contagem já tinha para o lote que
+   * sumiu da prateleira.
+   */
+  async function declararGrupo(itens: LoteEsperado[], quantos: number) {
+    await reabrirSeConferido()
+    const ordenados = [...itens].sort((a, b) => ordemNatural(a.lote_codigo, b.lote_codigo))
+    const achados = ordenados.slice(0, quantos).map(l => l.id)
+    const sumidos = ordenados.slice(quantos).map(l => l.id)
+
+    if (achados.length) {
+      await supabase.from('contagem_ec_lotes')
+        .update({ encontrado: true, qtd_contada: null }).in('id', achados)
+    }
+    if (sumidos.length) {
+      await supabase.from('contagem_ec_lotes')
+        .update({ encontrado: false, qtd_contada: null }).in('id', sumidos)
+    }
+    setLotes(prev => prev.map(l =>
+      achados.includes(l.id) ? { ...l, encontrado: true, qtd_contada: null }
+      : sumidos.includes(l.id) ? { ...l, encontrado: false, qtd_contada: null }
+      : l))
+  }
+
+  /** dd/mm/aaaa a partir do `YYYY-MM-DD` do banco, sem passar por `Date`. */
+  const dataBR = (iso: string) => iso ? iso.slice(0, 10).split('-').reverse().join('/') : '—'
+
+  /**
+   * A prateleira foi toda percorrida.
+   *
+   * Não é mais "todo lote bipado": um recebimento respondido com 10 de 12 foi
+   * conferido — os 2 que faltam são o achado, não trabalho pendente. O que
+   * define é ter olhado para cada recebimento e bipado cada embalagem aberta.
+   */
+  const tudoBipado = totalLotes > 0
+    && grupos.every(g => respondeuGrupo[g.grupo])
+    && abertos.every(l => l.encontrado)
+
+  /** Quantas perguntas ainda não foram respondidas — recebimentos + abertos. */
+  const pendentes = grupos.filter(g => !respondeuGrupo[g.grupo]).length
+    + abertos.filter(l => !l.encontrado).length
   const finalizados = itens.filter(i => i.status === 'finalizado').length
   const conferidos = finalizados
   const faltamConferir = itens.length - finalizados
@@ -493,9 +652,96 @@ export function NovaContagemEcPage() {
         )}
       </div>
 
-      {/* Lista de lotes */}
+      {/* ── Fardos fechados, um cartão por recebimento ──
+          Contados com o olho: dentro do recebimento eles são idênticos, e
+          alcançar doze QR atrás de caixa empilhada era o que tornava a
+          auditoria penosa. */}
+      {grupos.length > 0 && (
+        <div className="space-y-2 mb-4">
+          <p className="text-[0.6rem] font-semibold uppercase tracking-[1.5px] text-gray-400">
+            Fardos fechados — conte e digite
+          </p>
+          {grupos.map(({ grupo, itens }) => {
+            const vistos = itens.filter(l => l.encontrado).length
+            const porFardo = pacoteCheio(itens[0], tamEmb)
+            const falta = itens.length - vistos
+            return (
+              <div
+                key={grupo}
+                className={[
+                  'px-3 py-3 rounded-lg border',
+                  respondeuGrupo[grupo]
+                    ? (falta === 0 ? 'bg-emerald-50 border-emerald-200'
+                                   : 'bg-amber-50 border-amber-300')
+                    : 'bg-gray-50 border-gray-200',
+                ].join(' ')}
+              >
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <p className="font-mono text-sm font-semibold text-gray-800">{grupo}</p>
+                    <p className="text-xs text-gray-500 mt-0.5">
+                      vence {dataBR(validadeReal(itens[0], tamEmb))}
+                      {' · '}
+                      {itens.length} {itens.length === 1 ? 'fardo' : 'fardos'} de{' '}
+                      {formatQty(porFardo, currentItem.insumo.unidade_medida as UnidadeMedida)}
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-1.5 shrink-0">
+                    <input
+                      type="number"
+                      inputMode="numeric"
+                      min={0}
+                      max={itens.length}
+                      placeholder="—"
+                      value={contagemGrupo[grupo] ?? ''}
+                      onChange={e => {
+                        const txt = e.target.value
+                        setContagemGrupo(v => ({ ...v, [grupo]: txt }))
+                        const n = parseInt(txt, 10)
+                        if (!isNaN(n) && n >= 0 && n <= itens.length) {
+                          setRespondeuGrupo(v => ({ ...v, [grupo]: true }))
+                          void declararGrupo(itens, n)
+                        }
+                      }}
+                      className="w-16 px-2 py-1.5 rounded-controle border border-gray-300 bg-white
+                                 text-center text-base font-semibold tabular-nums
+                                 focus:outline-none focus:ring-2 focus:ring-brand-400"
+                    />
+                    <span className="text-xs text-gray-500">
+                      de {itens.length}
+                    </span>
+                  </div>
+                </div>
+
+                {respondeuGrupo[grupo] && falta !== 0 && (
+                  <p className="mt-2 text-xs font-semibold text-amber-700">
+                    {falta > 0
+                      ? `Faltam ${falta} ${falta === 1 ? 'fardo' : 'fardos'} — `
+                        + `${formatQty(falta * porFardo,
+                            currentItem.insumo.unidade_medida as UnidadeMedida)} `
+                        + 'que o sistema tem e a prateleira não.'
+                      : 'Você contou mais fardos do que o sistema conhece. '
+                        + 'Confira se algum é de outro recebimento.'}
+                  </p>
+                )}
+                {respondeuGrupo[grupo] && falta === 0 && (
+                  <p className="mt-2 text-xs font-semibold text-emerald-700">Conferido.</p>
+                )}
+              </div>
+            )
+          })}
+        </div>
+      )}
+
+      {/* ── Fardos abertos, um a um ──
+          Cada um tem saldo próprio: aqui o bipe e o peso valem o trabalho. */}
+      {abertos.length > 0 && (
+        <p className="text-[0.6rem] font-semibold uppercase tracking-[1.5px] text-gray-400 mb-2">
+          Embalagens abertas — bipe e confira o peso
+        </p>
+      )}
       <div className="space-y-2 mb-4">
-        {lotes.map(lote => (
+        {abertos.map(lote => (
           <div
             key={lote.id}
             className={[
@@ -612,11 +858,14 @@ export function NovaContagemEcPage() {
           onScan={handleScan}
           continuo
           titulo={currentItem.insumo.nome}
-          label={`${encontrados} de ${totalLotes} lotes encontrados`}
+          label={abertos.length > 0
+            ? `${abertos.filter(l => l.encontrado).length} de ${abertos.length} `
+              + `embalagem${abertos.length > 1 ? 's' : ''} aberta${abertos.length > 1 ? 's' : ''}`
+            : `${encontrados} de ${totalLotes} fardos`}
           acaoConcluir={{
-            rotulo: encontrados === totalLotes
-              ? 'Todos encontrados — próximo insumo'
-              : `Finalizar com ${totalLotes - encontrados} faltante${totalLotes - encontrados > 1 ? 's' : ''}`,
+            rotulo: tudoBipado
+              ? 'Tudo conferido — próximo insumo'
+              : `Finalizar com ${pendentes} pendente${pendentes > 1 ? 's' : ''}`,
             onClick: () => { void finalizarInsumo() },
           }}
           painel={
@@ -737,9 +986,9 @@ export function NovaContagemEcPage() {
         onClick={finalizarInsumo}
         disabled={saving}
       >
-        {encontrados === totalLotes
-          ? 'Todos encontrados — Próximo insumo'
-          : `Finalizar insumo (${totalLotes - encontrados} faltante${totalLotes - encontrados > 1 ? 's' : ''})`
+        {tudoBipado
+          ? 'Tudo conferido — Próximo insumo'
+          : `Finalizar insumo (${pendentes} pendente${pendentes > 1 ? 's' : ''})`
         }
       </Button>
 
