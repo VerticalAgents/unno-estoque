@@ -6,7 +6,7 @@
 > **As regras que não mudam estão no `CLAUDE.md`** — convenções, armadilhas
 > conhecidas, regras de negócio, como aplicar migration. Não repetir aqui.
 
-**Última atualização:** 28/08/2026
+**Última atualização:** 29/08/2026
 
 ---
 
@@ -44,6 +44,65 @@ acabado (SESS-0001 e 0002) são exatamente 1.438 + 3.584 — a produção dos di
 10 e 11. O Lucca confirmou que tudo que a semana produziu, a semana vendeu.
 **Eles não existem fisicamente** e o reset tem de zerá-los. Vale a mesma coisa
 para os 2.558 do dia 12, se a pós-produção chegar a criá-los.
+
+### ⚠ O prazo pós-abertura começa a correr na CHEGADA, não na abertura
+
+**Encontrado em 29/08/2026**, quando o Lucca perguntou como a contagem lidaria
+com dois lotes de validades diferentes: *"tem coisa vencendo daqui uns dias e
+outras vencendo no final do ano"*. Ele estava certo, e a tela discordava dele.
+
+`calcular_validade_pos_abertura` é chamada por `registrar_entrada_lote` com a
+**data de recebimento**:
+
+```sql
+v_calculada := p_data_recebimento + (v_shelf_life || ' days')::INTERVAL;
+RETURN LEAST(p_validade_original, v_calculada);
+```
+
+Ou seja: todo fardo é tratado como se tivesse sido aberto no dia em que entrou.
+**Fardo lacrado não tem relógio correndo.**
+
+A farinha é o retrato. `INS002-0003`, recebida em 28/08, lacrada:
+
+| na embalagem (`validade_original`) | **03/12/2026** |
+| o que o sistema mostra (`validade_pos_abertura`) | **27/09/2026** |
+
+Dois meses e meio a menos, num saco fechado. E não é só a farinha — em 29/08,
+**13 insumos** tinham a data encurtada. Açúcar: original 15/07/27, exibida
+22/09/26 — dez meses. Doce de leite: 06/03/27 virou 06/09/26.
+
+#### Por que isso ainda não estourou
+
+`LEAST()` protege o caso comum: quando a validade impressa é curta, é ela que
+vale. E como a data calculada cresce junto com a data de recebimento, a ordem
+do FEFO **acidentalmente** continua parecida com a de chegada.
+
+O FEFO erra quando uma entrega **nova** tem validade impressa **mais curta** que
+uma antiga. Aí o sistema manda usar a antiga primeiro, e ela não é a que vence
+antes. Não aconteceu ainda porque as entregas vêm em ordem.
+
+#### O que já foi feito
+
+A tela de contagem do EC passou a mostrar `validade_original` para fardo
+lacrado (`validadeReal`, em `NovaContagemEcPage.tsx`). **Só a tela** — o dado no
+banco continua como está.
+
+#### O que falta decidir, e é decisão do Lucca
+
+Mexer no `validade_pos_abertura` gravado é mexer no **FEFO de todo o sistema**:
+`validar_scan_lote`, a distribuição do abastecimento e os avisos de vencimento
+ordenam por ele. As opções:
+
+1. **Guardar as duas e usar cada uma no seu lugar** — `validade_original` para
+   lacrado, `pos_abertura` calculada no momento em que o fardo é aberto de
+   fato. É o certo, e é o que `registrar_abastecimento` já faz para o conteúdo
+   que vai ao pote (`LEAST(CURRENT_DATE + shelf_life, validade_original)`). O
+   recebimento é que não seguiu a mesma regra.
+2. **Deixar como está** e aceitar que a data exibida é pessimista.
+
+A (1) exige um passo de correção nos lotes já gravados, e ele não é trivial:
+não dá para simplesmente copiar `validade_original` por cima, porque os fardos
+que JÁ foram abertos têm um prazo curto legítimo correndo.
 
 ### ⚠ As duas balanças não fecham, e o sistema dá dois nomes opostos a isso
 
