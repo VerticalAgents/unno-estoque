@@ -6,11 +6,82 @@
 > **As regras que não mudam estão no `CLAUDE.md`** — convenções, armadilhas
 > conhecidas, regras de negócio, como aplicar migration. Não repetir aqui.
 
-**Última atualização:** 29/08/2026
+**Última atualização:** 01/09/2026
 
 ---
 
 ## Onde paramos
+
+### Sessão de 01/09/2026 — o mês de agosto fechado, e três defeitos que ele revelou
+
+O Lucca comparou o relatório de agosto do **MischaOS** (PCP) com o nosso, dia a
+dia. Dezesseis dias bateram exatamente; um não, e a divergência puxou o fio.
+
+#### 1. O dia de dois produtos gravava o segundo com os números do primeiro
+
+`fechar_sessao_producao` lia o planejado UMA VEZ, com `LIMIT 1`, e usava esse
+número para todos os produtos do dia. Em 27/08 o Doce de Leite ficou com **1.680
+unidades** gravadas para **12 formas** — 1.680 é 28 formas, o Tradicional da
+mesma sessão. A produção confirmou 12; **o MischaOS é que estava errado com 16**,
+e o Lucca corrigiu lá.
+
+A SESS-0028 foi a **primeira sessão de dois produtos fechada pela tela** — as
+outras três de agosto entraram pela importação do histórico e nunca passaram por
+essa função. O mesmo `LIMIT 1` estragava mais duas coisas: o percentual de perda
+cruzava o perdido do último produto com o planejado do primeiro, e o lote de
+sub-receita só podia nascer do primeiro da lista.
+
+**Consertado pela migration 116**, com o defeito reproduzido antes de aplicar
+sobre a SESS-0030 — que estava aberta naquele dia com 20 Tradicional e 28 Doce
+de Leite, e cairia no mesmo buraco.
+
+#### 2. A contagem do EP não encerrava a embalagem vazia
+
+Pergunta do Lucca: se o "acabou / sobrou" do fechamento é uma auditoria sessão a
+sessão, a contagem do EP não deveria fazer o mesmo?
+
+Deveria. As duas pesam e acertam o saldo, mas só o fechamento tirava a embalagem
+do mundo. A contagem zerava o número e ia embora, deixando o ponto de consumo
+ativo. Em 01/09 havia **18 baldes de doce de leite ativos, 6 com 0 kg** (um vazio
+desde 27/08), mais 2 garrafas de baunilha e 1 de glucose.
+
+**Consertado pela migration 117.** `efemero` é a trava: balde da cozinha vazio
+continua ativo, porque é durável; embalagem do fornecedor vazia some.
+
+**Os 9 já zerados não foram tocados** — o Lucca vai fazer a auditoria em 02/09 e
+eles somem sozinhos ao serem contados.
+
+#### 3. Encerrar pela auditoria não quebra a rastreabilidade
+
+Dúvida do Lucca, e a resposta é boa de guardar: **o vínculo lote ↔ produção vem
+de `sessoes_producao_locais`, escrita na ABERTURA da sessão.** Não depende do
+encerramento. Conferido nos dados: a SESS-0029 consumiu 4,800 kg do balde
+`INS014-0001.1/25`, que nunca foi encerrado, e o dossiê enxerga igual.
+
+O que se perde encerrando pela auditoria é a **data**: fica "no dia da auditoria
+estava vazio" em vez de "acabou naquela sessão". E a precisão do último gole — o
+fechamento pesa a sobra, a auditoria só constata que zerou.
+
+#### O acesso da produção
+
+Criado pelo Lucca em 01/09. É deles o encerramento das embalagens no fechamento
+— era a falta desse acesso que deixava a lista crescer.
+
+#### O que ficou pronto junto
+
+- **Relatório de produção e entrega** — skill `/relatorio-producao`, motor em
+  `scripts/relatorio-producao/relatorio.mjs`. Pergunta o período, gera o HTML e
+  publica. Cada dia leva um selo de procedência do descarte (`conferido` /
+  `declarado` / `sem conferência`), porque um zero em "sem conferência" não é uma
+  medição, é a ausência dela.
+- **Agosto:** 752 formas, 45.120 do forno, 185 descartadas, **44.935 entregues**
+  (29.718 Tradicional, 15.217 Doce de Leite). Artefato em
+  https://claude.ai/code/artifact/97307c45-1655-4e54-b7e1-04568154a3a8
+- **Sete dos dezessete dias de agosto não passaram pela desenforma.** Onde ela
+  foi registrada, o descarte foi de **0,82%**; no mês inteiro dá 0,41% só porque
+  metade dos dias não foi conferida. O total de entrega está otimista.
+- **25/08 concentra 99 dos 107 descartes por "cru"**, num lançamento só de Doce
+  de Leite — 3,4% do dia contra 0,3% dos outros conferidos. Nunca foi explicado.
 
 ### A virada do estoque (em curso desde 17/08)
 
