@@ -6,6 +6,7 @@ import type { CategoriaInsumo, Empresa, Usuario } from '../../types/database.typ
 import { Card } from '../../components/ui/Card'
 import { Button } from '../../components/ui/Button'
 import { Input, Select } from '../../components/ui/Input'
+import { ConfirmModal } from '../../components/ui/ConfirmModal'
 import { Badge } from '../../components/ui/Badge'
 import { ALL_ROUTES } from '../../lib/permissions'
 import { MotivosDescarteTab } from './MotivosDescarteTab'
@@ -961,6 +962,8 @@ function FuncionariosTab() {
 
   // Reset password state
   const [resetId, setResetId] = useState<string | null>(null)
+  /** Funcionário aguardando confirmação de exclusão. */
+  const [excluindo, setExcluindo] = useState<Usuario | null>(null)
   const [resetSenha, setResetSenha] = useState('')
 
   function showMsg(text: string, type: 'error' | 'success') {
@@ -1033,6 +1036,38 @@ function FuncionariosTab() {
       setNewEmail('')
       setNewSenha('')
       setNewPapel('producao')
+      load()
+    }
+    setSaving(false)
+  }
+
+  /**
+   * Excluir é sempre tirar o acesso; apagar o cadastro é o que der.
+   *
+   * Treze tabelas apontam para `usuarios` — quem recebeu o lote, quem abriu a
+   * sessão, quem registrou a perda. Quem já assinou qualquer coisa não pode ter
+   * a linha apagada sem arrancar o nome do histórico, e a função do servidor
+   * devolve qual dos dois aconteceu. A mensagem conta a verdade em vez de
+   * dizer "excluído" quando o nome continua lá.
+   */
+  async function handleExcluir(u: Usuario) {
+    setSaving(true)
+    setMsg('')
+
+    const result = await callManageUser({ action: 'delete', userId: u.id }) as
+      { ok: boolean; erro?: string; manteve_historico?: boolean }
+
+    if (!result.ok) {
+      showMsg(result.erro ?? 'Não foi possível excluir.', 'error')
+    } else {
+      showMsg(
+        result.manteve_historico
+          ? `${u.nome} não entra mais no sistema. O nome continua no histórico, `
+            + 'porque assinou registros que não podem perder o autor.'
+          : `${u.nome} foi excluído.`,
+        'success',
+      )
+      setExcluindo(null)
       load()
     }
     setSaving(false)
@@ -1187,6 +1222,15 @@ function FuncionariosTab() {
                             <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 5.25a3 3 0 013 3m3 0a6 6 0 01-7.029 5.912c-.563-.097-1.159.026-1.563.43L10.5 17.25H8.25v2.25H6v2.25H2.25v-2.818c0-.597.237-1.17.659-1.591l6.499-6.499c.404-.404.527-1 .43-1.563A6 6 0 1121.75 8.25z" />
                           </svg>
                         </button>
+                        <button
+                          onClick={() => { setExcluindo(u); setEditingId(null); setResetId(null); setMsg('') }}
+                          className="p-1.5 rounded-lg hover:bg-red-50 text-gray-400 hover:text-red-600"
+                          title="Excluir acesso"
+                        >
+                          <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M14.74 9l-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 01-2.244 2.077H8.084a2.25 2.25 0 01-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 00-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 013.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 00-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 00-7.5 0" />
+                          </svg>
+                        </button>
                       </>
                     )}
                   </div>
@@ -1199,6 +1243,32 @@ function FuncionariosTab() {
 
       {/* Permissões por papel */}
       <PermissoesSection />
+
+      {/* Excluir é irreversível do lado do login: a senha some junto, e
+          recriar a pessoa depois é um cadastro novo. */}
+      <ConfirmModal
+        open={excluindo !== null}
+        title="Excluir o acesso?"
+        description={excluindo
+          ? `${excluindo.nome} não vai mais conseguir entrar no sistema, e a senha `
+            + 'dele deixa de existir. Se um dia voltar, será um cadastro novo.'
+          : undefined}
+        summary={excluindo ? (
+          <div className="space-y-1">
+            <p><strong>{excluindo.nome}</strong></p>
+            <p className="text-xs">{excluindo.email}</p>
+            <p className="text-xs">
+              O nome continua no histórico do que essa pessoa registrou — receber
+              lote, abrir sessão, contar estoque. Isso não se apaga.
+            </p>
+          </div>
+        ) : undefined}
+        variant="danger"
+        confirmLabel="EXCLUIR"
+        loading={saving}
+        onConfirm={() => excluindo && handleExcluir(excluindo)}
+        onCancel={() => setExcluindo(null)}
+      />
     </div>
   )
 }

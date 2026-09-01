@@ -10,6 +10,9 @@ interface AuthContextValue {
   profile: Usuario | null
   permissoes: PermissoesPapel
   loading: boolean
+  /** Por que a sessão caiu, quando não foi a pessoa que pediu para sair. */
+  motivoSaida: string
+  limparMotivoSaida: () => void
   logout: () => Promise<void>
   reloadProfile: () => Promise<void>
   reloadPermissoes: () => Promise<void>
@@ -22,18 +25,38 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [profile, setProfile] = useState<Usuario | null>(null)
   const [permissoes, setPermissoes] = useState<PermissoesPapel>({})
   const [loading, setLoading] = useState(true)
+  const [motivoSaida, setMotivoSaida] = useState('')
 
+  /**
+   * Carrega o perfil — e barra quem está desativado.
+   *
+   * O campo `ativo` existia desde a migration 001 e **ninguém o conferia**: a
+   * tela de Funcionários mostrava o selo "Inativo" e a pessoa continuava
+   * entrando e trabalhando normalmente. Desativar não desativava nada.
+   *
+   * A checagem mora aqui, e não na tela de login, porque este é o caminho por
+   * onde passa TODA sessão — inclusive a que já estava aberta no celular de
+   * quem foi desligado no meio do turno.
+   */
   async function loadProfile(uid: string) {
     const { data } = await supabase
       .from('usuarios')
       .select('*')
       .eq('id', uid)
       .single()
-    if (data) {
-      const prof = data as Usuario
-      setProfile(prof)
-      await loadPermissoes(prof.empresa_id)
+
+    if (!data) return
+
+    const prof = data as Usuario
+
+    if (!prof.ativo) {
+      setMotivoSaida('Este acesso foi desativado. Fale com o responsável pela fábrica.')
+      await logout()
+      return
     }
+
+    setProfile(prof)
+    await loadPermissoes(prof.empresa_id)
   }
 
   async function loadPermissoes(empresaId: string) {
@@ -138,7 +161,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }
 
   return (
-    <AuthContext.Provider value={{ user, profile, permissoes, loading, logout, reloadProfile, reloadPermissoes }}>
+    <AuthContext.Provider value={{ user, profile, permissoes, loading, motivoSaida,
+                 limparMotivoSaida: () => setMotivoSaida(''),
+                 logout, reloadProfile, reloadPermissoes }}>
       {children}
     </AuthContext.Provider>
   )

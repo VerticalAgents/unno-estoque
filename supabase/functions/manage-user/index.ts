@@ -140,6 +140,98 @@ Deno.serve(async (req) => {
       })
     }
 
+    /**
+     * Excluir o funcionário.
+     *
+     * "Excluir" quer dizer duas coisas diferentes, e só uma delas é sempre
+     * possível:
+     *
+     *   1. TIRAR O ACESSO — apagar o login. Isto sempre funciona, e é o que de
+     *      fato importa: a pessoa não entra mais.
+     *   2. APAGAR O REGISTRO — só dá para quem nunca fez nada. Treze tabelas
+     *      apontam para `usuarios` (quem recebeu o lote, quem abriu a sessão,
+     *      quem registrou a perda), quase todas NOT NULL. Apagar a linha de
+     *      quem assinou qualquer coisa arrancaria o nome do histórico.
+     *
+     * Então a função faz o 1 sempre, tenta o 2, e DIZ qual dos dois aconteceu.
+     * A tela conta a verdade para o usuário em vez de fingir que sumiu.
+     *
+     * A ordem importa: `ativo = false` vem primeiro. Se qualquer passo seguinte
+     * falhar no meio, o estado que sobra é "sem acesso e inativo" — nunca
+     * "login apagado mas aparecendo como ativo na lista".
+     */
+    if (action === 'delete') {
+      const { userId } = body
+
+      if (!userId) {
+        return new Response(JSON.stringify({ ok: false, erro: 'userId é obrigatório' }), {
+          status: 400,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        })
+      }
+
+      if (userId === caller.id) {
+        return new Response(JSON.stringify({
+          ok: false,
+          erro: 'Você não pode excluir o seu próprio acesso.',
+        }), { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
+      }
+
+      const { data: alvo } = await adminClient
+        .from('usuarios')
+        .select('empresa_id, nome, papel, ativo')
+        .eq('id', userId)
+        .single()
+
+      if (!alvo || alvo.empresa_id !== callerProfile.empresa_id) {
+        return new Response(JSON.stringify({ ok: false, erro: 'Usuário não encontrado na sua empresa' }), {
+          status: 404,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        })
+      }
+
+      // Ficar sem administrador tranca a empresa inteira para fora das
+      // configurações, e não há como voltar atrás pela tela.
+      if (alvo.papel === 'admin') {
+        const { count } = await adminClient
+          .from('usuarios')
+          .select('id', { count: 'exact', head: true })
+          .eq('empresa_id', callerProfile.empresa_id)
+          .eq('papel', 'admin')
+          .eq('ativo', true)
+
+        if ((count ?? 0) <= 1) {
+          return new Response(JSON.stringify({
+            ok: false,
+            erro: 'Este é o único administrador ativo. Promova outra pessoa a administrador antes de excluí-lo.',
+          }), { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
+        }
+      }
+
+      // 1. Sem acesso, antes de mais nada.
+      await adminClient.from('usuarios').update({ ativo: false }).eq('id', userId)
+
+      // 2. O login vai embora. `user_not_found` não é erro aqui: significa que
+      //    a conta já não existia e o objetivo já está cumprido.
+      const { error: authErr } = await adminClient.auth.admin.deleteUser(userId)
+      if (authErr && !/not.?found/i.test(authErr.message)) {
+        return new Response(JSON.stringify({ ok: false, erro: authErr.message }), {
+          status: 400,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        })
+      }
+
+      // 3. A linha, se o histórico deixar. `23503` é violação de chave
+      //    estrangeira — quer dizer que esta pessoa assinou alguma coisa.
+      const { error: delErr } = await adminClient.from('usuarios').delete().eq('id', userId)
+
+      return new Response(JSON.stringify({
+        ok: true,
+        nome: alvo.nome,
+        manteve_historico: !!delErr,
+      }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
+    }
+
     return new Response(JSON.stringify({ ok: false, erro: 'Ação inválida' }), {
       status: 400,
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },

@@ -4,6 +4,7 @@ import { supabase } from '../../lib/supabase'
 import { Button } from '../../components/ui/Button'
 import { Input } from '../../components/ui/Input'
 import { LogoUnno } from '../../components/ui/LogoUnno'
+import { useAuth } from '../../contexts/AuthContext'
 
 export function LoginPage() {
   const navigate = useNavigate()
@@ -11,10 +12,14 @@ export function LoginPage() {
   const [password, setPassword] = useState('')
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
+  // Quando a sessão cai sozinha — acesso desativado, por exemplo — a pessoa
+  // volta para cá sem saber por quê. Este é o único lugar onde dá para contar.
+  const { motivoSaida, limparMotivoSaida } = useAuth()
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault()
     setError('')
+    limparMotivoSaida()
     setLoading(true)
 
     const { error: authError } = await supabase.auth.signInWithPassword({ email, password })
@@ -74,6 +79,12 @@ export function LoginPage() {
               required
               autoComplete="current-password"
             />
+
+            {motivoSaida && !error && (
+              <div className="p-3 bg-amber-50 border border-amber-200 rounded-lg text-sm text-amber-800 dark:bg-unno-amber/10 dark:border-unno-amber/30 dark:text-unno-amber">
+                {motivoSaida}
+              </div>
+            )}
 
             {error && (
               <div className="p-3 bg-red-50 border border-red-200 rounded-lg text-sm text-red-700 dark:bg-unno-danger/10 dark:border-unno-danger/30 dark:text-unno-danger">
