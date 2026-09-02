@@ -51,6 +51,48 @@ continua ativo, porque é durável; embalagem do fornecedor vazia some.
 **Os 9 já zerados não foram tocados** — o Lucca vai fazer a auditoria em 02/09 e
 eles somem sozinhos ao serem contados.
 
+#### O que a auditoria de 02/09 vai encontrar — retrato de 01/09
+
+**21 embalagens de fornecedor ativas na produção:** 6 vazias, 12 fechadas,
+3 começadas.
+
+| Insumo | Total | Vazias | Fechadas | Começadas | Conteúdo |
+|---|---|---|---|---|---|
+| Doce de Leite | 18 | 5 | 12 | 1 | 61,876 kg |
+| Essência de Baunilha | 2 | 1 | — | 1 | 436,2 ml |
+| Xarope de Glucose | 1 | — | — | 1 | 1,726 kg |
+
+**O trabalho de verdade são 9 embalagens** — as 6 vazias e as 3 começadas. Em
+todas elas o número é DEDUZIDO, nenhuma passou pela balança:
+
+```
+Glucose  · INS008-0001.3/3     1,726 de 10 kg
+Baunilha · INS010-0001.3/9       436 de 960 ml
+DDL      · INS014-0003.6/12    4,276 de 4,8 kg
+```
+
+As 12 fechadas de doce de leite estão marcadas como pesadas — vieram de
+transferência e ninguém tirou nada. Nelas o 4,8 é confiável e basta conferir de
+olho.
+
+**Por que as 6 estão em zero.** Não é observação, é aritmética: o desconto
+teórico esvazia um recipiente por vez, na ordem da fila, e quem chega ao fim
+fica em zero sem ninguém encostar. O `INS014-0003.3/12` mostra o mecanismo
+inteiro — 3,760 em 31/08 mais 1,040 em 01/09 fecham os 4,800 do balde. A
+baunilha idem: 534 ml mais 426 ml fecham os 960.
+
+**Todas as 6 estão marcadas como `conteudo_estimado`, com data de pesagem
+nula** — a marca da migration 112 fazendo o trabalho dela. O sistema afirma zero
+e sabe que não conferiu.
+
+**Por isso a auditoria vale mais do que limpar no banco:** são 9 embalagens em
+que o sistema afirma uma quantidade sem ninguém ter olhado. Se houver sobra, a
+contagem corrige; se estiverem vazias mesmo, a 117 as encerra e elas somem.
+
+**Atenção à glucose:** 1,726 kg num balde de 10 kg, todo deduzido. Se a balança
+disser bem mais do que isso, é o mesmo problema das duas balanças que está
+mapeado acima.
+
 #### 3. Encerrar pela auditoria não quebra a rastreabilidade
 
 Dúvida do Lucca, e a resposta é boa de guardar: **o vínculo lote ↔ produção vem
