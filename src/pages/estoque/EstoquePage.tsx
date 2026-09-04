@@ -1,10 +1,10 @@
 import { useEffect, useMemo, useState } from 'react'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../contexts/AuthContext'
-import type { EstoqueConsolidado, CategoriaInsumo } from '../../types/database.types'
+import type { EstoqueConsolidado, CategoriaInsumo, UnidadeMedida } from '../../types/database.types'
 import { Card } from '../../components/ui/Card'
 import { CartaoLista, ListaResponsiva, ListaVazia } from '../../components/ui/ListaResponsiva'
-import { formatQty, formatDate, daysUntil } from '../../lib/utils'
+import { formatQty, formatKg, formatDate, daysUntil } from '../../lib/utils'
 import { InsumoDetalhePanel } from './InsumoDetalhePanel'
 import { combina } from '../../lib/busca'
 
@@ -229,6 +229,38 @@ export function EstoquePage() {
   )
 
   /** Quantos insumos em cada situação — a conta é sobre TUDO, não sobre o filtro. */
+  /**
+   * O peso do estoque, em quilos.
+   *
+   * NEM TUDO É QUILO. A baunilha é medida em ml, o desmoldante em unidade —
+   * somar os três daria um número que não quer dizer nada. Aqui entra o que é
+   * massa (kg, e g convertido), e o resto é listado à parte, na unidade dele.
+   *
+   * Sem essa separação, "1.676 kg" incluiria 21 mil ml de essência como se
+   * fossem 21 toneladas.
+   */
+  const pesos = useMemo(() => {
+    const emKg = (v: number, un: string) =>
+      un === 'kg' ? v : un === 'g' ? v / 1000 : null
+
+    let central = 0, producao = 0
+    const outras = new Map<string, number>()
+
+    for (const e of estoque) {
+      const un = e.unidade_medida
+      const c = emKg(Number(e.qtd_estoque_central ?? 0), un)
+      const p = emKg(Number(e.qtd_estoque_produtivo ?? 0), un)
+      if (c === null || p === null) {
+        const t = Number(e.qtd_total ?? 0)
+        if (t > 0) outras.set(un, (outras.get(un) ?? 0) + t)
+        continue
+      }
+      central += c
+      producao += p
+    }
+    return { central, producao, total: central + producao, outras: [...outras] }
+  }, [estoque])
+
   const contagens = useMemo(() => {
     const c: Record<Alerta, number> = { comprar: 0, transferir: 0, etiquetar: 0, vencendo: 0 }
     for (const l of linhas) for (const a of l.alertas) c[a]++
@@ -250,6 +282,50 @@ export function EstoquePage() {
           Posição atual de cada insumo, somando o estoque central e o que está nos baldes.
         </p>
       </div>
+
+      {/* ── O peso do estoque ────────────────────────────────
+          Vem antes dos alertas porque responde a pergunta mais simples de
+          todas: quanto a fábrica tem. O total é o número grande; os dois
+          lugares ficam ao lado, menores, porque explicam o total em vez de
+          competir com ele. */}
+      {!loading && (
+        <div className="rounded-bloco border border-border bg-card shadow-tema px-4 py-3.5">
+          <div className="flex flex-wrap items-end gap-x-8 gap-y-3">
+            <div>
+              <p className="text-[0.6rem] uppercase tracking-[1px] font-semibold text-muted-foreground">
+                Total
+              </p>
+              <p className="font-display text-3xl font-bold tabular-nums leading-none text-foreground">
+                {formatKg(pesos.total)}
+              </p>
+            </div>
+            <div>
+              <p className="text-[0.6rem] uppercase tracking-[1px] font-semibold text-muted-foreground">
+                Estoque central
+              </p>
+              <p className="font-display text-xl font-bold tabular-nums leading-none text-foreground/80">
+                {formatKg(pesos.central)}
+              </p>
+            </div>
+            <div>
+              <p className="text-[0.6rem] uppercase tracking-[1px] font-semibold text-muted-foreground">
+                Na produção
+              </p>
+              <p className="font-display text-xl font-bold tabular-nums leading-none text-foreground/80">
+                {formatKg(pesos.producao)}
+              </p>
+            </div>
+          </div>
+
+          {/* O que não é massa não entra na soma — e some se não for dito. */}
+          {pesos.outras.length > 0 && (
+            <p className="text-xs text-muted-foreground mt-2.5 pt-2.5 border-t border-border">
+              Fora da soma, por não serem peso:{' '}
+              {pesos.outras.map(([un, v]) => `${formatQty(v, un as UnidadeMedida)}`).join(' · ')}
+            </p>
+          )}
+        </div>
+      )}
 
       {/* ── O resumo, que também é filtro ─────────────────────
           Fica antes da lista porque responde a pergunta que se faz de longe:
