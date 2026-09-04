@@ -40,6 +40,16 @@
   --background: #fcfcfc;
   --foreground: #171717;
   --destructive: #ca3214;
+
+  /* As quatro naturezas de alerta do estoque.
+     Moram aqui, e não numa constante da tela, porque cor é decisão de tema:
+     antes eram quatro hexadecimais escritos dentro do EstoquePage que não
+     acompanhavam o modo escuro. Laranja é o que sai dinheiro, menta é a rotina
+     interna, neutro é o administrativo e vermelho é perda iminente. */
+  --alerta-comprar: #e04415;
+  --alerta-transferir: #0f9d64;
+  --alerta-etiquetar: var(--muted-foreground);
+  --alerta-vencendo: var(--destructive);
   --shadow-blur: 3px;
   --shadow-color: #000000;
   --sidebar-ring: #25d98d;
@@ -85,6 +95,11 @@
   --background: #121212;
   --foreground: #e2e8f0;
   --destructive: #541c15;
+
+  /* Um passo mais claro no escuro: o 600 do tema claro não se lê sobre fundo
+     escuro a um metro da tela, que é a distância de quem confere estoque. */
+  --alerta-comprar: #ff7a52;
+  --alerta-transferir: #57e2a5;
   --sidebar-ring: #4ade80;
   --sidebar-accent: #313131;
   --sidebar-border: #292929;

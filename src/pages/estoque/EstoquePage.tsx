@@ -25,26 +25,50 @@ type Alerta = 'comprar' | 'transferir' | 'etiquetar' | 'vencendo'
 /** Quantos dias antes do vencimento a validade começa a incomodar. */
 const DIAS_ATENCAO = 30
 
+/**
+ * OS QUATRO ALERTAS SAEM DO TEMA, e não de uma paleta própria.
+ *
+ * Esta tela tinha amarelo, azul, roxo e vermelho crus do Tailwind, mais quatro
+ * hexadecimais chumbados para as tarjas — uma paleta inventada aqui dentro, sem
+ * relação com o resto do sistema, e sem a menta em lugar nenhum.
+ *
+ * A leitura de cada cor:
+ *
+ *   comprar     laranja — é a única que gasta dinheiro e sai da fábrica
+ *   transferir  menta   — a ação interna de rotina, e a primária da casa
+ *   etiquetar   neutro  — administrativo, o menos urgente dos quatro
+ *   vencendo    vermelho— perda iminente, o único que é danger de verdade
+ *
+ * As escalas numéricas (`acao-500/15`) existem porque cor semântica NÃO aceita
+ * opacidade: `bg-primary/15` não gera classe e o selo sai sem fundo. Armadilha
+ * conhecida — ver a memória do sistema visual.
+ */
 const CORES_SELO: Record<Alerta, string> = {
-  comprar:    'bg-amber-100 text-amber-800 dark:bg-amber-500/15 dark:text-amber-300',
-  transferir: 'bg-blue-100 text-blue-800 dark:bg-blue-500/15 dark:text-blue-300',
-  etiquetar:  'bg-purple-100 text-purple-800 dark:bg-purple-500/15 dark:text-purple-300',
-  vencendo:   'bg-red-100 text-red-800 dark:bg-red-500/15 dark:text-red-300',
+  comprar:    'bg-acao-500/15 text-acao-700 dark:text-acao-300',
+  transferir: 'bg-brand-500/15 text-brand-700 dark:text-brand-300',
+  etiquetar:  'bg-muted text-muted-foreground',
+  vencendo:   'bg-destructive/15 text-destructive',
 }
 
 /**
- * A cor da tarja na lateral da linha.
+ * A tarja da lateral da linha, e o número grande do resumo.
  *
- * A versão anterior pintava a linha inteira de amarelo. Com meia dúzia de
+ * A versão de antes pintava a linha INTEIRA de amarelo. Com meia dúzia de
  * insumos em alerta, meia tabela ficava amarela e o destaque deixava de
- * destacar — além de brigar com a cor da validade dentro da própria linha. A
- * tarja diz a mesma coisa ocupando 3px.
+ * destacar. A tarja diz a mesma coisa ocupando 3px.
+ *
+ * As cores apontam para o TEMA.
+ *
+ * Antes eram quatro hexadecimais escritos aqui — `#f59e0b`, `#3b82f6`... — que
+ * não mudavam no modo escuro e não tinham relação com o resto do sistema. As
+ * quatro variáveis moram em `index.css`, com um passo mais claro no escuro,
+ * porque cor é decisão de tema e não de tela.
  */
 const CORES_TARJA: Record<Alerta, string> = {
-  comprar:    '#f59e0b',
-  transferir: '#3b82f6',
-  etiquetar:  '#a855f7',
-  vencendo:   '#ef4444',
+  comprar:    'var(--alerta-comprar)',
+  transferir: 'var(--alerta-transferir)',
+  etiquetar:  'var(--alerta-etiquetar)',
+  vencendo:   'var(--alerta-vencendo)',
 }
 
 const ROTULOS: Record<Alerta, string> = {
@@ -90,8 +114,10 @@ type ValidadeInfo = {
 function validadeClass(date: string | null): string {
   if (!date) return 'text-muted-foreground/40'
   const days = daysUntil(date)
-  if (days <= DIAS_ATENCAO) return 'text-red-600 dark:text-red-400 font-semibold'
-  if (days <= 60) return 'text-amber-600 dark:text-amber-400 font-semibold'
+  // Mesma família dos alertas: vencido é destructive, a caminho é o laranja
+  // da ação. Vermelho e âmbar crus não acompanhavam o tema.
+  if (days <= DIAS_ATENCAO) return 'text-destructive font-semibold'
+  if (days <= 60) return 'text-acao-600 dark:text-acao-400 font-semibold'
   return 'text-foreground/70'
 }
 
@@ -290,7 +316,7 @@ export function EstoquePage() {
           competir com ele. */}
       {!loading && (
         <div className="rounded-bloco border border-border bg-card shadow-tema px-4 py-3.5">
-          <div className="flex flex-wrap items-end gap-x-8 gap-y-3">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 sm:items-end">
             <div>
               <p className="text-[0.6rem] uppercase tracking-[1px] font-semibold text-muted-foreground">
                 Total
@@ -352,10 +378,11 @@ export function EstoquePage() {
                 ].join(' ')}
               >
                 <p
-                  className="text-2xl font-display font-bold tabular-nums leading-none"
-                  style={{ color: vazio ? undefined : CORES_TARJA[a] }}
+                  className={`text-2xl font-display font-bold tabular-nums leading-none${
+                    vazio ? ' text-muted-foreground/40' : ''}`}
+                  style={vazio ? undefined : { color: CORES_TARJA[a] }}
                 >
-                  <span className={vazio ? 'text-muted-foreground/40' : ''}>{n}</span>
+                  {n}
                 </p>
                 <p className="text-[0.65rem] uppercase tracking-[1px] font-semibold text-muted-foreground mt-1.5">
                   {ROTULOS[a]}
@@ -424,15 +451,15 @@ export function EstoquePage() {
                       }
                       subtitulo={`${e.insumo_codigo}${categoria?.nome ? ` · ${categoria.nome}` : ''}`}
                       // O total é o que se procura de relance; o resto é detalhe.
-                      destaque={<span className="tabular-nums">{formatQty(e.qtd_total, e.unidade_medida)}</span>}
+                      destaque={<span className="tabular-nums whitespace-nowrap">{formatQty(e.qtd_total, e.unidade_medida)}</span>}
                       marcadores={
                         alertas.length > 0
                           ? <>{alertas.map(a => <Selo key={a} tipo={a} />)}</>
                           : undefined
                       }
                       campos={[
-                        { rotulo: 'EC', valor: <span className="tabular-nums">{formatQty(e.qtd_estoque_central, e.unidade_medida)}</span> },
-                        { rotulo: 'EP', valor: <span className="tabular-nums">{formatQty(e.qtd_estoque_produtivo, e.unidade_medida)}</span> },
+                        { rotulo: 'EC', valor: <span className="tabular-nums whitespace-nowrap">{formatQty(e.qtd_estoque_central, e.unidade_medida)}</span> },
+                        { rotulo: 'EP', valor: <span className="tabular-nums whitespace-nowrap">{formatQty(e.qtd_estoque_produtivo, e.unidade_medida)}</span> },
                         {
                           rotulo: 'Val. EC',
                           valor: val?.validade_ec
@@ -538,15 +565,18 @@ export function EstoquePage() {
       {!loading && (
         <div className="flex gap-4 text-xs text-muted-foreground flex-wrap px-1">
           <span className="flex items-center gap-1.5">
-            <span className="w-2 h-2 rounded-full bg-red-500 inline-block" />
+            <span className="w-2 h-2 rounded-full bg-destructive inline-block" />
             Vence em até {DIAS_ATENCAO} dias
           </span>
           <span className="flex items-center gap-1.5">
-            <span className="w-2 h-2 rounded-full bg-amber-400 inline-block" />
+            <span className="w-2 h-2 rounded-full bg-acao-500 inline-block" />
             Vence em até 60 dias
           </span>
           <span className="flex items-center gap-1.5">
-            <span className="w-3 h-2 rounded-sm bg-amber-500 inline-block" />
+            <span
+              className="w-3 h-2 rounded-controle inline-block"
+              style={{ backgroundColor: CORES_TARJA.comprar }}
+            />
             Tarja na lateral: a linha pede providência
           </span>
         </div>

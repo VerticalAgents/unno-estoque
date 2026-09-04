@@ -53,14 +53,33 @@ export function daysUntil(dateStr: string): number {
 
 // ── Quantity formatting ──────────────────────────────────────
 
-export function formatQty(qty: number, unit: UnidadeMedida): string {
-  const formatted = qty % 1 === 0 ? qty.toString() : qty.toFixed(3).replace(/\.?0+$/, '')
-  return `${formatted} ${unit}`
+/**
+ * Número em português: vírgula decimal e ponto de milhar.
+ *
+ * `toFixed` fala inglês. A tela mostrava "1654.83 kg" para mil seiscentos e
+ * cinquenta e quatro quilos — ponto onde devia ter vírgula, e nenhum separador
+ * de milhar. Num número de quatro dígitos isso não é estética: "1654.83" se lê
+ * como mil e seiscentos com esforço, "1.654,83" se lê de relance.
+ *
+ * `max` é o teto de casas, não o piso: 190 continua "190", não "190,000".
+ */
+function numeroBR(n: number, max = 3): string {
+  return n.toLocaleString('pt-BR', { maximumFractionDigits: max })
 }
 
+export function formatQty(qty: number, unit: UnidadeMedida): string {
+  return `${numeroBR(qty)} ${unit}`
+}
+
+/**
+ * Peso em quilos — ou em gramas, quando é menos de um quilo.
+ *
+ * Duas casas, e não três: quem lê o total do estoque quer a ordem de grandeza,
+ * e o miligrama ali é ruído. O detalhe fica na linha do insumo.
+ */
 export function formatKg(kg: number): string {
-  if (kg < 1) return `${(kg * 1000).toFixed(0)} g`
-  return `${kg.toFixed(kg % 1 === 0 ? 0 : 3).replace(/\.?0+$/, '')} kg`
+  if (kg < 1) return `${numeroBR(kg * 1000, 0)} g`
+  return `${numeroBR(kg, 2)} kg`
 }
 
 // ── QR Code helpers ──────────────────────────────────────────
