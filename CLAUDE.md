@@ -78,8 +78,13 @@ pedir centenas de potes, é isto.
 
 ## Regras de negócio
 
-- **Marca é a trava que ficou.** Não se mistura marcas no mesmo recipiente —
-  validado contra a marca do recipiente e contra a do conteúdo atual.
+- **Marca trava onde alguém disse que trava** (migration 118). A recusa vale
+  contra `locais.marca_id` — a marca CONFIGURADA no recipiente. Recipiente sem
+  marca configurada aceita qualquer uma, inclusive misturando. A trava contra o
+  conteúdo atual foi revogada: ela era implícita, ninguém a tinha ligado, e
+  aparecia só quando atrapalhava (o chocolate Sicao que não entrava no pote com
+  Melken, em 07/09/2026). Custo aceito: pote com duas marcas entrega as duas ao
+  rateio, e recall de uma alcança produção feita com a outra.
   (Transferência total e recipiente-vazio foram **revogadas** na migration 035.)
 - **Mistura:** `locais_lotes` guarda o conteúdo lote a lote; `locais_estado_atual`
   é o resumo mantido por trigger. **Nunca escrever no resumo direto.**
