@@ -107,6 +107,7 @@ export interface Insumo {
   tamanho_embalagem?: number
   /** Peso de cada pacote dentro da embalagem. Ausente quando não vem subdividido. */
   tamanho_subembalagem?: number | null
+  nome_subembalagem?: string | null
   estoque_minimo_ec?: number
   estoque_maximo_ec?: number
   estoque_minimo_ep?: number

@@ -31,6 +31,7 @@ type LoteWithInsumo = Lote & {
     unidade_medida?: string
     /** Peso de cada pacote dentro da embalagem. NULL quando não vem subdividido. */
     tamanho_subembalagem?: number | null
+    nome_subembalagem?: string | null
     armazenamento_config?: ConfigArmazenamento
   }
   marca?: { nome: string } | null
@@ -203,6 +204,7 @@ export function TransferenciaPage() {
     marca:marcas(nome),
     insumo:insumos(
       nome, codigo, shelf_life_dias_pos_abertura, unidade_medida, tamanho_subembalagem,
+      nome_subembalagem,
       armazenamento_config:insumos_armazenamento_config(passa_reembalagem, destino_multiplo, modo_ep)
     )
   `
@@ -556,6 +558,15 @@ export function TransferenciaPage() {
    * pacotes sobraram" ou "quanto está pesando".
    */
   const porPacote = lote?.insumo?.tamanho_subembalagem ?? null
+
+  /**
+   * Como chamar essa unidade na tela.
+   *
+   * "Pacotes" servia para o açúcar e não serve para o óleo: pacote de óleo não
+   * existe, existe garrafa. Numa tela usada correndo, chamar a coisa pelo nome
+   * errado é quase o mesmo que não perguntar (migration 119).
+   */
+  const nomePacote = lote?.insumo?.nome_subembalagem?.trim() || 'pacotes'
 
   /** A sobra na unidade do insumo, que é o que o banco espera. `null` = saiu tudo. */
   const sobraDeclarada = (() => {
@@ -1037,7 +1048,7 @@ export function TransferenciaPage() {
                   <>
                     <label className="block">
                       <span className="text-xs font-semibold uppercase tracking-wide text-gray-500">
-                        {porPacote ? 'Quantos pacotes ficaram' : `Quanto ficou (${unidade})`}
+                        {porPacote ? `Quantos ${nomePacote} ficaram` : `Quanto ficou (${unidade})`}
                       </span>
                       <input
                         type="number"
