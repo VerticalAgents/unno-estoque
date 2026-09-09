@@ -214,7 +214,16 @@ export function FechamentoSessaoPage() {
     })
   }, [id, dataLoaded, respostas])
 
-  /** '' = sem resposta · '0' = acabou · resto = o que sobrou. */
+  /**
+   * '' = sem resposta · '0' = acabou · '?' = ainda tem, quanto não sei ·
+   * resto = o que sobrou.
+   *
+   * O '?' existe porque "Ainda tem" nascia morto: ele mandava o valor atual de
+   * volta, e o valor atual de quem nunca respondeu é ''. Clicar não mudava
+   * nada. Faltava um jeito de dizer "ainda tem" ANTES de saber quanto — e
+   * pré-encher com o palpite do sistema seria pior: o número apareceria como se
+   * alguém tivesse medido.
+   */
   function responder(localId: string, valor: string) {
     setRespostas(r => {
       const next = { ...r, [localId]: valor }
@@ -334,8 +343,11 @@ export function FechamentoSessaoPage() {
     // As embalagens do fornecedor vão ANTES do fechamento: se o fechamento
     // falhar, a observação sobre elas continua verdadeira e já está gravada —
     // e a embalagem que foi para o lixo não volta para ser observada de novo.
+    // O '?' fica de fora: "ainda tem, não sei quanto" não é um número, e
+    // `restante` 0 é a ordem de jogar a embalagem no lixo. Ela continua viva e
+    // volta a ser perguntada amanhã.
     const itensEmbalagem = embalagens
-      .filter(e => (respostas[e.local_id] ?? '') !== '')
+      .filter(e => !['', '?'].includes(respostas[e.local_id] ?? ''))
       .map(e => ({
         local_id: e.local_id,
         restante: parseFloat((respostas[e.local_id] ?? '0').replace(',', '.')) || 0,
@@ -511,7 +523,8 @@ export function FechamentoSessaoPage() {
                         <div key={e.local_id} className="flex justify-between gap-2 text-xs">
                           <span className="text-emerald-700 font-semibold truncate">✓ {e.nome}</span>
                           <span className="text-gray-500 shrink-0">
-                            {(respostas[e.local_id] ?? '0') === '0' ? 'acabou' : 'sobrou'}
+                            {(respostas[e.local_id] ?? '0') === '0' ? 'acabou'
+                              : respostas[e.local_id] === '?' ? 'ainda tem' : 'sobrou'}
                           </span>
                         </div>
                       ))}
@@ -532,9 +545,14 @@ export function FechamentoSessaoPage() {
           )}
 
           <div className="space-y-2">
-            {embalagens.filter(e => e.daSessao || (respostas[e.local_id] ?? '') !== '').map(e => {
+            {/* Toda embalagem do fornecedor viva aparece, não só as da sessão de
+                hoje: uma lata sobrevive à sessão em que foi aberta e some da
+                tela sem ninguém ter dito o que houve com ela. As de fora vêm
+                depois e não entram na cobrança de "sem resposta". */}
+            {[...embalagens].sort((a, b) => Number(b.daSessao) - Number(a.daSessao)).map(e => {
               const r = respostas[e.local_id] ?? ''
               const acabou = r === '0'
+              const aindaTem = r !== '' && !acabou
               return (
                 <Card key={e.local_id} className="p-3">
                   <div className="flex justify-between items-start gap-3">
@@ -554,19 +572,19 @@ export function FechamentoSessaoPage() {
                             onClick={() => responder(e.local_id, '0')}>
                       Acabou
                     </Button>
-                    <Button variant={r !== '' && !acabou ? 'primary' : 'ghost'} size="sm" fullWidth
-                            onClick={() => responder(e.local_id, r === '0' ? '' : r)}>
+                    <Button variant={aindaTem ? 'primary' : 'ghost'} size="sm" fullWidth
+                            onClick={() => responder(e.local_id, aindaTem ? r : '?')}>
                       Ainda tem
                     </Button>
                   </div>
 
-                  {r !== '' && !acabou && (
+                  {aindaTem && (
                     <Input
                       label={`Quanto sobrou (${e.unidade})`}
                       type="number"
                       inputMode="decimal"
-                      value={r}
-                      onChange={ev => responder(e.local_id, ev.target.value)}
+                      value={r === '?' ? '' : r}
+                      onChange={ev => responder(e.local_id, ev.target.value === '' ? '?' : ev.target.value)}
                       placeholder="Pese ou estime pelo que dá para ver"
                       className="mt-2"
                     />
