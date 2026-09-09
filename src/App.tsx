@@ -41,6 +41,7 @@ import { ProducaoAnteriorPage } from './pages/configuracoes/ProducaoAnteriorPage
 import { RecipienteListPage } from './pages/recipientes/RecipienteListPage'
 import { EtiquetaRecipientePage } from './pages/recipientes/EtiquetaRecipientePage'
 import { ImpressaoRecipientesPage } from './pages/recipientes/ImpressaoRecipientesPage'
+import { EtiquetasPendentesPage } from './pages/etiquetas/EtiquetasPendentesPage'
 import { ProdutosEstoquePage } from './pages/estoque/ProdutosEstoquePage'
 import { HistoricoProducaoPage } from './pages/estoque/HistoricoProducaoPage'
 import { ProdutoListPage } from './pages/produtos/ProdutoListPage'
@@ -99,6 +100,7 @@ export default function App() {
           <Route path="rastreabilidade/:validade/:produtoId" element={<DossiePage />} />
           <Route path="produtos" element={<ProdutoListPage />} />
           <Route path="recipientes" element={<RecipienteListPage />} />
+          <Route path="etiquetas" element={<EtiquetasPendentesPage />} />
           <Route path="recipientes/etiquetas" element={<ImpressaoRecipientesPage />} />
           <Route path="recipientes/:id/etiqueta" element={<EtiquetaRecipientePage />} />
           <Route path="configuracoes" element={<ConfiguracoesPage />} />

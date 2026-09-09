@@ -9,13 +9,15 @@ const defaultRoutes: Record<PapelUsuario, string[]> = {
     '/pos-producao',
     '/expedicao', '/perdas', '/contagem', '/relatorios',
     '/estoque', '/insumos', '/fornecedores', '/fichas', '/produtos', '/recipientes',
-    '/configuracoes',
+    '/etiquetas', '/configuracoes',
   ],
   producao: [
     '/dashboard', '/transferencia', '/producao', '/pos-producao', '/contagem', '/estoque',
   ],
   compras: [
     '/dashboard', '/recebimento', '/reabastecimento', '/estoque', '/contagem', '/perdas',
+    // Quem recebe insumo é quem imprime a etiqueta do lote que acabou de entrar.
+    '/etiquetas',
   ],
 }
 
@@ -44,5 +46,6 @@ export const ALL_ROUTES = [
   { path: '/fichas', label: 'Fichas Técnicas' },
   { path: '/produtos', label: 'Produtos' },
   { path: '/recipientes', label: 'Recipientes' },
+  { path: '/etiquetas', label: 'Etiquetas a imprimir' },
   { path: '/configuracoes', label: 'Configurações' },
 ]
