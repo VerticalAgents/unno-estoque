@@ -567,13 +567,17 @@ export function FechamentoSessaoPage() {
                     {r === '' && <span className="text-xs text-gray-400 shrink-0">sem resposta</span>}
                   </div>
 
+                  {/* Clicar no botão que já está aceso desmarca e volta a "sem
+                      resposta". Errar o botão não pode ser irreversível: a
+                      resposta é dada correndo, no fim do dia, com o pote na
+                      mão — e não existia jeito de desdizer. */}
                   <div className="flex gap-2 mt-2">
                     <Button variant={acabou ? 'primary' : 'ghost'} size="sm" fullWidth
-                            onClick={() => responder(e.local_id, '0')}>
+                            onClick={() => responder(e.local_id, acabou ? '' : '0')}>
                       Acabou
                     </Button>
                     <Button variant={aindaTem ? 'primary' : 'ghost'} size="sm" fullWidth
-                            onClick={() => responder(e.local_id, aindaTem ? r : '?')}>
+                            onClick={() => responder(e.local_id, aindaTem ? '' : '?')}>
                       Ainda tem
                     </Button>
                   </div>
