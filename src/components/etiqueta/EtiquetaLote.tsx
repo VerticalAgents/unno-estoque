@@ -2,6 +2,7 @@ import { QRCodeSVG } from 'qrcode.react'
 import type { Lote, Empresa } from '../../types/database.types'
 import { formatDate, formatDateTime } from '../../lib/utils'
 import { LAYOUT_BASE, baseDoLayout, layoutDaEtiqueta, type EtiquetaDims } from '../../lib/etiquetas'
+import { codigoCurtoLote } from '../../lib/qr'
 
 /**
  * O conteúdo da etiqueta de lote/sublote, nos dois desenhos possíveis.
@@ -49,6 +50,10 @@ function dadosDoLote(lote: LoteEtiqueta, empresa: Empresa | null) {
 
   return {
     marcaForn: marcaForn || '—',
+    // A marca sozinha, sem o fornecedor: na bancada é ela que distingue dois
+    // sacos do mesmo insumo, e estava espremida em 6pt junto de mais quatro
+    // campos. Foi marca que causou o impasse do chocolate em 07/09/2026.
+    marca: (lote.marca as unknown as { nome: string } | null)?.nome ?? '',
     responsavel: (lote.recebido_usuario as unknown as { nome: string } | null)?.nome ?? '',
     cnpj: empresa?.cnpj ?? '',
     endereco: [empresa?.endereco, empresa?.cidade, empresa?.estado].filter(Boolean).join(', '),
@@ -63,10 +68,16 @@ function dadosDoLote(lote: LoteEtiqueta, empresa: Empresa | null) {
 /**
  * O código do lote na tarja preta, sempre em UMA linha: a tarja fica na faixa
  * destacável, cuja altura é contada ao milímetro — uma segunda linha empurraria
- * o conteúdo para baixo da picotada. Código curto ganha corpo grande; sublote
- * comprido (INS028-0001.12/12) encolhe até caber.
+ * o conteúdo para baixo da picotada.
+ *
+ * Na etiqueta em pé o que entra aqui é o código CURTO (`0005.1/2`): o `INS014`
+ * é o insumo, cujo nome já está escrito por extenso duas linhas acima. Sem os
+ * sete caracteres do prefixo o número cabe em 13pt — antes eram 9,5pt, e 6,5pt
+ * justamente no sublote comprido, que é o caso mais comum.
  */
 function corpoDoCodigo(codigo: string): string {
+  if (codigo.length <= 8) return '13pt'      // 0005.1/2
+  if (codigo.length <= 10) return '11pt'     // 0005.12/12
   if (codigo.length <= 13) return '9.5pt'
   if (codigo.length <= 18) return '7.5pt'
   return '6.5pt'
@@ -207,6 +218,27 @@ function Campo({ label, value, bold }: { label: string; value: string; bold?: bo
  * O código do lote vem em caixa invertida: é o que se procura de longe na
  * prateleira na hora de casar etiqueta com fardo (decisão do usuário em
  * 05/08/2026 — antes era a validade, que desceu para o bloco de baixo).
+ *
+ * ── O QR ERA PEQUENO DEMAIS, E ISSO ERA O PROBLEMA REAL ──────
+ *
+ * A etiqueta carregava treze campos em 34x65mm e o QR ficava com o que
+ * sobrasse: 15,1mm, ou 4,2 pontos de impressora por quadradinho do código.
+ * Quatro é o limite do que uma cabeça de 203dpi resolve — daí as leituras que
+ * falhavam e a digitação à mão, que era para ser a exceção.
+ *
+ * Saíram do papel cinco campos que ninguém lê na bancada e que o aplicativo
+ * responde melhor: recebimento, validade original, prazo após abertura, NF e
+ * CNPJ. Com eles fora o QR vai a 25,5mm — 7,0 pontos por quadradinho, quase
+ * três vezes a área (decisão do usuário em 09/09/2026).
+ *
+ * O QR passou a ser limitado pela LARGURA da etiqueta, não pela altura: sobram
+ * 36mm de altura para 25,5mm de largura possível. É por isso que a tarja de
+ * embalagem aberta não custa tamanho de QR nenhum — ela ocupa altura que
+ * sobrava de qualquer jeito.
+ *
+ * O `INS014` continua impresso, de pé ao lado do QR. Ele não é enfeite: quando
+ * o QR não lê e a pessoa digita à mão, sem o número do insumo o `0005.1/2` não
+ * identifica nada.
  */
 function LoteRetrato({ lote, empresa }: { lote: LoteEtiqueta; empresa: Empresa | null }) {
   const d = dadosDoLote(lote, empresa)
@@ -247,8 +279,11 @@ function LoteRetrato({ lote, empresa }: { lote: LoteEtiqueta; empresa: Empresa |
       }}>
         {lote.insumo.nome}
       </div>
-      {/* Mesmo corpo e peso do "LOTE" lá embaixo, em maiúsculas: é o nome da
-          empresa que responde pelo produto, e precisa se ler de perto. */}
+      {/* A MARCA ocupa a linha onde estava o nome da empresa.
+          Fisicamente, quem está com o saco na mão distingue um do outro pela
+          marca, não pelo nome da fábrica — que é a mesma em toda etiqueta do
+          estoque e por isso não informa nada. A empresa desceu para o rodapé,
+          junto de quem manipulou. */}
       <div style={{
         fontSize: '6.5pt',
         fontWeight: 'bold',
@@ -260,114 +295,124 @@ function LoteRetrato({ lote, empresa }: { lote: LoteEtiqueta; empresa: Empresa |
         textOverflow: 'ellipsis',
         flexShrink: 0,
       }}>
-        {d.empresaNome}
+        {d.marca || d.marcaForn}
       </div>
 
       {/* Lote — o campo que se lê de longe. Uma linha sempre: a segunda
           estouraria a faixa destacável (ver corpoDoCodigo). */}
+      {/* A CONTA DESTE BLOCO, em milímetros, do topo até aqui:
+            1,20  padding do topo
+            5,60  nome do insumo (7pt, duas linhas)
+            2,82  marca (6,5pt + 0,3 de respiro)
+            0,60  respiro antes da tarja
+            0,50  padding de cima da tarja
+            1,55  a palavra LOTE (4pt)
+            4,83  o número (13pt x 1,05 de entrelinha)
+            0,50  padding de baixo da tarja
+           ─────
+           17,60  contra a picotada em 18,50 — sobram 0,9mm
+
+          Os paddings da tarja são apertados de propósito: eram 0,7mm e o bloco
+          fechava em 18,47mm, encostado na picotada. Mexer em qualquer número
+          daqui exige refazer esta soma. */}
       <div style={{
-        marginTop: '0.8mm',
+        marginTop: '0.6mm',
         background: '#000',
         color: '#fff',
-        padding: '0.7mm 1mm',
+        padding: '0.5mm 1mm',
         flexShrink: 0,
       }}>
-        <div style={{ fontSize: '4.5pt', lineHeight: 1.1, letterSpacing: '0.3pt' }}>LOTE</div>
+        <div style={{ fontSize: '4pt', lineHeight: 1.1, letterSpacing: '0.3pt' }}>LOTE</div>
         <div style={{
-          fontSize: corpoDoCodigo(lote.codigo),
+          fontSize: corpoDoCodigo(codigoCurtoLote(lote.codigo)),
           fontWeight: 'bold',
           lineHeight: 1.05,
           whiteSpace: 'nowrap',
           overflow: 'hidden',
           // Altura fixa na medida do corpo maior: o código menor não encolhe a
           // tarja, senão etiquetas da mesma linha do rolo sairiam desalinhadas.
-          height: '3.6mm',
+          height: '4.83mm',
           display: 'flex',
           alignItems: 'center',
         }}>
-          {lote.codigo}
+          {codigoCurtoLote(lote.codigo)}
         </div>
       </div>
-      {/* ── fim da faixa destacável (≈16,8mm de 18,5mm) ── */}
+      {/* ── fim da faixa destacável (17,6mm de 18,5mm) ── */}
 
-      {/* Demais datas e origem */}
-      <div style={{ marginTop: '1.2mm', flexShrink: 0 }}>
-        <CampoRetrato label="RECEB." value={formatDate(lote.data_recebimento)} />
-        <CampoRetrato label="VAL. ORIG." value={formatDate(lote.validade_original)} />
-        <CampoRetrato label="MANIP." value={formatDateTime(lote.created_at)} />
-        <CampoRetrato label="APÓS ABERT." value={d.aposAbertura} />
-        <CampoRetrato label="MARCA/FORN." value={d.marcaForn} />
-      </div>
-
-      {/* Validade e NF */}
+      {/* Validade — o segundo campo que se lê de longe, e agora com corpo de
+          gente. Recebimento, validade original, prazo após abertura e NF
+          saíram: nenhum deles se responde olhando, e todos estão no
+          aplicativo, a um QR de distância. */}
       <div style={{
         marginTop: '1mm',
         paddingTop: '0.8mm',
         borderTop: '1pt solid #000',
         flexShrink: 0,
       }}>
-        <div style={{ fontSize: '6.5pt', fontWeight: 'bold', lineHeight: 1.15, whiteSpace: 'nowrap', overflow: 'hidden' }}>
-          VALIDADE: {formatDate(lote.validade_pos_abertura)}
+        <div style={{ fontSize: '9pt', fontWeight: 'bold', lineHeight: 1.15, whiteSpace: 'nowrap', overflow: 'hidden' }}>
+          {formatDate(lote.validade_pos_abertura)}
         </div>
-        {/* A embalagem aberta ocupa a linha da NF — os lotes da abertura de
-            estoque nunca têm nota, e é só neles que a marcação existe. */}
-        {d.embalagemAberta ? (
-          <div style={{
-            fontSize: '5.8pt',
-            fontWeight: 'bold',
-            background: '#000',
-            color: '#fff',
-            padding: '0.3mm 0.8mm',
-            marginTop: '0.3mm',
-            display: 'inline-block',
-          }}>
-            EMB. ABERTA{d.quantidade ? ` · ${d.quantidade}` : ''}
-          </div>
-        ) : (
-          <div style={{ fontSize: '5.8pt', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-            NF: {lote.numero_nf || '—'}
-          </div>
-        )}
       </div>
 
-      {/* QR — ocupa o que sobrar, centralizado. O tamanho deixa folga na
-          altura para o código do lote usar duas linhas. Em 203dpi, 15mm dão
-          ~3,5 pontos por módulo do QR: sobra de leitura com folga. */}
+      {/* A embalagem aberta tem menos produto que as fechadas, e a quantidade
+          é o que casa esta etiqueta com o fardo certo. Ela cabe de graça: o QR
+          abaixo é limitado pela largura da etiqueta, e esta tarja gasta
+          altura, que sobra. */}
+      {d.embalagemAberta && (
+        <div style={{
+          fontSize: '5.8pt',
+          fontWeight: 'bold',
+          background: '#000',
+          color: '#fff',
+          padding: '0.3mm 0.8mm',
+          marginTop: '0.3mm',
+          display: 'inline-block',
+          flexShrink: 0,
+        }}>
+          EMB. ABERTA{d.quantidade ? ` · ${d.quantidade}` : ''}
+        </div>
+      )}
+
+      {/* QR grande com o código do insumo em pé ao lado.
+          25,5mm a 203dpi dão 7,0 pontos por módulo — antes eram 4,2, no limite
+          do que a impressora resolve. A faixa vertical custa 4,5mm de largura
+          e é o que torna a digitação manual possível quando o QR falha. */}
       <div style={{
         flex: 1,
         minHeight: 0,
         display: 'flex',
-        flexDirection: 'column',
         alignItems: 'center',
         justifyContent: 'center',
+        gap: '1mm',
         marginTop: '1mm',
       }}>
-        <QRCodeSVG value={d.qrContent} size={57} level="M" includeMargin={false} />
+        <QRCodeSVG value={d.qrContent} size={96} level="M" includeMargin={false} />
+        <div style={{
+          fontSize: '7pt',
+          fontWeight: 'bold',
+          letterSpacing: '0.4pt',
+          // De baixo para cima: é como se lê uma lombada de livro em pé.
+          writingMode: 'vertical-rl',
+          transform: 'rotate(180deg)',
+          whiteSpace: 'nowrap',
+        }}>
+          {lote.insumo.codigo}
+        </div>
       </div>
 
-      {/* Responsável e CNPJ */}
+      {/* Uma linha só: a fábrica e quem manipulou, que é o que a boa prática
+          pede. O CNPJ saiu — esta etiqueta não sai da fábrica. */}
       <div style={{ flexShrink: 0, marginTop: '0.8mm' }}>
-        <div style={{ fontSize: '5.2pt', lineHeight: 1.25, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-          <span style={{ fontWeight: 'bold' }}>RESP.: </span>{d.responsavel}
-        </div>
-        <div style={{ fontSize: '5.2pt', lineHeight: 1.25, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-          <span style={{ fontWeight: 'bold' }}>CNPJ: </span>{d.cnpj}
+        <div style={{ fontSize: '5pt', lineHeight: 1.25, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+          {d.empresaNome} · {formatDateTime(lote.created_at)}
+          {d.responsavel ? ` · ${d.responsavel}` : ''}
         </div>
       </div>
     </div>
   )
 }
 
-function CampoRetrato({ label, value }: { label: string; value: string }) {
-  return (
-    <div style={{
-      fontSize: '6pt',
-      lineHeight: 1.35,
-      whiteSpace: 'nowrap',
-      overflow: 'hidden',
-      textOverflow: 'ellipsis',
-    }}>
-      <span style={{ fontWeight: 'bold' }}>{label}: </span>{value}
-    </div>
-  )
-}
+// `CampoRetrato` saiu junto com os cinco campos miudos que ele desenhava. O
+// desenho em pe nao tem mais linha de 6pt: sobraram tres blocos, e cada um
+// grande o suficiente para ser lido de longe.
