@@ -93,7 +93,7 @@ export function EtiquetasPendentesPage() {
   const nada = lotes.length === 0 && recipientes.length === 0
 
   return (
-    <div className="max-w-3xl">
+    <div className="p-4 sm:p-6 max-w-3xl mx-auto">
       <h1 className="text-xl font-semibold text-gray-900 dark:text-unno-text">
         Etiquetas a imprimir
       </h1>
