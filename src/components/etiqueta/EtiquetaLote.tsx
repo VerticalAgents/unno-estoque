@@ -66,6 +66,19 @@ function dadosDoLote(lote: LoteEtiqueta, empresa: Empresa | null) {
 }
 
 /**
+ * "09/09/26 10:14" — a data de manipulação no rodapé da etiqueta em pé.
+ *
+ * Dois dígitos no ano porque a linha é medida em caracteres: são ~32 num vão
+ * de 31mm em 5pt, e os dois dígitos a mais custavam o nome do responsável.
+ */
+function dataHoraCurta(iso: string): string {
+  const d = new Date(iso)
+  const dd = (n: number) => String(n).padStart(2, '0')
+  return `${dd(d.getDate())}/${dd(d.getMonth() + 1)}/${dd(d.getFullYear() % 100)} `
+       + `${dd(d.getHours())}:${dd(d.getMinutes())}`
+}
+
+/**
  * O código do lote na tarja preta, sempre em UMA linha: a tarja fica na faixa
  * destacável, cuja altura é contada ao milímetro — uma segunda linha empurraria
  * o conteúdo para baixo da picotada.
@@ -340,18 +353,33 @@ function LoteRetrato({ lote, empresa }: { lote: LoteEtiqueta; empresa: Empresa |
       </div>
       {/* ── fim da faixa destacável (17,6mm de 18,5mm) ── */}
 
-      {/* Validade — o segundo campo que se lê de longe, e agora com corpo de
-          gente. Recebimento, validade original, prazo após abertura e NF
-          saíram: nenhum deles se responde olhando, e todos estão no
-          aplicativo, a um QR de distância. */}
+      {/* Validade à esquerda, código do insumo à direita — na MESMA linha.
+          O código estava de pé ao lado do QR e custava 4,5mm de largura, que
+          é a medida que limita o QR. Dividindo esta linha ele não custa
+          altura nem largura, e o QR passa a usar a etiqueta inteira: 31mm,
+          8,5 pontos por módulo (era 7,0 com a faixa, e 4,2 no desenho antigo).
+
+          "VAL:" escrito por extenso porque uma data solta não diz de quê —
+          poderia ser a de recebimento tanto quanto a de vencimento. */}
       <div style={{
         marginTop: '1mm',
         paddingTop: '0.8mm',
         borderTop: '1pt solid #000',
         flexShrink: 0,
+        display: 'flex',
+        alignItems: 'baseline',
+        justifyContent: 'space-between',
+        gap: '1mm',
       }}>
-        <div style={{ fontSize: '9pt', fontWeight: 'bold', lineHeight: 1.15, whiteSpace: 'nowrap', overflow: 'hidden' }}>
-          {formatDate(lote.validade_pos_abertura)}
+        {/* 8pt e 6,5pt sao medidos, nao escolhidos: "VAL: 12/09/2026" mais
+            "INS014" mais 1mm de folga dao 30,8mm num vao de 31. Em 9pt/7pt,
+            que foi a primeira tentativa, davam 34,1mm — e a data saia cortada,
+            que e o defeito que esta linha veio consertar. */}
+        <div style={{ fontSize: '8pt', fontWeight: 'bold', lineHeight: 1.15, whiteSpace: 'nowrap', overflow: 'hidden' }}>
+          VAL: {formatDate(lote.validade_pos_abertura)}
+        </div>
+        <div style={{ fontSize: '6.5pt', fontWeight: 'bold', lineHeight: 1.15, whiteSpace: 'nowrap', flexShrink: 0 }}>
+          {lote.insumo.codigo}
         </div>
       </div>
 
@@ -374,39 +402,30 @@ function LoteRetrato({ lote, empresa }: { lote: LoteEtiqueta; empresa: Empresa |
         </div>
       )}
 
-      {/* QR grande com o código do insumo em pé ao lado.
-          25,5mm a 203dpi dão 7,0 pontos por módulo — antes eram 4,2, no limite
-          do que a impressora resolve. A faixa vertical custa 4,5mm de largura
-          e é o que torna a digitação manual possível quando o QR falha. */}
+      {/* O QR ocupa a largura inteira da etiqueta: 31mm, ou 8,5 pontos de
+          impressora por módulo. No desenho antigo eram 4,2 — no limite do que
+          uma cabeça de 203dpi resolve, e a razão de as leituras falharem. */}
       <div style={{
         flex: 1,
         minHeight: 0,
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',
-        gap: '1mm',
         marginTop: '1mm',
       }}>
-        <QRCodeSVG value={d.qrContent} size={96} level="M" includeMargin={false} />
-        <div style={{
-          fontSize: '7pt',
-          fontWeight: 'bold',
-          letterSpacing: '0.4pt',
-          // De baixo para cima: é como se lê uma lombada de livro em pé.
-          writingMode: 'vertical-rl',
-          transform: 'rotate(180deg)',
-          whiteSpace: 'nowrap',
-        }}>
-          {lote.insumo.codigo}
-        </div>
+        <QRCodeSVG value={d.qrContent} size={117} level="M" includeMargin={false} />
       </div>
 
-      {/* Uma linha só: a fábrica e quem manipulou, que é o que a boa prática
-          pede. O CNPJ saiu — esta etiqueta não sai da fábrica. */}
+      {/* Manipulação e quem manipulou, que é o que a boa prática pede.
+          Cabe em UMA linha, e por pouco: em 5pt, 31mm de etiqueta dão ~32
+          caracteres. O nome da fábrica saiu (é o mesmo em toda etiqueta do
+          estoque), o ano vai com dois dígitos e o responsável entra só com o
+          primeiro nome. Com o texto anterior eram 48,5mm num vão de 31 — e a
+          data saía cortada. */}
       <div style={{ flexShrink: 0, marginTop: '0.8mm' }}>
         <div style={{ fontSize: '5pt', lineHeight: 1.25, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-          {d.empresaNome} · {formatDateTime(lote.created_at)}
-          {d.responsavel ? ` · ${d.responsavel}` : ''}
+          MANIP. {dataHoraCurta(lote.created_at)}
+          {d.responsavel ? ` · ${d.responsavel.split(' ')[0]}` : ''}
         </div>
       </div>
     </div>
