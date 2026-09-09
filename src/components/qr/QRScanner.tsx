@@ -230,14 +230,20 @@ export function QRScanner({
       <div className="w-full p-4 bg-gray-50 dark:bg-white/[.04] border border-gray-200 dark:border-white/[.08] rounded-xl">
         <p className="text-sm font-medium text-gray-900 dark:text-unno-text">Digitar o código</p>
         <p className="text-xs text-gray-500 dark:text-unno-muted mt-0.5 mb-3">
-          É o código impresso na etiqueta, embaixo ou ao lado do QR.
+          É o código impresso na etiqueta, embaixo ou ao lado do QR. Maiúscula,
+          minúscula, ponto e barra tanto faz — só os números importam.
         </p>
         <input
           autoFocus
           value={codigoManual}
           onChange={e => setCodigoManual(e.target.value)}
           onKeyDown={e => { if (e.key === 'Enter') confirmarManual() }}
-          placeholder="INS001-0001"
+          // O teclado do celular sugere maiúscula na primeira letra e mais
+          // nada; e corretor num código é só atrapalho.
+          autoCapitalize="characters"
+          autoCorrect="off"
+          spellCheck={false}
+          placeholder="INS014-0005.1/2"
           className="w-full rounded-lg border border-gray-300 bg-white px-4 py-3 text-base font-mono
                      focus:outline-none focus:border-brand-500 focus:ring-[3px] focus:ring-brand-500/10
                      dark:border-white/[.08] dark:bg-unno-raised dark:text-unno-text"

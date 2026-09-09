@@ -8,7 +8,7 @@ import { Input } from '../../components/ui/Input'
 import { ConfirmModal } from '../../components/ui/ConfirmModal'
 import { cancelarSessao, avisoCancelamentoSessao } from '../../lib/producao'
 import { QRScanner } from '../../components/qr/QRScanner'
-import { resolverLocalPorQr } from '../../lib/qr'
+import { resolverLocalPorQr, codigoCurtoLote, nomeSemCodigo } from '../../lib/qr'
 
 /**
  * A PRODUÇÃO NÃO PESA MAIS OS RECIPIENTES.
@@ -521,7 +521,10 @@ export function FechamentoSessaoPage() {
                     <div className="space-y-1">
                       {respondidas.map(e => (
                         <div key={e.local_id} className="flex justify-between gap-2 text-xs">
-                          <span className="text-emerald-700 font-semibold truncate">✓ {e.nome}</span>
+                          <span className="text-emerald-700 font-semibold truncate">
+                            ✓ {nomeSemCodigo(e.nome)}{' '}
+                            <span className="font-mono">{codigoCurtoLote(e.lote_codigo ?? e.nome)}</span>
+                          </span>
                           <span className="text-gray-500 shrink-0">
                             {(respostas[e.local_id] ?? '0') === '0' ? 'acabou'
                               : respostas[e.local_id] === '?' ? 'ainda tem' : 'sobrou'}
@@ -556,10 +559,19 @@ export function FechamentoSessaoPage() {
               return (
                 <Card key={e.local_id} className="p-3">
                   <div className="flex justify-between items-start gap-3">
+                    {/* O código curto e sem `truncate`: no celular a linha
+                        inteira não cabia e o navegador cortava justamente o
+                        fim, que é a única parte que distingue um balde do
+                        outro. O insumo já está escrito por extenso ao lado. */}
                     <div className="min-w-0">
-                      <p className="text-sm font-medium text-gray-900 truncate">{e.nome}</p>
+                      <p className="text-sm font-medium text-gray-900">
+                        {nomeSemCodigo(e.nome)}{' '}
+                        <span className="font-mono font-semibold">
+                          {codigoCurtoLote(e.lote_codigo ?? e.nome)}
+                        </span>
+                      </p>
                       <p className="text-xs text-gray-400">
-                        {e.lote_codigo ?? '—'} · o sistema acha que há{' '}
+                        o sistema acha que há{' '}
                         {e.conteudo.toLocaleString('pt-BR')} {e.unidade}
                         {!e.daSessao && ' · não é desta sessão'}
                       </p>

@@ -339,7 +339,9 @@ export function TransferenciaPage() {
       // Duas etiquetas servem: o QR próprio do pote da cozinha e o QR derivado
       // do lote, que é o que existe quando o ponto de consumo é a embalagem do
       // fornecedor (migration 073).
-      .in('qr_code_fixo', [qr, qrDaEmbalagem(parseQRLoteCodigo(qr))])
+      // `toUpperCase` junto porque este mesmo caminho recebe código digitado à
+      // mão, e o teclado do celular não garante maiúscula.
+      .in('qr_code_fixo', [qr, qr.toUpperCase(), qrDaEmbalagem(parseQRLoteCodigo(qr))])
       .eq('ativo', true)
       .limit(1)
       .maybeSingle()
