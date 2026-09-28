@@ -48,7 +48,8 @@ interface StoredState {
   skuInputs: Record<string, { perdida: number; descartada_gramatura: number; peso_descartado_g: number }>
   /** Formas assadas e massa no tacho, do jeito que foram digitadas. */
   medicoes?: Record<string, { formas: string; sobra: string }>
-  /** Embalagem do fornecedor: '' = sem resposta, '0' = acabou, resto = sobrou. */
+  /** Embalagem do fornecedor: '' = sem resposta, '0' = acabou, 'F' = fechada,
+   *  '?' = ainda tem sem peso, resto = sobrou. */
   embalagens?: Record<string, string>
   obs: string
 }
@@ -65,9 +66,14 @@ type Embalagem = {
   lote_codigo: string | null
   conteudo: number
   unidade: string
+  /** O que veio na embalagem (`capacidade_max`, gravado por `mover_embalagem_fornecedor`). */
+  capacidade: number | null
   /** Falso = acabou noutra sessão e ninguém encerrou. Vale registrar do mesmo jeito. */
   daSessao: boolean
 }
+
+/** Código de resposta de "Fechado": a embalagem está lacrada e volta cheia. */
+const FECHADA = 'F'
 
 function saveState(sessaoId: string, state: StoredState) {
   try { sessionStorage.setItem(storageKey(sessaoId), JSON.stringify(state)) } catch {}
@@ -153,7 +159,7 @@ export function FechamentoSessaoPage() {
     const [locs, doSessao] = await Promise.all([
       supabase
         .from('locais')
-        .select('id, nome, insumo_id, unidade_capacidade, lote:lotes!locais_origem_lote_id_fkey(codigo)')
+        .select('id, nome, insumo_id, unidade_capacidade, capacidade_max, lote:lotes!locais_origem_lote_id_fkey(codigo)')
         .eq('empresa_id', profile.empresa_id)
         .eq('efemero', true)
         .eq('ativo', true),
@@ -175,6 +181,7 @@ export function FechamentoSessaoPage() {
 
     setEmbalagens(((locs.data ?? []) as unknown as {
       id: string; nome: string; insumo_id: string; unidade_capacidade: string
+      capacidade_max: number | null
       lote: { codigo: string }[] | null
     }[]).map(l => ({
       local_id: l.id,
@@ -183,6 +190,7 @@ export function FechamentoSessaoPage() {
       lote_codigo: l.lote?.[0]?.codigo ?? null,
       conteudo: soma.get(l.id) ?? 0,
       unidade: l.unidade_capacidade,
+      capacidade: l.capacidade_max == null ? null : Number(l.capacidade_max),
       daSessao: insumosDaSessao.has(l.insumo_id),
     })))
   }
@@ -215,8 +223,12 @@ export function FechamentoSessaoPage() {
   }, [id, dataLoaded, respostas])
 
   /**
-   * '' = sem resposta · '0' = acabou · '?' = ainda tem, quanto não sei ·
-   * resto = o que sobrou.
+   * '' = sem resposta · '0' = acabou · 'F' = fechada (lacrada, volta cheia) ·
+   * '?' = ainda tem, quanto não sei · resto = o que sobrou.
+   *
+   * "Fechado" existe porque a fila do consumo teórico não sabe qual balde foi
+   * aberto: ela pode ter zerado um balde lacrado. Pesar balde fechado para
+   * provar que está cheio era o único jeito de dizer isso (Lucca, 28/09/2026).
    *
    * O '?' existe porque "Ainda tem" nascia morto: ele mandava o valor atual de
    * volta, e o valor atual de quem nunca respondeu é ''. Clicar não mudava
@@ -259,8 +271,34 @@ export function FechamentoSessaoPage() {
     responder(local.id, '0')
   }
 
+  /**
+   * O que foi declarado sobre a embalagem, já como número — ou o motivo de
+   * ainda não ser uma resposta.
+   *
+   * TODA embalagem da lista precisa de resposta completa para fechar, inclusive
+   * as que não são desta sessão (Lucca, 28/09/2026). "Ainda tem" sem o peso
+   * não é resposta: sem o número o sistema não sabe o que saiu dali.
+   */
+  function restanteDe(e: Embalagem): { valor: number | null; problema: string | null } {
+    const r = respostas[e.local_id] ?? ''
+    if (r === '') return { valor: null, problema: 'sem resposta' }
+    if (r === '0') return { valor: 0, problema: null }
+    if (r === FECHADA) {
+      return e.capacidade && e.capacidade > 0
+        ? { valor: e.capacidade, problema: null }
+        : { valor: null, problema: 'sem quantidade original cadastrada — use "Ainda tem" e pese' }
+    }
+    if (r === '?') return { valor: null, problema: 'falta o peso' }
+    const n = parseFloat(r.replace(',', '.'))
+    if (!(n > 0)) return { valor: null, problema: 'peso inválido' }
+    if (e.capacidade && n > e.capacidade + 0.001) {
+      return { valor: null, problema: `mais do que cabe na embalagem (${e.capacidade.toLocaleString('pt-BR')} ${e.unidade})` }
+    }
+    return { valor: n, problema: null }
+  }
+
   const respondidas = embalagens.filter(e => (respostas[e.local_id] ?? '') !== '')
-  const semResposta = embalagens.filter(e => e.daSessao && (respostas[e.local_id] ?? '') === '')
+  const pendentes = embalagens.filter(e => restanteDe(e).problema !== null)
 
   function setMedicao(skuId: string, campo: 'formas' | 'sobra', valor: string) {
     setMedicoes((m) => {
@@ -324,10 +362,16 @@ export function FechamentoSessaoPage() {
   )
 
   const hasValidationError = skus.some((s) => skuValidation(s) !== null)
+  const podeFechar = !hasValidationError && pendentes.length === 0
 
   async function handleConfirmar() {
     if (!profile || !id) return
     if (hasValidationError) { setError('Corrija os erros antes de fechar.'); setShowConfirm(false); return }
+    if (pendentes.length > 0) {
+      setError('Responda todas as embalagens do fornecedor antes de fechar.')
+      setShowConfirm(false)
+      return
+    }
     setLoading(true)
 
     // As medições são gravadas direto na tabela: são números observados, não
@@ -343,15 +387,14 @@ export function FechamentoSessaoPage() {
     // As embalagens do fornecedor vão ANTES do fechamento: se o fechamento
     // falhar, a observação sobre elas continua verdadeira e já está gravada —
     // e a embalagem que foi para o lixo não volta para ser observada de novo.
-    // O '?' fica de fora: "ainda tem, não sei quanto" não é um número, e
-    // `restante` 0 é a ordem de jogar a embalagem no lixo. Ela continua viva e
-    // volta a ser perguntada amanhã.
-    const itensEmbalagem = embalagens
-      .filter(e => !['', '?'].includes(respostas[e.local_id] ?? ''))
-      .map(e => ({
-        local_id: e.local_id,
-        restante: parseFloat((respostas[e.local_id] ?? '0').replace(',', '.')) || 0,
-      }))
+    // Toda embalagem chega aqui com resposta completa (o botão trava antes).
+    // "Fechado" vai como a quantidade original: a função devolve ao balde o que
+    // a fila do teórico tirou dele (migration 121). `restante` 0 é a ordem de
+    // jogar a embalagem no lixo.
+    const itensEmbalagem = embalagens.map(e => ({
+      local_id: e.local_id,
+      restante: restanteDe(e).valor ?? 0,
+    }))
 
     if (itensEmbalagem.length > 0) {
       const { data: emb, error: errEmb } = await supabase.rpc('registrar_embalagens_encerradas', {
@@ -527,6 +570,7 @@ export function FechamentoSessaoPage() {
                           </span>
                           <span className="text-gray-500 shrink-0">
                             {(respostas[e.local_id] ?? '0') === '0' ? 'acabou'
+                              : respostas[e.local_id] === FECHADA ? 'fechado'
                               : respostas[e.local_id] === '?' ? 'ainda tem' : 'sobrou'}
                           </span>
                         </div>
@@ -555,7 +599,9 @@ export function FechamentoSessaoPage() {
             {[...embalagens].sort((a, b) => Number(b.daSessao) - Number(a.daSessao)).map(e => {
               const r = respostas[e.local_id] ?? ''
               const acabou = r === '0'
-              const aindaTem = r !== '' && !acabou
+              const fechada = r === FECHADA
+              const aindaTem = r !== '' && !acabou && !fechada
+              const { problema } = restanteDe(e)
               return (
                 <Card key={e.local_id} className="p-3">
                   <div className="flex justify-between items-start gap-3">
@@ -576,7 +622,7 @@ export function FechamentoSessaoPage() {
                         {!e.daSessao && ' · não é desta sessão'}
                       </p>
                     </div>
-                    {r === '' && <span className="text-xs text-gray-400 shrink-0">sem resposta</span>}
+                    {r === '' && <span className="text-xs text-red-600 font-semibold shrink-0">sem resposta</span>}
                   </div>
 
                   {/* Clicar no botão que já está aceso desmarca e volta a "sem
@@ -592,7 +638,19 @@ export function FechamentoSessaoPage() {
                             onClick={() => responder(e.local_id, aindaTem ? '' : '?')}>
                       Ainda tem
                     </Button>
+                    <Button variant={fechada ? 'primary' : 'ghost'} size="sm" fullWidth
+                            onClick={() => responder(e.local_id, fechada ? '' : FECHADA)}>
+                      Fechado
+                    </Button>
                   </div>
+
+                  {fechada && (
+                    <p className={`text-xs mt-2 ${problema ? 'text-red-600 font-semibold' : 'text-gray-500'}`}>
+                      {problema
+                        ? problema
+                        : `lacrado — fica com ${e.capacidade!.toLocaleString('pt-BR')} ${e.unidade}, sem pesar`}
+                    </p>
+                  )}
 
                   {aindaTem && (
                     <Input
@@ -601,19 +659,22 @@ export function FechamentoSessaoPage() {
                       inputMode="decimal"
                       value={r === '?' ? '' : r}
                       onChange={ev => responder(e.local_id, ev.target.value === '' ? '?' : ev.target.value)}
-                      placeholder="Pese ou estime pelo que dá para ver"
+                      placeholder="Pese a embalagem"
                       className="mt-2"
                     />
+                  )}
+                  {aindaTem && problema && r !== '?' && (
+                    <p className="text-xs text-red-600 font-semibold mt-1">{problema}</p>
                   )}
                 </Card>
               )
             })}
           </div>
 
-          {semResposta.length > 0 && (
-            <p className="text-xs text-gray-500 mt-2">
-              {semResposta.length} sem resposta — dá para fechar assim mesmo; elas
-              continuam disponíveis amanhã.
+          {pendentes.length > 0 && (
+            <p className="text-xs text-red-700 font-semibold mt-2">
+              {pendentes.length === 1 ? 'Falta 1 embalagem' : `Faltam ${pendentes.length} embalagens`}
+              {' '}— responda todas para fechar a sessão.
             </p>
           )}
         </div>
@@ -679,7 +740,7 @@ export function FechamentoSessaoPage() {
         <div className="mb-3 p-3 bg-red-50 border border-red-200 rounded-lg text-sm text-red-700">{error}</div>
       )}
 
-      <Button variant="danger" size="xl" fullWidth onClick={() => setShowConfirm(true)} disabled={hasValidationError}>
+      <Button variant="danger" size="xl" fullWidth onClick={() => setShowConfirm(true)} disabled={!podeFechar}>
         FECHAR SESSÃO
       </Button>
 
