@@ -9,6 +9,7 @@ import { ConfirmModal } from '../../components/ui/ConfirmModal'
 import { cancelarSessao, avisoCancelamentoSessao } from '../../lib/producao'
 import { QRScanner } from '../../components/qr/QRScanner'
 import { resolverLocalPorQr, codigoCurtoLote, nomeSemCodigo } from '../../lib/qr'
+import { bancada } from '../../lib/unidades'
 
 /**
  * A PRODUÇÃO NÃO PESA MAIS OS RECIPIENTES.
@@ -68,6 +69,8 @@ type Embalagem = {
   unidade: string
   /** O que veio na embalagem (`capacidade_max`, gravado por `mover_embalagem_fornecedor`). */
   capacidade: number | null
+  /** Peso da embalagem vazia, em gramas (migration 124). null = desconhecido. */
+  tara_g: number | null
   /** Falso = acabou noutra sessão e ninguém encerrou. Vale registrar do mesmo jeito. */
   daSessao: boolean
 }
@@ -159,7 +162,7 @@ export function FechamentoSessaoPage() {
     const [locs, doSessao] = await Promise.all([
       supabase
         .from('locais')
-        .select('id, nome, insumo_id, unidade_capacidade, capacidade_max, lote:lotes!locais_origem_lote_id_fkey(codigo)')
+        .select('id, nome, insumo_id, unidade_capacidade, capacidade_max, peso_tara, lote:lotes!locais_origem_lote_id_fkey(codigo)')
         .eq('empresa_id', profile.empresa_id)
         .eq('efemero', true)
         .eq('ativo', true),
@@ -182,6 +185,7 @@ export function FechamentoSessaoPage() {
     setEmbalagens(((locs.data ?? []) as unknown as {
       id: string; nome: string; insumo_id: string; unidade_capacidade: string
       capacidade_max: number | null
+      peso_tara: number | null
       lote: { codigo: string }[] | null
     }[]).map(l => ({
       local_id: l.id,
@@ -191,6 +195,7 @@ export function FechamentoSessaoPage() {
       conteudo: soma.get(l.id) ?? 0,
       unidade: l.unidade_capacidade,
       capacidade: l.capacidade_max == null ? null : Number(l.capacidade_max),
+      tara_g: Number(l.peso_tara) > 0 ? Number(l.peso_tara) : null,
       daSessao: insumosDaSessao.has(l.insumo_id),
     })))
   }
@@ -289,12 +294,22 @@ export function FechamentoSessaoPage() {
         : { valor: null, problema: 'sem quantidade original cadastrada — use "Ainda tem" e pese' }
     }
     if (r === '?') return { valor: null, problema: 'falta o peso' }
-    const n = parseFloat(r.replace(',', '.'))
-    if (!(n > 0)) return { valor: null, problema: 'peso inválido' }
+    // O que se digita é a balança, com a embalagem. A tara sai aqui (migration
+    // 124): antes o balde de 160 g entrava como doce de leite.
+    const bruto = parseFloat(r.replace(',', '.'))
+    if (!(bruto > 0)) return { valor: null, problema: 'peso inválido' }
+    const tara = taraNaUnidade(e)
+    const n = Math.round((bruto - tara) * 1000) / 1000
+    if (!(n > 0)) return { valor: null, problema: 'peso menor que a embalagem vazia' }
     if (e.capacidade && n > e.capacidade + 0.001) {
       return { valor: null, problema: `mais do que cabe na embalagem (${e.capacidade.toLocaleString('pt-BR')} ${e.unidade})` }
     }
     return { valor: n, problema: null }
+  }
+
+  /** A tara da embalagem na unidade dela: g → kg divide por 1000; ml fica (1 g = 1 ml). */
+  function taraNaUnidade(e: Embalagem): number {
+    return e.tara_g ? e.tara_g / bancada(e.unidade).fator : 0
   }
 
   const respondidas = embalagens.filter(e => (respostas[e.local_id] ?? '') !== '')
@@ -654,7 +669,7 @@ export function FechamentoSessaoPage() {
 
                   {aindaTem && (
                     <Input
-                      label={`Quanto sobrou (${e.unidade})`}
+                      label={`Peso na balança, com a embalagem (${e.unidade})`}
                       type="number"
                       inputMode="decimal"
                       value={r === '?' ? '' : r}
@@ -666,6 +681,18 @@ export function FechamentoSessaoPage() {
                   {aindaTem && problema && r !== '?' && (
                     <p className="text-xs text-red-600 font-semibold mt-1">{problema}</p>
                   )}
+                  {aindaTem && (e.tara_g
+                    ? (!problema && (
+                        <p className="text-xs text-gray-500 mt-1">
+                          embalagem de {e.tara_g.toLocaleString('pt-BR')} g descontada → fica{' '}
+                          {(restanteDe(e).valor ?? 0).toLocaleString('pt-BR')} {e.unidade}
+                        </p>
+                      ))
+                    : (
+                        <p className="text-xs text-amber-700 mt-1">
+                          Tara desta embalagem não cadastrada — digite o peso <strong>sem</strong> a embalagem.
+                        </p>
+                      ))}
                 </Card>
               )
             })}

@@ -109,6 +109,8 @@ export function AbastecimentoPage() {
   const [recarga, setRecarga] = useState(0)
   const [insumos, setInsumos] = useState<InsumoAlvo[]>([])
   const [alvo, setAlvo] = useState<InsumoAlvo | null>(null)
+  /** Peso da embalagem do fornecedor vazia, em gramas, por insumo (migration 124). */
+  const [taraEmbalagem, setTaraEmbalagem] = useState<Record<string, number>>({})
 
   // Passo 2 — o que a balança disse, por pote. Texto, porque o campo é texto:
   // converter cedo transforma "12," em 12 e o operador perde o que digitou.
@@ -180,7 +182,7 @@ export function AbastecimentoPage() {
     async function carregar() {
       const empresa = profile!.empresa_id
 
-      const [comp, locs, cfg, lotesEc] = await Promise.all([
+      const [comp, locs, cfg, tarasEmb, lotesEc] = await Promise.all([
         supabase
           .from('v_recipientes_composicao')
           .select('local_id, local_nome, capacidade_max, insumo_id, insumo_codigo, '
@@ -196,6 +198,7 @@ export function AbastecimentoPage() {
           .eq('tipo', 'estoque_produtivo')
           .eq('ativo', true),
         supabase.from('insumos_armazenamento_config').select('insumo_id, modo_ep'),
+        supabase.from('insumos_embalagem_config').select('insumo_id, tara_embalagem_g'),
         supabase
           .from('lotes')
           .select('id, codigo, insumo_id, quantidade_disponivel, quantidade_recebida, '
@@ -213,6 +216,12 @@ export function AbastecimentoPage() {
       )
       // Sem linha de config o insumo é de recipiente — é o mesmo padrão que a
       // TransferenciaPage aplica (`modo_ep ?? 'recipiente'`).
+      setTaraEmbalagem(Object.fromEntries(
+        ((tarasEmb.data ?? []) as { insumo_id: string; tara_embalagem_g: number | null }[])
+          .filter(t => Number(t.tara_embalagem_g) > 0)
+          .map(t => [t.insumo_id, Number(t.tara_embalagem_g)]),
+      ))
+
       const modos = new Map(
         ((cfg.data ?? []) as { insumo_id: string; modo_ep: string | null }[])
           .map(c => [c.insumo_id, c.modo_ep ?? 'recipiente']),
@@ -466,7 +475,16 @@ export function AbastecimentoPage() {
   const respostaDe = (lote: LoteBipado): RespostaEmbalagem =>
     respostas[lote.id] ?? 'nao_pesei'
 
-  /** A sobra que o operador MEDIU. `null` quando ninguém pesou. */
+  /** A tara da embalagem do insumo deste abastecimento, na unidade de bancada (g ou ml). */
+  const taraBancada = alvo ? (taraEmbalagem[alvo.insumo_id] ?? 0) : 0
+
+  /**
+   * A sobra que o operador MEDIU. `null` quando ninguém pesou.
+   *
+   * Pesa-se a embalagem inteira; a tara do cadastro sai aqui (migration 124).
+   * Antes a tela dizia "não precisa descontar o peso da embalagem" e ninguém
+   * descontava — o saco entrava no estoque como insumo.
+   */
   function sobraDe(lote: LoteBipado): number | null {
     if (respostaDe(lote) === 'zerou') return 0
     if (respostaDe(lote) !== 'pesou') return null
@@ -474,7 +492,7 @@ export function AbastecimentoPage() {
     if (txt === '') return null
     const n = parseFloat(txt)
     if (isNaN(n) || n < 0) return null
-    return daBancada(n, b.fator)
+    return daBancada(Math.max(0, n - taraBancada), b.fator)
   }
 
   /** Só falta responder quem escolheu "Sobrou" e ainda não digitou o peso. */
@@ -1017,8 +1035,11 @@ export function AbastecimentoPage() {
             </p>
             <p className="text-xs text-gray-500 dark:text-unno-muted mt-1">
               Guardou o resto sem pesar? É o normal — deixe em "Não pesei". Se
-              pesou, o número medido manda (não precisa descontar o peso da
-              embalagem). "Zerou" é só quando ela foi para o lixo.
+              pesou, digite o que a balança mostrou, com a embalagem:{' '}
+              {taraBancada > 0
+                ? <>o sistema tira os <strong>{taraBancada} {b.rotulo}</strong> da embalagem.</>
+                : <>a tara desta embalagem <strong>não está cadastrada</strong>, então digite o peso sem ela.</>}
+              {' '}"Zerou" é só quando ela foi para o lixo.
             </p>
           </Card>
 
@@ -1071,7 +1092,7 @@ export function AbastecimentoPage() {
 
                 {r === 'pesou' && (
                   <Input
-                    label={`Peso da sobra (${b.rotulo})`}
+                    label={`Peso na balança, com a embalagem (${b.rotulo})`}
                     type="number"
                     inputMode="decimal"
                     value={sobras[l.id] ?? ''}
