@@ -47,6 +47,8 @@ type Pote = {
   capacidade: number | null
   ja_tem: number
   peso_tara: number | null
+  /** Última vez que o pote foi pesado (contagem ou reabastecimento). null = nunca. */
+  conferido_em: string | null
 }
 
 type InsumoAlvo = {
@@ -96,7 +98,18 @@ type Colocado =
       conteudoFinal: number
       /** Medido menos o que o sistema supunha. Diferente de zero = acerto. */
       acerto: number
+      /** "Não foi usado": o antes é a última pesagem, não uma medição de agora. */
+      naoUsado: boolean
+      /** "Não foi usado" sem pesar o depois: vai só como declaração. */
+      semDepois: boolean
     }
+
+/** "28/09 16:13", no fuso de quem está olhando. */
+function dataCurta(iso: string): string {
+  const d = new Date(iso)
+  const p = (n: number) => String(n).padStart(2, '0')
+  return `${p(d.getDate())}/${p(d.getMonth() + 1)} ${p(d.getHours())}:${p(d.getMinutes())}`
+}
 
 export function AbastecimentoPage() {
   const { profile } = useAuth()
@@ -136,6 +149,17 @@ export function AbastecimentoPage() {
    */
   const [confirmarVazio, setConfirmarVazio] = useState<Pote | null>(null)
   const [taras, setTaras] = useState<Record<string, string>>({})
+  /**
+   * Potes declarados "Não foi usado" (migration 125).
+   *
+   * O consumo teórico sai dos potes pela fila, não pelo que a equipe abriu, e
+   * um pote intocado aparece vazio. Pesar pote intocado para provar isso toma
+   * tempo (Lucca, 28/09/2026): o botão devolve a ele o que o teórico tirou
+   * desde a última pesagem, nos mesmos lotes, e dispensa a pesagem do antes.
+   */
+  const [naoUsados, setNaoUsados] = useState<Record<string, boolean>>({})
+  /** Por pote, quanto o teórico tirou dele desde a última pesagem. */
+  const [desdePesagem, setDesdePesagem] = useState<Record<string, number>>({})
 
   // Passo 3
   const [lotes, setLotes] = useState<LoteBipado[]>([])
@@ -193,7 +217,7 @@ export function AbastecimentoPage() {
         // embalagens do fornecedor que viraram ponto de consumo (migration 073).
         supabase
           .from('locais')
-          .select('id, peso_tara, efemero')
+          .select('id, peso_tara, efemero, conteudo_conferido_em')
           .eq('empresa_id', empresa)
           .eq('tipo', 'estoque_produtivo')
           .eq('ativo', true),
@@ -211,7 +235,10 @@ export function AbastecimentoPage() {
       if (!vivo) return
 
       const extras = new Map(
-        ((locs.data ?? []) as { id: string; peso_tara: number | null; efemero: boolean }[])
+        ((locs.data ?? []) as {
+          id: string; peso_tara: number | null; efemero: boolean
+          conteudo_conferido_em: string | null
+        }[])
           .map(l => [l.id, l]),
       )
       // Sem linha de config o insumo é de recipiente — é o mesmo padrão que a
@@ -257,6 +284,7 @@ export function AbastecimentoPage() {
           capacidade: linha.capacidade_max,
           ja_tem: Number(linha.quantidade_total ?? 0),
           peso_tara: extra.peso_tara,
+          conferido_em: extra.conteudo_conferido_em,
         })
         ins.conteudo += Number(linha.quantidade_total ?? 0)
         ins.capacidade += Number(linha.capacidade_max ?? 0)
@@ -297,6 +325,25 @@ export function AbastecimentoPage() {
     return () => { vivo = false }
   }, [profile?.empresa_id, recarga])
 
+  // Quanto cada pote do insumo escolhido recuperaria com "Não foi usado". É a
+  // mesma função que o banco usa na hora de gravar, para a tela não prometer
+  // um número diferente.
+  useEffect(() => {
+    if (!alvo) { setDesdePesagem({}); return }
+    let vivo = true
+    Promise.all(alvo.potes.map(async p => {
+      const { data } = await supabase.rpc('consumo_teorico_desde_pesagem', { p_local_id: p.local_id })
+      const total = ((data ?? []) as { quantidade: number }[])
+        .reduce((s, l) => s + Number(l.quantidade), 0)
+      return [p.local_id, Number(total.toFixed(3))] as const
+    })).then(pares => { if (vivo) setDesdePesagem(Object.fromEntries(pares)) })
+    return () => { vivo = false }
+  }, [alvo?.insumo_id])
+
+  /** O que o pote volta a ter com "Não foi usado": o de agora + o que o teórico tirou. */
+  const voltaATer = (pote: Pote): number =>
+    Number((pote.ja_tem + (desdePesagem[pote.local_id] ?? 0)).toFixed(6))
+
   // ── Passo 2: o que cada pote recebeu ──────────────────────
 
   /**
@@ -315,6 +362,17 @@ export function AbastecimentoPage() {
    */
   function colocadoNo(pote: Pote): Colocado {
     const bruto = (pesos[pote.local_id] ?? '').replace(',', '.').trim()
+    const naoUsado = !!naoUsados[pote.local_id]
+
+    // "Não foi usado" sem o depois: só a declaração. O pote volta à última
+    // pesagem e não recebe nada.
+    if (naoUsado && bruto === '') {
+      const antes = voltaATer(pote)
+      return {
+        estado: 'ok', antes, colocou: 0, conteudoFinal: antes, acerto: 0,
+        naoUsado: true, semDepois: true,
+      }
+    }
     if (bruto === '') return { estado: 'vazio' }
 
     const n = parseFloat(bruto)
@@ -335,7 +393,9 @@ export function AbastecimentoPage() {
     // O que havia antes: zero se o operador disse que chegou vazio, senão a
     // pesagem. Sem uma das duas respostas não há o que calcular.
     let antes: number
-    if (vazios[pote.local_id]) {
+    if (naoUsado) {
+      antes = voltaATer(pote)
+    } else if (vazios[pote.local_id]) {
       antes = 0
     } else {
       const brutoAntes = (pesosAntes[pote.local_id] ?? '').replace(',', '.').trim()
@@ -352,6 +412,29 @@ export function AbastecimentoPage() {
 
     const conteudoFinal = daBancada(Math.max(0, n - tara), b.fator)
     const colocou = Number((conteudoFinal - antes).toFixed(6))
+
+    if (naoUsado) {
+      // Até 2% abaixo da última pesagem é ruído de balança: não recebeu nada e
+      // vale o número de agora — mesma regra do banco (migration 125).
+      if (colocou < 0 && -colocou > antes * 0.02 + 0.0005) {
+        return {
+          estado: 'erro',
+          mensagem: `Pesou ${formatQty(conteudoFinal, alvo!.unidade)}, menos do que os `
+                  + `${formatQty(antes, alvo!.unidade)} da última pesagem — então ele foi usado. `
+                  + 'Desmarque "Não foi usado" e pese o antes.',
+        }
+      }
+      const recebeu = Math.max(0, colocou)
+      return {
+        estado: 'ok',
+        antes: recebeu > 0 ? antes : conteudoFinal,
+        colocou: recebeu,
+        conteudoFinal,
+        acerto: 0,
+        naoUsado: true,
+        semDepois: false,
+      }
+    }
 
     if (colocou < -0.0005) {
       return {
@@ -370,6 +453,8 @@ export function AbastecimentoPage() {
       colocou,
       conteudoFinal,
       acerto: Number((antes - pote.ja_tem).toFixed(6)),
+      naoUsado: false,
+      semDepois: false,
     }
   }
 
@@ -379,11 +464,11 @@ export function AbastecimentoPage() {
       .map(p => ({ pote: p, res: colocadoNo(p) }))
       .filter((x): x is { pote: Pote; res: Extract<Colocado, { estado: 'ok' }> } =>
         x.res.estado === 'ok')
-  }, [alvo, pesos, pesosAntes, vazios, taras])
+  }, [alvo, pesos, pesosAntes, vazios, taras, naoUsados, desdePesagem])
 
   const temErroDePeso = useMemo(
     () => (alvo?.potes ?? []).some(p => colocadoNo(p).estado === 'erro'),
-    [alvo, pesos, pesosAntes, vazios, taras],
+    [alvo, pesos, pesosAntes, vazios, taras, naoUsados, desdePesagem],
   )
 
   const colocado = potesDeclarados.reduce((s, x) => s + x.res.colocou, 0)
@@ -563,12 +648,23 @@ export function AbastecimentoPage() {
       // As duas pesagens, não o resultado da subtração: quem calcula quanto
       // entrou é o banco, e é lá que a diferença com o saldo suposto vira
       // acerto de recipiente.
-      p_potes: potesDeclarados.map(x => ({
-        local_id: x.pote.local_id,
-        antes:    x.res.antes,
-        depois:   x.res.conteudoFinal,
-        medido:   vazios[x.pote.local_id] ? 'vazio' : 'pesado',
-      })),
+      //
+      // "Não foi usado" não manda o antes: quem sabe a última pesagem e o que o
+      // teórico tirou desde então é o banco (migration 125). Sem depois, o
+      // campo nem vai — o banco lê isso como "só a declaração".
+      p_potes: potesDeclarados.map(x => x.res.naoUsado
+        ? {
+            local_id:  x.pote.local_id,
+            nao_usado: true,
+            ...(x.res.semDepois ? {} : { depois: x.res.conteudoFinal }),
+            medido:    'pesado',
+          }
+        : {
+            local_id: x.pote.local_id,
+            antes:    x.res.antes,
+            depois:   x.res.conteudoFinal,
+            medido:   vazios[x.pote.local_id] ? 'vazio' : 'pesado',
+          }),
       // `null` não é zero: zero afirma que a embalagem foi esvaziada, e é o
       // banco que deduz quanto saiu de quem ninguém pesou (migration 113).
       p_lotes: lotes.map(l => ({ lote_id: l.id, sobra: sobraDe(l) })),
@@ -610,7 +706,7 @@ export function AbastecimentoPage() {
   function recomecar() {
     setPasso('insumo')
     setAlvo(null)
-    setPesos({}); setPesosAntes({}); setVazios({}); setTaras({}); setLotes([]); setSobras({}); setRespostas({})
+    setPesos({}); setPesosAntes({}); setVazios({}); setNaoUsados({}); setTaras({}); setLotes([]); setSobras({}); setRespostas({})
     setErro(''); setErroScan(''); setTravaFefo(null); setJustFefo('')
     setJustExcesso('')
     setSucesso(null)
@@ -690,7 +786,7 @@ export function AbastecimentoPage() {
                 className={`p-4 ${cheio ? 'opacity-60' : ''}`}
                 onClick={() => {
                   setAlvo(ins)
-                  setPesos({}); setPesosAntes({}); setVazios({}); setTaras({}); setLotes([]); setSobras({}); setRespostas({})
+                  setPesos({}); setPesosAntes({}); setVazios({}); setNaoUsados({}); setTaras({}); setLotes([]); setSobras({}); setRespostas({})
                   setJustExcesso(''); setErro('')
                   setPasso('potes')
                 }}
@@ -764,6 +860,7 @@ export function AbastecimentoPage() {
           {alvo.potes.map(pote => {
             const res = colocadoNo(pote)
             const precisaTara = usaTara(alvo.unidade) && !pote.peso_tara
+            const naoUsado = !!naoUsados[pote.local_id]
             return (
               <Card key={pote.local_id} className="p-4">
                 <div className="flex justify-between items-start gap-3 mb-3">
@@ -802,9 +899,10 @@ export function AbastecimentoPage() {
                         num toque; com conteúdo, pesa-se. */}
                     <div className="flex gap-2 mb-3">
                       <Button
-                        variant={vazios[pote.local_id] ? 'primary' : 'ghost'}
+                        variant={vazios[pote.local_id] && !naoUsado ? 'primary' : 'ghost'}
                         size="sm" fullWidth
                         onClick={() => {
+                          setNaoUsados(n => ({ ...n, [pote.local_id]: false }))
                           // Se o sistema espera conteúdo aqui, pergunta antes:
                           // declarar vazio apaga o que estivesse dentro.
                           if (pote.ja_tem > 0.0005) { setConfirmarVazio(pote); return }
@@ -815,15 +913,53 @@ export function AbastecimentoPage() {
                         Chegou vazio
                       </Button>
                       <Button
-                        variant={vazios[pote.local_id] === false ? 'primary' : 'ghost'}
+                        variant={vazios[pote.local_id] === false && !naoUsado ? 'primary' : 'ghost'}
                         size="sm" fullWidth
-                        onClick={() => setVazios(v => ({ ...v, [pote.local_id]: false }))}
+                        onClick={() => {
+                          setNaoUsados(n => ({ ...n, [pote.local_id]: false }))
+                          setVazios(v => ({ ...v, [pote.local_id]: false }))
+                        }}
                       >
                         Tinha sobra
                       </Button>
+                      <Button
+                        variant={naoUsado ? 'primary' : 'ghost'}
+                        size="sm" fullWidth
+                        disabled={!pote.conferido_em}
+                        onClick={() => {
+                          // Segundo toque desmarca, como nos outros.
+                          setNaoUsados(n => ({ ...n, [pote.local_id]: !naoUsado }))
+                          setVazios(v => { const resto = { ...v }; delete resto[pote.local_id]; return resto })
+                          setPesosAntes(p => ({ ...p, [pote.local_id]: '' }))
+                        }}
+                      >
+                        Não foi usado
+                      </Button>
                     </div>
 
-                    {vazios[pote.local_id] === false && (
+                    {/* O que o botão vai fazer, antes de alguém apertar. */}
+                    {pote.conferido_em ? (
+                      <p className="text-xs text-gray-500 dark:text-unno-muted -mt-1 mb-3">
+                        Última pesagem {dataCurta(pote.conferido_em)}
+                        {' · '}"Não foi usado" volta a ter{' '}
+                        <strong className="text-gray-700 dark:text-unno-text">
+                          {formatQty(voltaATer(pote), alvo.unidade)}
+                        </strong>
+                      </p>
+                    ) : (
+                      <p className="text-xs text-gray-400 -mt-1 mb-3">
+                        Este pote nunca foi pesado — pese o antes.
+                      </p>
+                    )}
+
+                    {naoUsado && (
+                      <p className="text-xs text-amber-700 dark:text-amber-400 mb-3">
+                        Só marque se ninguém tirou nada deste pote desde a última
+                        pesagem. Se encheu, pese o depois; se não, deixe em branco.
+                      </p>
+                    )}
+
+                    {vazios[pote.local_id] === false && !naoUsado && (
                       <Input
                         label={usaTara(alvo.unidade)
                           ? `Peso ANTES de encher, com o pote (${b.rotulo})`
@@ -847,9 +983,19 @@ export function AbastecimentoPage() {
                       onChange={e => setPesos(p => ({ ...p, [pote.local_id]: e.target.value }))}
                       placeholder="Em branco se não mexeu neste pote"
                       error={res.estado === 'erro' ? res.mensagem : undefined}
-                      className={vazios[pote.local_id] === false ? 'mt-2' : ''}
+                      className={vazios[pote.local_id] === false && !naoUsado ? 'mt-2' : ''}
                     />
-                    {res.estado === 'ok' && (
+                    {res.estado === 'ok' && res.naoUsado && (
+                      <p className="text-xs text-emerald-700 dark:text-emerald-400 mt-2">
+                        {res.colocou > 0
+                          ? <>Volta a ter {formatQty(res.antes, alvo.unidade)} e entrou{' '}
+                              <strong>{formatQty(res.colocou, alvo.unidade)}</strong> — o pote fica com{' '}
+                              {formatQty(res.conteudoFinal, alvo.unidade)}.</>
+                          : <>Não recebeu nada — o pote fica com{' '}
+                              <strong>{formatQty(res.conteudoFinal, alvo.unidade)}</strong>.</>}
+                      </p>
+                    )}
+                    {res.estado === 'ok' && !res.naoUsado && (
                       <>
                         <p className="text-xs text-emerald-700 dark:text-emerald-400 mt-2">
                           Entrou <strong>{formatQty(res.colocou, alvo.unidade)}</strong> — o pote fica com{' '}
@@ -888,6 +1034,15 @@ export function AbastecimentoPage() {
                 {formatQty(colocado, alvo.unidade)}
               </span>
             </div>
+            {/* "Não foi usado" sozinho não fecha a operação: o registro exige
+                ao menos uma embalagem bipada, e sem nada entrando não há o
+                que bipar. */}
+            {colocado <= 0 && potesDeclarados.some(x => x.res.naoUsado) && (
+              <p className="text-xs text-gray-500 dark:text-unno-muted mt-2">
+                "Não foi usado" é registrado junto com um reabastecimento —
+                encha pelo menos um pote para continuar.
+              </p>
+            )}
           </Card>
 
           <Button
