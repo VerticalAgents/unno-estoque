@@ -6,6 +6,7 @@ import { Card } from '../../components/ui/Card'
 import { CartaoLista, ListaResponsiva, ListaVazia } from '../../components/ui/ListaResponsiva'
 import { formatQty, formatKg, formatDate, daysUntil } from '../../lib/utils'
 import { InsumoDetalhePanel } from './InsumoDetalhePanel'
+import { QtdPorUnidade, usePorUnidade } from '../../lib/porUnidade'
 import { combina } from '../../lib/busca'
 
 /**
@@ -141,6 +142,8 @@ export function EstoquePage() {
   const [loading, setLoading] = useState(true)
   const [insumoSelecionado, setInsumoSelecionado] = useState<EstoqueConsolidado | null>(null)
   const [insumosSemEtiqueta, setInsumosSemEtiqueta] = useState<Set<string>>(new Set())
+  /** Óleo e ovo em pó aparecem em garrafas e pacotes (migration 126). */
+  const porUnidade = usePorUnidade()
 
   useEffect(() => {
     if (!profile) return
@@ -451,15 +454,15 @@ export function EstoquePage() {
                       }
                       subtitulo={`${e.insumo_codigo}${categoria?.nome ? ` · ${categoria.nome}` : ''}`}
                       // O total é o que se procura de relance; o resto é detalhe.
-                      destaque={<span className="tabular-nums whitespace-nowrap">{formatQty(e.qtd_total, e.unidade_medida)}</span>}
+                      destaque={<span className="tabular-nums whitespace-nowrap"><QtdPorUnidade valor={e.qtd_total} unidade={e.unidade_medida} config={porUnidade[e.insumo_id]} /></span>}
                       marcadores={
                         alertas.length > 0
                           ? <>{alertas.map(a => <Selo key={a} tipo={a} />)}</>
                           : undefined
                       }
                       campos={[
-                        { rotulo: 'EC', valor: <span className="tabular-nums whitespace-nowrap">{formatQty(e.qtd_estoque_central, e.unidade_medida)}</span> },
-                        { rotulo: 'EP', valor: <span className="tabular-nums whitespace-nowrap">{formatQty(e.qtd_estoque_produtivo, e.unidade_medida)}</span> },
+                        { rotulo: 'EC', valor: <span className="tabular-nums whitespace-nowrap"><QtdPorUnidade valor={e.qtd_estoque_central} unidade={e.unidade_medida} config={porUnidade[e.insumo_id]} /></span> },
+                        { rotulo: 'EP', valor: <span className="tabular-nums whitespace-nowrap"><QtdPorUnidade valor={e.qtd_estoque_produtivo} unidade={e.unidade_medida} config={porUnidade[e.insumo_id]} /></span> },
                         {
                           rotulo: 'Val. EC',
                           valor: val?.validade_ec
@@ -523,7 +526,7 @@ export function EstoquePage() {
                       </td>
                       <td className="px-4 py-3 text-muted-foreground">{categoria?.nome ?? '—'}</td>
                       <td className="px-4 py-3 text-right tabular-nums text-foreground/80">
-                        {formatQty(e.qtd_estoque_central, e.unidade_medida)}
+                        <QtdPorUnidade valor={e.qtd_estoque_central} unidade={e.unidade_medida} config={porUnidade[e.insumo_id]} />
                       </td>
                       <td className="px-4 py-3 text-center text-xs">
                         {val?.validade_ec
@@ -531,7 +534,7 @@ export function EstoquePage() {
                           : <span className="text-muted-foreground/40">—</span>}
                       </td>
                       <td className="px-4 py-3 text-right tabular-nums text-foreground/80">
-                        {formatQty(e.qtd_estoque_produtivo, e.unidade_medida)}
+                        <QtdPorUnidade valor={e.qtd_estoque_produtivo} unidade={e.unidade_medida} config={porUnidade[e.insumo_id]} />
                       </td>
                       <td className="px-4 py-3 text-center text-xs">
                         {val?.validade_ep
@@ -539,7 +542,7 @@ export function EstoquePage() {
                           : <span className="text-muted-foreground/40">—</span>}
                       </td>
                       <td className="px-4 py-3 text-right font-semibold tabular-nums text-foreground">
-                        {formatQty(e.qtd_total, e.unidade_medida)}
+                        <QtdPorUnidade valor={e.qtd_total} unidade={e.unidade_medida} config={porUnidade[e.insumo_id]} />
                       </td>
                       <td className="px-4 py-3 text-right tabular-nums text-muted-foreground/60">
                         {e.estoque_minimo ? formatQty(e.estoque_minimo, e.unidade_medida) : '—'}

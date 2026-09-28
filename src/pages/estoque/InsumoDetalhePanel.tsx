@@ -4,6 +4,7 @@ import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../contexts/AuthContext'
 import type { EstoqueConsolidado, Lote, Local, MotivoPerdaEnum } from '../../types/database.types'
 import { formatDate, formatQty, daysUntil } from '../../lib/utils'
+import { QtdPorUnidade, usePorUnidade } from '../../lib/porUnidade'
 import { Button } from '../../components/ui/Button'
 import { Select, Textarea } from '../../components/ui/Input'
 import { Input } from '../../components/ui/Input'
@@ -192,6 +193,7 @@ export function InsumoDetalhePanel({
 }) {
   const { profile } = useAuth()
   const navigate = useNavigate()
+  const porUnidade = usePorUnidade()
   const [lotesEC, setLotesEC] = useState<LoteEC[]>([])
   const [recipientesEP, setRecipientesEP] = useState<RecipienteEP[]>([])
   const [loading, setLoading] = useState(true)
@@ -263,8 +265,8 @@ export function InsumoDetalhePanel({
             <p className="text-xs text-gray-400 uppercase tracking-wide font-medium mb-0.5">{insumo.insumo_codigo}</p>
             <h2 className="text-lg font-bold text-gray-900 leading-tight">{insumo.insumo_nome}</h2>
             <div className="flex gap-3 mt-1 text-sm text-gray-500">
-              <span>EC: <strong className="text-gray-800">{formatQty(insumo.qtd_estoque_central, insumo.unidade_medida)}</strong></span>
-              <span>EP: <strong className="text-gray-800">{formatQty(insumo.qtd_estoque_produtivo, insumo.unidade_medida)}</strong></span>
+              <span>EC: <strong className="text-gray-800"><QtdPorUnidade valor={insumo.qtd_estoque_central} unidade={insumo.unidade_medida} config={porUnidade[insumo.insumo_id]} /></strong></span>
+              <span>EP: <strong className="text-gray-800"><QtdPorUnidade valor={insumo.qtd_estoque_produtivo} unidade={insumo.unidade_medida} config={porUnidade[insumo.insumo_id]} /></strong></span>
             </div>
           </div>
           <button onClick={onClose} className="text-gray-400 hover:text-gray-600 mt-1">
@@ -301,7 +303,7 @@ export function InsumoDetalhePanel({
                               mesma marca que os potes já usam (migration 112/113). */}
                           <p className={`text-sm font-medium ${lote.saldo_estimado ? 'text-amber-700' : 'text-gray-900'}`}>
                             {lote.saldo_estimado && '≈ '}
-                            {formatQty(lote.quantidade_disponivel, lote.unidade)}
+                            <QtdPorUnidade valor={lote.quantidade_disponivel} unidade={lote.unidade} config={porUnidade[insumo.insumo_id]} />
                           </p>
                           {lote.saldo_estimado && (
                             <p className="text-xs text-amber-700">
@@ -361,7 +363,9 @@ export function InsumoDetalhePanel({
                             <p className="text-sm font-medium text-gray-900">{r.nome}</p>
                             <p className="text-xs text-gray-500">{r.subtipo ?? '—'}</p>
                             <p className={`text-sm font-semibold ${temConteudo ? 'text-gray-800' : 'text-gray-400'}`}>
-                              {temConteudo ? formatQty(r.quantidade!, insumo.unidade_medida) : 'Vazio'}
+                              {temConteudo
+                                ? <QtdPorUnidade valor={r.quantidade!} unidade={insumo.unidade_medida} config={porUnidade[insumo.insumo_id]} />
+                                : 'Vazio'}
                             </p>
                             {r.validade_ep && <div>{validadeTag(r.validade_ep)}</div>}
                           </div>
