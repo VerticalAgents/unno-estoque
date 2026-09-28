@@ -11,6 +11,7 @@ import { formatQty, ordemNatural } from '../../lib/utils'
 import { parseQRLoteCodigo } from '../../lib/qr'
 import { bancada, daBancada, usaTara } from '../../lib/unidades'
 import type { UnidadeMedida } from '../../types/database.types'
+import { AbastecimentoUnidades, type InsumoPorUnidade } from './AbastecimentoUnidades'
 
 /**
  * Abastecer os potes do EP: o operador DECLARA o que fez.
@@ -122,6 +123,9 @@ export function AbastecimentoPage() {
   const [recarga, setRecarga] = useState(0)
   const [insumos, setInsumos] = useState<InsumoAlvo[]>([])
   const [alvo, setAlvo] = useState<InsumoAlvo | null>(null)
+  /** Insumos contados em garrafas/pacotes, e o escolhido (migration 126). */
+  const [porUnidade, setPorUnidade] = useState<(InsumoPorUnidade & { codigo: string })[]>([])
+  const [alvoUnidade, setAlvoUnidade] = useState<InsumoPorUnidade | null>(null)
   /** Peso da embalagem do fornecedor vazia, em gramas, por insumo (migration 124). */
   const [taraEmbalagem, setTaraEmbalagem] = useState<Record<string, number>>({})
 
@@ -221,8 +225,10 @@ export function AbastecimentoPage() {
           .eq('empresa_id', empresa)
           .eq('tipo', 'estoque_produtivo')
           .eq('ativo', true),
-        supabase.from('insumos_armazenamento_config').select('insumo_id, modo_ep'),
-        supabase.from('insumos_embalagem_config').select('insumo_id, tara_embalagem_g'),
+        supabase.from('insumos_armazenamento_config')
+          .select('insumo_id, modo_ep, insumo:insumos(nome, codigo, empresa_id)'),
+        supabase.from('insumos_embalagem_config')
+          .select('insumo_id, tara_embalagem_g, tem_subunidades, subunidade_tipo, subunidade_peso'),
         supabase
           .from('lotes')
           .select('id, codigo, insumo_id, quantidade_disponivel, quantidade_recebida, '
@@ -316,6 +322,42 @@ export function AbastecimentoPage() {
       for (const ins of porInsumo.values()) {
         ins.potes.sort((x, y) => ordemNatural(x.nome, y.nome))
       }
+
+      // Óleo e ovo em pó: sem pote, contados em garrafas e pacotes (migration
+      // 126). A lista sai do cadastro, não da view — com a produção zerada o
+      // insumo precisa continuar aparecendo aqui.
+      const subunidades = new Map(
+        ((tarasEmb.data ?? []) as {
+          insumo_id: string; tem_subunidades: boolean
+          subunidade_tipo: string | null; subunidade_peso: number | null
+        }[])
+          .filter(e => e.tem_subunidades && Number(e.subunidade_peso) > 0)
+          .map(e => [e.insumo_id, e]),
+      )
+      const conteudoEp = new Map<string, number>()
+      for (const linha of (comp.data ?? []) as unknown as { insumo_id: string; quantidade_total: number }[]) {
+        conteudoEp.set(linha.insumo_id, (conteudoEp.get(linha.insumo_id) ?? 0) + Number(linha.quantidade_total ?? 0))
+      }
+      setPorUnidade(
+        ((cfg.data ?? []) as unknown as {
+          insumo_id: string; modo_ep: string | null
+          insumo: { nome: string; codigo: string; empresa_id: string } | null
+        }[])
+          .filter(c => c.modo_ep === 'unidade' && c.insumo?.empresa_id === empresa
+                    && subunidades.has(c.insumo_id))
+          .map(c => {
+            const e = subunidades.get(c.insumo_id)!
+            return {
+              insumo_id: c.insumo_id,
+              nome: c.insumo!.nome,
+              tem: conteudoEp.get(c.insumo_id) ?? 0,
+              peso: Number(e.subunidade_peso),
+              tipo: e.subunidade_tipo ?? 'unidade',
+              codigo: c.insumo!.codigo,
+            }
+          })
+          .sort((x, y) => ordemNatural(x.codigo, y.codigo)),
+      )
 
       setInsumos([...porInsumo.values()].sort((x, y) => ordemNatural(x.codigo, y.codigo)))
       setCarregando(false)
@@ -741,7 +783,7 @@ export function AbastecimentoPage() {
         </p>
       </div>
 
-      {passo !== 'sucesso' && (
+      {passo !== 'sucesso' && !alvoUnidade && (
         <div className="flex gap-1.5 mb-6">
           {PASSOS.map((s, i) => (
             <div
@@ -754,12 +796,21 @@ export function AbastecimentoPage() {
         </div>
       )}
 
+      {/* ── Óleo e ovo em pó: fluxo próprio, contado em unidades ── */}
+      {alvoUnidade && (
+        <AbastecimentoUnidades
+          insumo={alvoUnidade}
+          onVoltar={() => setAlvoUnidade(null)}
+          onConcluido={() => { setAlvoUnidade(null); recomecar() }}
+        />
+      )}
+
       {/* ── Passo 1: escolher o insumo ── */}
-      {passo === 'insumo' && (
+      {passo === 'insumo' && !alvoUnidade && (
         <div className="space-y-4">
           {carregando && <p className="text-sm text-gray-500">Carregando os recipientes…</p>}
 
-          {!carregando && insumos.length === 0 && (
+          {!carregando && insumos.length === 0 && porUnidade.length === 0 && (
             <Card className="p-5">
               <p className="text-sm font-semibold text-gray-900 dark:text-unno-text">
                 Nenhum insumo com recipiente no estoque produtivo
@@ -826,6 +877,25 @@ export function AbastecimentoPage() {
                     )}
                   </p>
                 )}
+              </Card>
+            )
+          })}
+
+          {!carregando && porUnidade.map(ins => {
+            const n = Math.floor(ins.tem / ins.peso + 0.0001)
+            return (
+              <Card key={ins.insumo_id} className="p-4" onClick={() => setAlvoUnidade(ins)}>
+                <div className="flex justify-between items-start gap-3">
+                  <div className="min-w-0">
+                    <p className="font-semibold text-gray-900 dark:text-unno-text truncate">{ins.nome}</p>
+                    <p className="text-xs text-gray-500 dark:text-unno-muted">
+                      contado em {ins.tipo}s, sem pesar
+                    </p>
+                  </div>
+                  <span className="text-xs font-semibold shrink-0 text-brand-700 dark:text-brand-400">
+                    Na produção: {n} {n === 1 ? ins.tipo : `${ins.tipo}s`}
+                  </span>
+                </div>
               </Card>
             )
           })}

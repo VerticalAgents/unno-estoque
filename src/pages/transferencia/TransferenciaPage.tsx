@@ -17,7 +17,7 @@ type Step = 'scan_lote' | 'scan_mais' | 'escolher_destino' | 'scan_local' | 'con
 /** Para quem tem dois destinos: o pacote inteiro, ou porcionado em sacos. */
 type Destino = 'direto' | 'porcionar'
 
-type ModoEp = 'recipiente' | 'embalagem_fornecedor' | 'porcionado' | 'escolher'
+type ModoEp = 'recipiente' | 'embalagem_fornecedor' | 'porcionado' | 'escolher' | 'unidade'
 
 type ConfigArmazenamento = ConfigReembalagem & {
   passa_reembalagem?: boolean

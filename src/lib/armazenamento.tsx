@@ -6,7 +6,7 @@
  * começo de duas regras diferentes.
  */
 
-export type ModoEp = 'recipiente' | 'embalagem_fornecedor' | 'porcionado' | 'escolher'
+export type ModoEp = 'recipiente' | 'embalagem_fornecedor' | 'porcionado' | 'escolher' | 'unidade'
 
 export const MODOS_EP: {
   value: ModoEp
@@ -46,6 +46,15 @@ export const MODOS_EP: {
     curto: 'Depende',
     ajuda: 'Faz as duas coisas, e quem transfere decide a cada lote: usar direto ou porcionar.',
     cor: 'bg-amber-50 text-amber-700',
+  },
+  {
+    value: 'unidade',
+    titulo: 'Vai para a produção em garrafas ou pacotes, sem pesar',
+    curto: 'Por unidade',
+    ajuda: 'O QR fica na caixa ou no saco, e as unidades vão soltas. No reabastecimento se conta '
+         + 'quantas fechadas estavam lá e quantas saíram de cada caixa. Precisa do peso da '
+         + 'unidade cadastrado na embalagem (migration 126).',
+    cor: 'bg-emerald-50 text-emerald-700',
   },
 ]
 

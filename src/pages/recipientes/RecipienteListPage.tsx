@@ -247,7 +247,9 @@ export function RecipienteListPage() {
       supabase
         .from('insumos_armazenamento_config')
         .select('insumo_id, modo_ep')
-        .eq('modo_ep', 'embalagem_fornecedor'),
+        // Nenhum dos dois tem recipiente: a embalagem do fornecedor é o ponto de
+        // consumo, e o que vai por unidade fica solto na produção (migration 126).
+        .in('modo_ep', ['embalagem_fornecedor', 'unidade']),
     ])
     setRecipientes((locais ?? []) as LocalComMarca[])
     setInsumos((ins ?? []) as Insumo[])

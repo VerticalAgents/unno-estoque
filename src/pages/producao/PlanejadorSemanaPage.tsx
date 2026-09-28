@@ -112,7 +112,7 @@ import { nomeDaEmbalagem, nomeDaPorcao } from '../../lib/armazenamento'
 
 // ── Aviso de abastecimento ───────────────────────────────────
 
-type ModoEp = 'recipiente' | 'embalagem_fornecedor' | 'porcionado' | 'escolher'
+type ModoEp = 'recipiente' | 'embalagem_fornecedor' | 'porcionado' | 'escolher' | 'unidade'
 
 type Armazenamento = {
   modo: ModoEp
@@ -175,6 +175,10 @@ function avisoDeAbastecimento(
     if (!tam || tam <= 0) return null
     return { pacotes: Math.ceil(quanto / tam), tam }
   }
+
+  // Garrafas e pacotes soltos não têm recipiente que encha: não há rodada de
+  // abastecimento para avisar (migration 126).
+  if (modo === 'unidade') return null
 
   if (modo === 'embalagem_fornecedor') {
     const p = emPacotes()
