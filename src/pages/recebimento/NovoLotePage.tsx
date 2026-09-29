@@ -40,6 +40,12 @@ type Item = {
   temperatura: string
   /** Só usado quando o insumo não tem tamanho de embalagem cadastrado. */
   num_etiquetas: number
+  /**
+   * Tamanho da embalagem DESTA entrega, quando veio diferente do cadastro
+   * (migration 130). '' = vale o cadastro.
+   */
+  tamanho: string
+  tamanhoAberto: boolean
   observacoes: string
   obsAberta: boolean
   /** Preenchido quando o item já foi gravado — vira cartão verde e não reenvia. */
@@ -70,6 +76,8 @@ const novoItem = (): Item => ({
   quantidade_recebida: '',
   temperatura: '',
   num_etiquetas: 1,
+  tamanho: '',
+  tamanhoAberto: false,
   observacoes: '',
   obsAberta: false,
 })
@@ -88,8 +96,15 @@ const novaNota = (): Nota => ({
  * Com tamanho de embalagem cadastrado não é escolha: são os fardos cheios mais
  * o aberto, se sobrar — a mesma conta que a RPC faz no banco (migration 077).
  */
+/** O tamanho que vale para este item: o desta entrega, se informado; senão o do cadastro. */
+function tamanhoDe(item: Item, insumo?: Insumo): number | null {
+  const desta = parseFloat(item.tamanho.replace(',', '.'))
+  if (desta > 0) return desta
+  return insumo?.tamanho_embalagem ?? null
+}
+
 function etiquetasDoItem(item: Item, insumo?: Insumo): number {
-  const tam = insumo?.tamanho_embalagem
+  const tam = tamanhoDe(item, insumo)
   const qtd = parseFloat(item.quantidade_recebida) || 0
   if (tam && tam > 0 && qtd > 0) return Math.max(1, Math.ceil(qtd / tam))
   return Math.max(1, item.num_etiquetas)
@@ -119,7 +134,7 @@ function distribuicao(item: Item, insumo?: Insumo): string | null {
   const qtd = parseFloat(item.quantidade_recebida) || 0
   if (qtd <= 0 || !insumo) return null
   const un = insumo.unidade_medida ?? ''
-  const tam = insumo.tamanho_embalagem
+  const tam = tamanhoDe(item, insumo)
 
   if (tam && tam > 0) {
     const fechadas = Math.floor(qtd / tam)
@@ -277,6 +292,9 @@ export function NovoLotePage() {
           p_responsavel_id:      profile.id,
           p_numero_nf:           nota.numero_nf || null,
           p_temperatura:         insumo?.exige_temperatura ? parseFloat(item.temperatura) : null,
+          // Só quando esta entrega veio num tamanho diferente do cadastro.
+          p_tamanho_embalagem:   parseFloat(item.tamanho.replace(',', '.')) > 0
+                                   ? parseFloat(item.tamanho.replace(',', '.')) : null,
         })
 
         const ok = !rpcError && (data as { ok?: boolean })?.ok
@@ -578,7 +596,8 @@ function BlocoItem({
   podeRemover, onRemover, onPatch, onNovaMarca,
 }: BlocoItemProps) {
   const insumo = insumos.find(i => i.id === item.insumo_id)
-  const tamanhoEmbalagem = insumo?.tamanho_embalagem
+  const tamanhoEmbalagem = tamanhoDe(item, insumo)
+  const tamanhoCadastro = insumo?.tamanho_embalagem ?? null
   const quantidade = parseFloat(item.quantidade_recebida) || 0
   const reparticao = distribuicao(item, insumo)
   const problemaTemp = problemaDeTemperatura(item, insumo)
@@ -621,7 +640,7 @@ function BlocoItem({
         label="Insumo"
         required
         value={item.insumo_id}
-        onChange={e => onPatch({ insumo_id: e.target.value, marca_id: '' })}
+        onChange={e => onPatch({ insumo_id: e.target.value, marca_id: '', tamanho: '', tamanhoAberto: false })}
       >
         <option value="">Selecionar insumo...</option>
         {insumosDoFornecedor.length > 0 ? (
@@ -689,10 +708,36 @@ function BlocoItem({
 
       {quantidade > 0 && item.insumo_id && (
         <div className="rounded-lg border border-blue-200 bg-blue-50 p-3">
+          {/* O fornecedor às vezes manda outro tamanho (farinha em fardo de 10 kg
+              em vez de 25). Troca-se aqui, só para esta entrega, em vez de mexer
+              no cadastro (migration 130). */}
+          {item.tamanhoAberto && (
+            <div className="mb-2">
+              <Input
+                label={`Tamanho de cada embalagem desta entrega (${insumo?.unidade_medida ?? ''})`}
+                type="number" inputMode="decimal" step="0.001" min="0.001"
+                value={item.tamanho}
+                onChange={e => onPatch({ tamanho: e.target.value })}
+                placeholder={tamanhoCadastro ? String(tamanhoCadastro) : 'Ex: 10'}
+                hint={tamanhoCadastro
+                  ? `O cadastro diz ${tamanhoCadastro} ${insumo?.unidade_medida}. Vale só para esta entrega.`
+                  : 'Vale só para esta entrega.'}
+              />
+            </div>
+          )}
           {tamanhoEmbalagem ? (
             <p className="text-xs text-blue-700">
               Embalagem de {tamanhoEmbalagem} {insumo?.unidade_medida} — o sistema separa
               os fardos cheios do que sobrar.
+              {!item.tamanhoAberto && (
+                <>
+                  {' '}
+                  <button type="button" className="underline font-semibold"
+                          onClick={() => onPatch({ tamanhoAberto: true })}>
+                    Veio em outro tamanho?
+                  </button>
+                </>
+              )}
             </p>
           ) : (
             <div className="flex items-center gap-3">
