@@ -64,6 +64,8 @@ interface StoredState {
 type Embalagem = {
   local_id: string
   nome: string
+  /** Para agrupar a lista por insumo (acordeão). */
+  insumo_id: string
   lote_codigo: string | null
   conteudo: number
   unidade: string
@@ -112,6 +114,8 @@ export function FechamentoSessaoPage() {
   const [embalagens, setEmbalagens] = useState<Embalagem[]>([])
   const [respostas, setRespostas] = useState<Record<string, string>>({})
   const [bipando, setBipando] = useState(false)
+  /** Quais insumos estão abertos no acordeão das embalagens. */
+  const [abertos, setAbertos] = useState<Record<string, boolean>>({})
   const [erroBip, setErroBip] = useState('')
 
   const medicao = (skuId: string) => medicoes[skuId] ?? { formas: '', sobra: '' }
@@ -190,6 +194,7 @@ export function FechamentoSessaoPage() {
     }[]).map(l => ({
       local_id: l.id,
       nome: l.nome,
+      insumo_id: l.insumo_id,
       // O embed do PostgREST vem como lista mesmo na relação para-um.
       lote_codigo: l.lote?.[0]?.codigo ?? null,
       conteudo: soma.get(l.id) ?? 0,
@@ -267,13 +272,27 @@ export function FechamentoSessaoPage() {
                + 'não encerrado aqui.')
       return
     }
-    if (!embalagens.some(e => e.local_id === local.id)) {
+    const emb = embalagens.find(e => e.local_id === local.id)
+    if (!emb) {
       setErroBip('Esta embalagem já foi encerrada antes.')
       return
     }
-    // Chega marcada como "acabou", que é o motivo de 90% das bipagens; quem
-    // quiser dizer que ainda tem troca na linha, logo abaixo.
-    responder(local.id, '0')
+    // Bipa-se a que AINDA ESTÁ CHEIA, e ela chega como "Fechado" (Lucca,
+    // 29/09/2026). Antes se bipava a que acabou — e a que acabou quase sempre
+    // já estava no lixo: era preciso catar a embalagem lá para ler a etiqueta.
+    // Quem quiser dizer outra coisa troca na linha, dentro do insumo.
+    responder(local.id, FECHADA)
+    setAbertos(a => ({ ...a, [emb.insumo_id]: true }))
+  }
+
+  /** As que ninguém respondeu, dentro de um insumo, viram "Acabou" de uma vez. */
+  function marcarRestantesComoAcabou(itens: Embalagem[]) {
+    setRespostas(r => {
+      const next = { ...r }
+      for (const e of itens) if ((next[e.local_id] ?? '') === '') next[e.local_id] = '0'
+      persist(skus, medicoes, obs, next)
+      return next
+    })
   }
 
   /**
@@ -313,6 +332,27 @@ export function FechamentoSessaoPage() {
   }
 
   const respondidas = embalagens.filter(e => (respostas[e.local_id] ?? '') !== '')
+
+  /**
+   * A lista agrupada por insumo, para o acordeão (Lucca, 29/09/2026: "fica tudo
+   * numa lista só, meio misturado"). Os insumos desta sessão vêm primeiro, e
+   * dentro de cada um as embalagens desta sessão antes das de fora.
+   */
+  const grupos = (() => {
+    const mapa = new Map<string, { insumo_id: string; nome: string; daSessao: boolean; itens: Embalagem[] }>()
+    for (const e of embalagens) {
+      const g = mapa.get(e.insumo_id)
+        ?? { insumo_id: e.insumo_id, nome: nomeSemCodigo(e.nome), daSessao: false, itens: [] }
+      g.itens.push(e)
+      g.daSessao = g.daSessao || e.daSessao
+      mapa.set(e.insumo_id, g)
+    }
+    const lista = [...mapa.values()]
+    for (const g of lista) {
+      g.itens.sort((x, y) => Number(y.daSessao) - Number(x.daSessao) || x.nome.localeCompare(y.nome))
+    }
+    return lista.sort((x, y) => Number(y.daSessao) - Number(x.daSessao) || x.nome.localeCompare(y.nome))
+  })()
   const pendentes = embalagens.filter(e => restanteDe(e).problema !== null)
 
   function setMedicao(skuId: string, campo: 'formas' | 'sobra', valor: string) {
@@ -561,8 +601,8 @@ export function FechamentoSessaoPage() {
             Embalagens do fornecedor
           </h2>
           <p className="text-xs text-gray-500 mb-3">
-            As que foram para o lixo precisam ser bipadas hoje — amanhã elas não
-            existem mais para ninguém conferir. As que sobraram continuam valendo.
+            Bipe as que ainda estão <strong>cheias</strong> (fechadas). Depois, em cada
+            insumo, responda as outras — a que foi para o lixo não precisa ser achada.
           </p>
 
           {bipando ? (
@@ -570,7 +610,7 @@ export function FechamentoSessaoPage() {
               <QRScanner
                 onScan={qr => biparEmbalagem(qr)}
                 continuo
-                titulo="Embalagens que acabaram"
+                titulo="Embalagens ainda cheias"
                 label={`${respondidas.length} de ${embalagens.length}`}
                 acaoConcluir={{ rotulo: 'Concluir', onClick: () => setBipando(false) }}
                 painel={
@@ -598,7 +638,7 @@ export function FechamentoSessaoPage() {
           ) : (
             <Button variant="secondary" size="lg" fullWidth onClick={() => { setErroBip(''); setBipando(true) }}
                     className="mb-3">
-              Bipar embalagens que acabaram
+              Bipar embalagens ainda cheias
             </Button>
           )}
 
@@ -611,7 +651,39 @@ export function FechamentoSessaoPage() {
                 hoje: uma lata sobrevive à sessão em que foi aberta e some da
                 tela sem ninguém ter dito o que houve com ela. As de fora vêm
                 depois e não entram na cobrança de "sem resposta". */}
-            {[...embalagens].sort((a, b) => Number(b.daSessao) - Number(a.daSessao)).map(e => {
+            {grupos.map(g => {
+              const aberto = abertos[g.insumo_id] ?? false
+              const faltam = g.itens.filter(e => restanteDe(e).problema !== null).length
+              const semResposta = g.itens.filter(e => (respostas[e.local_id] ?? '') === '').length
+              return (
+                <Card key={g.insumo_id} className="p-0 overflow-hidden">
+                  <button
+                    type="button"
+                    onClick={() => setAbertos(a => ({ ...a, [g.insumo_id]: !aberto }))}
+                    className="w-full flex justify-between items-center gap-3 px-4 py-3 text-left"
+                  >
+                    <span className="min-w-0">
+                      <span className="text-sm font-semibold text-gray-900">{g.nome}</span>
+                      <span className="text-xs text-gray-400">
+                        {' '}· {g.itens.length} embalage{g.itens.length === 1 ? 'm' : 'ns'}
+                      </span>
+                    </span>
+                    <span className="flex items-center gap-2 shrink-0">
+                      {faltam > 0
+                        ? <span className="text-xs text-red-600 font-semibold">falta{faltam === 1 ? '' : 'm'} {faltam}</span>
+                        : <span className="text-xs text-emerald-700 font-semibold">✓ ok</span>}
+                      <span className={`text-gray-400 transition-transform ${aberto ? 'rotate-180' : ''}`}>▾</span>
+                    </span>
+                  </button>
+
+                  {aberto && (
+                    <div className="px-3 pb-3 space-y-2">
+                      {semResposta > 0 && (
+                        <Button variant="ghost" size="sm" fullWidth onClick={() => marcarRestantesComoAcabou(g.itens)}>
+                          Marcar as {semResposta} sem resposta como "Acabou"
+                        </Button>
+                      )}
+                      {g.itens.map(e => {
               const r = respostas[e.local_id] ?? ''
               const acabou = r === '0'
               const fechada = r === FECHADA
@@ -693,6 +765,11 @@ export function FechamentoSessaoPage() {
                           Tara desta embalagem não cadastrada — digite o peso <strong>sem</strong> a embalagem.
                         </p>
                       ))}
+                </Card>
+              )
+                      })}
+                    </div>
+                  )}
                 </Card>
               )
             })}
