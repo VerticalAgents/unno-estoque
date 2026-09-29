@@ -193,10 +193,14 @@ export function AbastecimentoPage() {
   const [erro, setErro] = useState('')
   const [salvando, setSalvando] = useState(false)
   const [confirmar, setConfirmar] = useState(false)
+  /** Confirmação do "Não foi usado" registrado sozinho (migration 128). */
+  const [confirmarDecl, setConfirmarDecl] = useState(false)
   const [sucesso, setSucesso] = useState<{
     colocado: number; consumido: number; perda: number; recipientes: string
     ajustes: { codigo: string; sobra_declarada: number; sobra_ajustada: number }[]
     potesCederam: number
+    /** Só "Não foi usado": nada entrou, nada saiu do estoque central. */
+    soDeclaracao?: boolean
   } | null>(null)
 
   const b = bancada(alvo?.unidade ?? '')
@@ -515,6 +519,16 @@ export function AbastecimentoPage() {
 
   const colocado = potesDeclarados.reduce((s, x) => s + x.res.colocou, 0)
 
+  /**
+   * Só "Não foi usado", sem nenhum pote recebendo insumo (migration 128).
+   *
+   * O reabastecimento começa com a produção ainda rodando: o #1 é recarregado
+   * à tarde e só no fim do dia se sabe que o #3 ficou intocado. Aí não há
+   * embalagem para bipar — a declaração vai sozinha.
+   */
+  const soDeclaracao = colocado <= 0 && potesDeclarados.length > 0
+    && potesDeclarados.every(x => x.res.naoUsado)
+
   /** A tara digitada agora vale para sempre: é atributo do pote, não da operação. */
   async function salvarTara(pote: Pote) {
     const valor = parseFloat((taras[pote.local_id] ?? '').replace(',', '.'))
@@ -678,7 +692,7 @@ export function AbastecimentoPage() {
     && consumido > 0
     && (!precisaExplicar || justExcesso.trim().length >= 5)
 
-  async function confirmarAbastecimento() {
+  async function confirmarAbastecimento(soDecl = false) {
     if (!alvo || !profile) return
     setSalvando(true)
     setErro('')
@@ -709,12 +723,13 @@ export function AbastecimentoPage() {
           }),
       // `null` não é zero: zero afirma que a embalagem foi esvaziada, e é o
       // banco que deduz quanto saiu de quem ninguém pesou (migration 113).
-      p_lotes: lotes.map(l => ({ lote_id: l.id, sobra: sobraDe(l) })),
+      p_lotes: soDecl ? [] : lotes.map(l => ({ lote_id: l.id, sobra: sobraDe(l) })),
       p_justificativa: justExcesso.trim() || null,
     })
 
     setSalvando(false)
     setConfirmar(false)
+    setConfirmarDecl(false)
 
     const resp = data as {
       ok: boolean; erro?: string; trava?: string; mensagem?: string
@@ -741,6 +756,7 @@ export function AbastecimentoPage() {
       recipientes: resp.recipientes ?? '',
       ajustes:     resp.sobras_ajustadas ?? [],
       potesCederam: Number(resp.potes_cederam ?? 0),
+      soDeclaracao: soDecl,
     })
     setPasso('sucesso')
   }
@@ -1104,19 +1120,20 @@ export function AbastecimentoPage() {
                 {formatQty(colocado, alvo.unidade)}
               </span>
             </div>
-            {/* "Não foi usado" sozinho não fecha a operação: o registro exige
-                ao menos uma embalagem bipada, e sem nada entrando não há o
-                que bipar. */}
-            {colocado <= 0 && potesDeclarados.some(x => x.res.naoUsado) && (
-              <p className="text-xs text-gray-500 dark:text-unno-muted mt-2">
-                "Não foi usado" é registrado junto com um reabastecimento —
-                encha pelo menos um pote para continuar.
-              </p>
-            )}
           </Card>
+
+          {soDeclaracao && !temErroDePeso && (
+            <Button size="xl" fullWidth onClick={() => { setErro(''); setConfirmarDecl(true) }}>
+              Registrar só o "Não foi usado"
+            </Button>
+          )}
+          {erro && soDeclaracao && (
+            <div className="p-3 bg-red-50 border border-red-200 rounded-controle text-sm text-red-700">{erro}</div>
+          )}
 
           <Button
             size="xl" fullWidth
+            className={soDeclaracao ? 'hidden' : ''}
             disabled={colocado <= 0 || temErroDePeso}
             onClick={() => { setErroScan(''); setPasso('lotes') }}
           >
@@ -1455,11 +1472,18 @@ export function AbastecimentoPage() {
               <path strokeLinecap="round" strokeLinejoin="round" d="M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
             </svg>
           </div>
-          <h2 className="text-lg font-bold text-gray-900 dark:text-unno-text mb-1">Abastecimento registrado</h2>
+          <h2 className="text-lg font-bold text-gray-900 dark:text-unno-text mb-1">
+            {sucesso.soDeclaracao ? '"Não foi usado" registrado' : 'Abastecimento registrado'}
+          </h2>
           <p className="text-sm text-gray-500 dark:text-unno-muted mb-4">
             {sucesso.recipientes || 'Os recipientes foram atualizados.'}
           </p>
-          <div className="text-sm text-left space-y-1 mb-6">
+          {sucesso.soDeclaracao && (
+            <p className="text-sm text-gray-600 dark:text-unno-muted mb-6">
+              Voltaram ao que tinham na última pesagem. Nenhum insumo saiu do estoque central.
+            </p>
+          )}
+          <div className={`text-sm text-left space-y-1 mb-6 ${sucesso.soDeclaracao ? 'hidden' : ''}`}>
             <div className="flex justify-between">
               <span className="text-gray-500">Saiu do estoque central</span>
               <span className="font-semibold tabular-nums">{sucesso.consumido}</span>
@@ -1570,8 +1594,32 @@ export function AbastecimentoPage() {
             {perda > 0.001 && <p>Perda: {formatQty(perda, alvo.unidade)}</p>}
           </div>
         ) : undefined}
-        onConfirm={confirmarAbastecimento}
+        onConfirm={() => confirmarAbastecimento()}
         onCancel={() => setConfirmar(false)}
+      />
+
+      {/* O aviso que o Lucca pediu: quem chega aqui pelo caminho do
+          reabastecimento precisa saber que NÃO está registrando um. */}
+      <ConfirmModal
+        open={confirmarDecl}
+        title='Registrar só o "Não foi usado"?'
+        description={alvo
+          ? `Você não está registrando nenhum abastecimento em nenhum recipiente de ${alvo.nome}. `
+            + 'Os potes marcados só voltam ao que tinham na última pesagem.'
+          : undefined}
+        confirmLabel="REGISTRAR"
+        loading={salvando}
+        summary={alvo ? (
+          <div className="space-y-1">
+            {potesDeclarados.map(x => (
+              <p key={x.pote.local_id}>
+                {x.pote.nome} → <strong>{formatQty(x.res.conteudoFinal, alvo.unidade)}</strong>
+              </p>
+            ))}
+          </div>
+        ) : undefined}
+        onConfirm={() => confirmarAbastecimento(true)}
+        onCancel={() => setConfirmarDecl(false)}
       />
     </div>
   )
