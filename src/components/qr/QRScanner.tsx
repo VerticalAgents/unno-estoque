@@ -52,6 +52,11 @@ interface QRScannerProps {
    * desligada antes de avisar a tela, para não ficar acesa por trás.
    */
   acaoConcluir?: { rotulo: string; onClick: () => void }
+  /**
+   * O que dizer a quem vai digitar, quando a tela já sabe parte do código —
+   * no reabastecimento o insumo está escolhido, e basta a tarja preta.
+   */
+  dicaDigitar?: { texto: string; exemplo: string }
 }
 
 /** Quanto tempo ignorar a releitura do mesmo código, em modo contínuo. */
@@ -77,6 +82,7 @@ export function QRScanner({
   painel,
   continuo = false,
   acaoConcluir,
+  dicaDigitar,
 }: QRScannerProps) {
   const containerId = useRef(`qr-reader-${Math.random().toString(36).slice(2)}`)
   const scannerRef = useRef<Html5Qrcode | null>(null)
@@ -230,8 +236,8 @@ export function QRScanner({
       <div className="w-full p-4 bg-gray-50 dark:bg-white/[.04] border border-gray-200 dark:border-white/[.08] rounded-xl">
         <p className="text-sm font-medium text-gray-900 dark:text-unno-text">Digitar o código</p>
         <p className="text-xs text-gray-500 dark:text-unno-muted mt-0.5 mb-3">
-          É o código impresso na etiqueta, embaixo ou ao lado do QR. Maiúscula,
-          minúscula, ponto e barra tanto faz — só os números importam.
+          {dicaDigitar?.texto ?? <>É o código impresso na etiqueta, embaixo ou ao lado do QR. Maiúscula,
+          minúscula, ponto e barra tanto faz — só os números importam.</>}
         </p>
         <input
           autoFocus
@@ -243,7 +249,7 @@ export function QRScanner({
           autoCapitalize="characters"
           autoCorrect="off"
           spellCheck={false}
-          placeholder="INS014-0005.1/2"
+          placeholder={dicaDigitar?.exemplo ?? 'INS014-0005.1/2'}
           className="w-full rounded-lg border border-gray-300 bg-white px-4 py-3 text-base font-mono
                      focus:outline-none focus:border-brand-500 focus:ring-[3px] focus:ring-brand-500/10
                      dark:border-white/[.08] dark:bg-unno-raised dark:text-unno-text"

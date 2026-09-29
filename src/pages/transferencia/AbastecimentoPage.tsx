@@ -8,7 +8,7 @@ import { Card } from '../../components/ui/Card'
 import { Input } from '../../components/ui/Input'
 import { ConfirmModal } from '../../components/ui/ConfirmModal'
 import { formatQty, ordemNatural } from '../../lib/utils'
-import { parseQRLoteCodigo } from '../../lib/qr'
+import { parseLoteDoInsumo } from '../../lib/qr'
 import { bancada, daBancada, usaTara } from '../../lib/unidades'
 import type { UnidadeMedida } from '../../types/database.types'
 import { AbastecimentoUnidades, type InsumoPorUnidade } from './AbastecimentoUnidades'
@@ -563,7 +563,7 @@ export function AbastecimentoPage() {
     const { data: loteData } = await supabase
       .from('lotes')
       .select('id, codigo, insumo_id, unidade, quantidade_disponivel, quantidade_recebida, status')
-      .eq('codigo', parseQRLoteCodigo(qr))
+      .eq('codigo', parseLoteDoInsumo(qr, alvo.codigo))
       .maybeSingle()
 
     const lote = loteData as {
@@ -1245,6 +1245,10 @@ export function AbastecimentoPage() {
                 continuo
                 titulo={alvo.nome}
                 label={`${lotes.length} bipada${lotes.length === 1 ? '' : 's'}`}
+                dicaDigitar={{
+                  texto: `Só o código da tarja preta da etiqueta — o insumo já é ${alvo.nome}.`,
+                  exemplo: '0005.2/2',
+                }}
                 acaoConcluir={{
                   rotulo: 'Terminei de bipar',
                   onClick: () => { setErroScan(''); setPasso('fechar') },

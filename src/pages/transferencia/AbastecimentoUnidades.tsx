@@ -4,7 +4,7 @@ import { useAuth } from '../../contexts/AuthContext'
 import { QRScanner } from '../../components/qr/QRScanner'
 import { Button } from '../../components/ui/Button'
 import { Card } from '../../components/ui/Card'
-import { parseQRLoteCodigo } from '../../lib/qr'
+import { parseLoteDoInsumo, parseQRLoteCodigo } from '../../lib/qr'
 
 /**
  * Reabastecer por unidade: óleo em garrafa, ovo em pó em pacote (migration 126).
@@ -31,6 +31,8 @@ export type InsumoPorUnidade = {
   peso: number
   /** "garrafa", "pacote" — `insumos_embalagem_config.subunidade_tipo`. */
   tipo: string
+  /** INS006 — para completar o código digitado só com a tarja preta. */
+  codigo?: string
 }
 
 type Caixa = { id: string; codigo: string; tem: number; unidades: string }
@@ -132,7 +134,7 @@ export function AbastecimentoUnidades({ insumo, onVoltar, onConcluido }: {
     const { data: loteData } = await supabase
       .from('lotes')
       .select('id, codigo, insumo_id, quantidade_disponivel, status')
-      .eq('codigo', parseQRLoteCodigo(qr))
+      .eq('codigo', insumo.codigo ? parseLoteDoInsumo(qr, insumo.codigo) : parseQRLoteCodigo(qr))
       .maybeSingle()
     const lote = loteData as {
       id: string; codigo: string; insumo_id: string; quantidade_disponivel: number; status: string
@@ -303,6 +305,10 @@ export function AbastecimentoUnidades({ insumo, onVoltar, onConcluido }: {
                 continuo
                 titulo={insumo.nome}
                 label={`${caixas.length} bipada${caixas.length === 1 ? '' : 's'}`}
+                dicaDigitar={insumo.codigo ? {
+                  texto: `Só o código da tarja preta da etiqueta — o insumo já é ${insumo.nome}.`,
+                  exemplo: '0005.2/2',
+                } : undefined}
                 acaoConcluir={{ rotulo: 'Terminei de bipar', onClick: () => setLendo(false) }}
                 painel={
                   <div className="text-xs">

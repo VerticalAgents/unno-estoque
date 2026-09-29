@@ -16,6 +16,29 @@ export function parseQRLoteCodigo(qr: string): string {
 }
 
 /**
+ * O código do lote quando o insumo JÁ É SABIDO — no reabastecimento, que é de
+ * um insumo por vez.
+ *
+ * Na etiqueta, a tarja preta traz só `0005.2/2`; o `INS007` fica ao lado, em
+ * letra pequena. Pedir o código inteiro obrigava a digitar o que a tela já
+ * sabe (Lucca, 29/09/2026). Então:
+ *
+ *   - tem "INS", ou veio do QR → o código inteiro, como sempre;
+ *   - 1 ou 3 números (`5`, `0005.2/2`) → só o lote: o insumo entra na frente;
+ *   - 2 ou 4 números → o código inteiro sem o "INS" (`7-5.2/2`), como sempre.
+ */
+export function parseLoteDoInsumo(qr: string, codigoInsumo: string): string {
+  const bruto = qr.replace(/^QR-/i, '').split('|')[0].trim()
+  if (/INS/i.test(bruto) || qr.includes('|')) return parseQRLoteCodigo(qr)
+  const numeros = bruto.replace(/[^0-9]+/g, ' ').trim().split(/\s+/).filter(Boolean)
+  const insumo = codigoInsumo.match(/\d+/)?.[0]
+  if (insumo && (numeros.length === 1 || numeros.length === 3)) {
+    return normalizarCodigoLote(`${insumo} ${numeros.join(' ')}`) ?? bruto
+  }
+  return parseQRLoteCodigo(qr)
+}
+
+/**
  * Põe no formato do banco o que a pessoa digitou à mão.
  *
  * Quem digita está digitando porque o QR não leu — está na bancada, com a
