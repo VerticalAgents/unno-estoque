@@ -16,6 +16,29 @@ export function parseQRLoteCodigo(qr: string): string {
 }
 
 /**
+ * Formata a tarja preta enquanto se digita: o primeiro separador vira ponto,
+ * o segundo vira barra, e o terceiro não entra (Lucca, 29/09/2026). Qualquer
+ * tecla que não seja número serve de separador — espaço no teclado de letras,
+ * vírgula ou ponto no numérico. `5 2 2` aparece como `5.2/2`.
+ *
+ * Recalcula do zero a cada tecla, então apagar a barra e digitar de novo
+ * funciona sem estado guardado.
+ */
+export function formatarTarja(valor: string): string {
+  let saida = ''
+  let separadores = 0
+  for (const ch of valor) {
+    if (/\d/.test(ch)) {
+      saida += ch
+    } else if (separadores < 2 && saida !== '' && !/[./]$/.test(saida)) {
+      saida += separadores === 0 ? '.' : '/'
+      separadores++
+    }
+  }
+  return saida
+}
+
+/**
  * O código do lote quando o insumo JÁ É SABIDO — no reabastecimento, que é de
  * um insumo por vez.
  *

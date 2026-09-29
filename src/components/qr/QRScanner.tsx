@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react'
+import { formatarTarja } from '../../lib/qr'
 import { Html5Qrcode } from 'html5-qrcode'
 import { Button } from '../ui/Button'
 
@@ -56,7 +57,7 @@ interface QRScannerProps {
    * O que dizer a quem vai digitar, quando a tela já sabe parte do código —
    * no reabastecimento o insumo está escolhido, e basta a tarja preta.
    */
-  dicaDigitar?: { texto: string; exemplo: string }
+  dicaDigitar?: { texto: string; exemplo: string; tarja?: boolean }
 }
 
 /** Quanto tempo ignorar a releitura do mesmo código, em modo contínuo. */
@@ -242,7 +243,10 @@ export function QRScanner({
         <input
           autoFocus
           value={codigoManual}
-          onChange={e => setCodigoManual(e.target.value)}
+          // Só a tarja preta: espaço vira ponto, depois barra (`formatarTarja`),
+          // e o teclado é o numérico, que é o que se usa com uma mão.
+          onChange={e => setCodigoManual(dicaDigitar?.tarja ? formatarTarja(e.target.value) : e.target.value)}
+          inputMode={dicaDigitar?.tarja ? 'decimal' : undefined}
           onKeyDown={e => { if (e.key === 'Enter') confirmarManual() }}
           // O teclado do celular sugere maiúscula na primeira letra e mais
           // nada; e corretor num código é só atrapalho.

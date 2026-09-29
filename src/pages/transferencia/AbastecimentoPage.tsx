@@ -1246,8 +1246,9 @@ export function AbastecimentoPage() {
                 titulo={alvo.nome}
                 label={`${lotes.length} bipada${lotes.length === 1 ? '' : 's'}`}
                 dicaDigitar={{
-                  texto: `Só o código da tarja preta da etiqueta — o insumo já é ${alvo.nome}.`,
-                  exemplo: '0005.2/2',
+                  texto: `Só a tarja preta da etiqueta — o insumo já é ${alvo.nome}. O espaço vira ponto e depois barra; os zeros da frente não precisam.`,
+                  exemplo: '5.2/2',
+                  tarja: true,
                 }}
                 acaoConcluir={{
                   rotulo: 'Terminei de bipar',
