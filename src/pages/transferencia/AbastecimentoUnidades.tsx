@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../contexts/AuthContext'
 import { QRScanner } from '../../components/qr/QRScanner'
@@ -79,6 +79,33 @@ export function AbastecimentoUnidades({ insumo, onVoltar, onConcluido }: {
   const [passo, setPasso] = useState<Passo>('contar')
   const [tinha, setTinha] = useState('')
   const [caixas, setCaixas] = useState<Caixa[]>([])
+  /**
+   * A caixa aberta que a trava FEFO vai cobrar primeiro — mesma ordem de
+   * `validar_scan_lote`. Dita antes da leitura, e não só depois do erro.
+   */
+  const [aberta, setAberta] = useState<{ id: string; codigo: string; tem: number } | null>(null)
+  useEffect(() => {
+    let vivo = true
+    supabase.from('lotes')
+      .select('id, codigo, quantidade_disponivel, quantidade_recebida, validade_pos_abertura')
+      .eq('insumo_id', insumo.insumo_id).eq('status', 'ativo').gt('quantidade_disponivel', 0)
+      .then(({ data }) => {
+        if (!vivo) return
+        const a = ((data ?? []) as {
+          id: string; codigo: string; quantidade_disponivel: number; quantidade_recebida: number
+          validade_pos_abertura: string | null
+        }[])
+          .filter(l => Number(l.quantidade_disponivel) < Number(l.quantidade_recebida))
+          .sort((x, y) => (x.validade_pos_abertura ?? '9999-12-31').localeCompare(y.validade_pos_abertura ?? '9999-12-31')
+                       || x.codigo.localeCompare(y.codigo))[0]
+        setAberta(a ? {
+          id: a.id, codigo: a.codigo,
+          tem: Math.floor(Number(a.quantidade_disponivel) / insumo.peso + 0.0001),
+        } : null)
+      })
+    return () => { vivo = false }
+  }, [insumo.insumo_id, insumo.peso])
+  const bipePrimeiro = aberta && !caixas.some(c => c.id === aberta.id) && caixas.length === 0 ? aberta : null
   const [erroScan, setErroScan] = useState('')
   const [travaFefo, setTravaFefo] = useState<{ qr: string; bloqueia: boolean; mensagem: string } | null>(null)
   const [justFefo, setJustFefo] = useState('')
@@ -233,6 +260,13 @@ export function AbastecimentoUnidades({ insumo, onVoltar, onConcluido }: {
               Bipe o QR de cada {emb} de onde você tirou{' '}
               {plural(tipo, 2)}, e diga {g('quantas', 'quantos')} saíram de cada.
             </p>
+            {bipePrimeiro && (
+              <p className="mt-3 p-3 rounded-controle bg-amber-50 border border-amber-300 text-sm text-amber-900">
+                Bipe primeiro {emb === 'saco' ? 'o saco aberto' : 'a caixa aberta'}:{' '}
+                <strong className="font-mono">{bipePrimeiro.codigo}</strong>{' '}
+                ({bipePrimeiro.tem} {plural(tipo, bipePrimeiro.tem)}).
+              </p>
+            )}
           </Card>
 
           {travaFefo && (
@@ -272,6 +306,12 @@ export function AbastecimentoUnidades({ insumo, onVoltar, onConcluido }: {
                 acaoConcluir={{ rotulo: 'Terminei de bipar', onClick: () => setLendo(false) }}
                 painel={
                   <div className="text-xs">
+                    {bipePrimeiro && (
+                      <p className="mb-2 font-semibold text-amber-800">
+                        Bipe primeiro: <span className="font-mono">{bipePrimeiro.codigo}</span>{' '}
+                        ({emb === 'saco' ? 'aberto' : 'aberta'})
+                      </p>
+                    )}
                     {erroScan && <p className="font-semibold text-red-700 mb-2">{erroScan}</p>}
                     {caixas.map(c => (
                       <div key={c.id} className="flex justify-between gap-2">

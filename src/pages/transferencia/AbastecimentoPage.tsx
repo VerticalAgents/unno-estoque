@@ -520,6 +520,13 @@ export function AbastecimentoPage() {
   const colocado = potesDeclarados.reduce((s, x) => s + x.res.colocou, 0)
 
   /**
+   * A embalagem aberta que tem de ser bipada primeiro — a mesma que
+   * `validar_scan_lote` cobra (aberta, validade mais curta, depois o código).
+   * Some assim que uma aberta entra na lista: aí a trava já foi cumprida.
+   */
+  const bipePrimeiro = alvo?.proximo?.aberto && !lotes.some(l => l.aberto) ? alvo.proximo : null
+
+  /**
    * Só "Não foi usado", sem nenhum pote recebendo insumo (migration 128).
    *
    * O reabastecimento começa com a produção ainda rodando: o #1 é recarregado
@@ -1157,6 +1164,16 @@ export function AbastecimentoPage() {
               Agora bipe todas as embalagens que você usou — as que zeraram e as
               que sobraram.
             </p>
+            {/* O lote aberto que a trava FEFO vai cobrar, dito ANTES da leitura. Antes
+                a tela só dizia o código depois do erro, e quem bipava tinha de adivinhar
+                qual embalagem era a aberta (Lucca, 29/09/2026). */}
+            {bipePrimeiro && alvo && (
+              <p className="mt-3 p-3 rounded-controle bg-amber-50 border border-amber-300 text-sm text-amber-900">
+                Bipe primeiro a embalagem aberta:{' '}
+                <strong className="font-mono">{bipePrimeiro.codigo}</strong>{' '}
+                ({formatQty(bipePrimeiro.saldo, alvo.unidade)}).
+              </p>
+            )}
           </Card>
 
           {lotes.length > 0 && (
@@ -1234,6 +1251,11 @@ export function AbastecimentoPage() {
                 }}
                 painel={
                   <div className="text-xs">
+                    {bipePrimeiro && (
+                      <p className="mb-2 font-semibold text-amber-800">
+                        Bipe primeiro: <span className="font-mono">{bipePrimeiro.codigo}</span> (aberta)
+                      </p>
+                    )}
                     {erroScan && <p className="font-semibold text-red-700 mb-2">{erroScan}</p>}
                     <div className="space-y-1">
                       {lotes.map(l => (
