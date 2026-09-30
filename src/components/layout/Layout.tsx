@@ -7,7 +7,7 @@ import { BarraInferior } from './BarraInferior'
 import { MenuInferior } from './MenuInferior'
 import { useDarkMode } from '../../hooks/useDarkMode'
 import { useMenuColapsado } from '../../hooks/useMenuColapsado'
-import { canAccess } from '../../lib/permissions'
+import { canAccess, primeiraRota } from '../../lib/permissions'
 
 export function Layout() {
   const { user, profile, permissoes, loading } = useAuth()
@@ -33,7 +33,7 @@ export function Layout() {
 
   // Route guard: redirect to dashboard if user can't access current route
   if (profile && !canAccess(profile.papel, location.pathname, permissoes)) {
-    return <Navigate to="/dashboard" replace />
+    return <Navigate to={primeiraRota(profile.papel, permissoes)} replace />
   }
 
   return (

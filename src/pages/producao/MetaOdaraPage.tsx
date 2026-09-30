@@ -57,9 +57,26 @@ const dataCurta = (iso: string) => {
   return `${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')}`
 }
 
+/** A Meta Odara sozinha, com moldura de página — a rota do papel 'odara'. */
+export function MetaOdaraAvulsaPage() {
+  return (
+    <div className="p-4 sm:p-6 max-w-6xl mx-auto">
+      <div className="mb-4">
+        <h1 className="text-xl font-bold text-gray-900 dark:text-gray-100">Meta Odara</h1>
+        <p className="text-sm text-gray-500 dark:text-unno-muted mt-1">
+          Quanto dura cada insumo e quanto pedir para a entrega de sexta. Atualize a coluna "Na Odara" com o estoque de lá.
+        </p>
+      </div>
+      <MetaOdaraPage />
+    </div>
+  )
+}
+
 export function MetaOdaraPage() {
   const { profile } = useAuth()
   const porUnidade = usePorUnidade()
+  /** O papel 'odara' vê a meta, mas só grava o estoque de lá (migration 134b). */
+  const soLeMeta = profile?.papel === 'odara'
 
   const [carregando, setCarregando] = useState(true)
   const [fichas, setFichas] = useState<Ficha[]>([])
@@ -328,6 +345,7 @@ export function MetaOdaraPage() {
                   onPasso={d => setMetas(m => ({ ...m, [f.id]: String(Math.max(0, formasDe(f.id) + d)) }))}
                   sufixo="formas"
                   min={0}
+                  desabilitado={soLeMeta}
                 />
                 <span className="text-sm text-foreground">{f.nome.replace(/^Brownie /, '')}</span>
                 <span className="text-xs text-muted-foreground tabular-nums">
@@ -345,6 +363,7 @@ export function MetaOdaraPage() {
                 onPasso={d => setFolga(String(Math.max(0, folgaNum + d * 5)))}
                 sufixo="%"
                 min={0}
+                desabilitado={soLeMeta}
               />
               <span className="text-sm text-foreground">de folga na entrega</span>
             </div>
@@ -356,7 +375,7 @@ export function MetaOdaraPage() {
               {milhares(brownies)} brownies · {milhares(brownies / UN_POR_DISPLAY)} displays ·{' '}
               {milhares(Math.ceil(brownies / UN_POR_CAIXA))} caixas por semana
             </p>
-            {mudouMeta && (
+            {mudouMeta && !soLeMeta && (
               <Button size="sm" loading={salvando} onClick={salvarMeta} className="mt-2">Salvar meta</Button>
             )}
             {erro && <p className="text-xs text-red-600">{erro}</p>}

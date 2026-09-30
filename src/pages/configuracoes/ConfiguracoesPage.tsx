@@ -69,6 +69,8 @@ const PAPEIS: { value: string; label: string }[] = [
   { value: 'gestao', label: 'Gestão' },
   { value: 'producao', label: 'Produção' },
   { value: 'compras', label: 'Compras' },
+  // Só a Meta Odara, e só grava o estoque de lá (migration 134b).
+  { value: 'odara', label: 'Odara (só Meta Odara)' },
 ]
 
 export function ConfiguracoesPage() {

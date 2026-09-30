@@ -22,12 +22,16 @@ export function LoginPage() {
     limparMotivoSaida()
     setLoading(true)
 
-    const { error: authError } = await supabase.auth.signInWithPassword({ email, password })
+    // Login por usuário (o do Antônio, da Odara, é "antonioodara"): sem "@",
+    // vira o e-mail interno com que a conta foi criada.
+    const login = email.trim()
+    const emailReal = login.includes('@') ? login : `${login.toLowerCase()}@usuarios.mischas.local`
+    const { error: authError } = await supabase.auth.signInWithPassword({ email: emailReal, password })
 
     if (authError) {
       setError(
         authError.message === 'Invalid login credentials'
-          ? 'Email ou senha incorretos.'
+          ? 'Usuário ou senha incorretos.'
           : authError.message
       )
       setLoading(false)
@@ -61,13 +65,14 @@ export function LoginPage() {
 
           <form onSubmit={handleSubmit} className="space-y-4">
             <Input
-              label="Email"
-              type="email"
+              label="E-mail ou usuário"
+              type="text"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
-              placeholder="seu@email.com"
+              placeholder="seu@email.com ou usuário"
               required
-              autoComplete="email"
+              autoComplete="username"
+              autoCapitalize="none"
               autoFocus
             />
             <Input

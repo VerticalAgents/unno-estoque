@@ -15,6 +15,7 @@ import { EscolhaTransferenciaPage } from './pages/transferencia/EscolhaTransfere
 import { SessoesListPage } from './pages/producao/SessoesListPage'
 import { AberturaSessaoPage } from './pages/producao/AberturaSessaoPage'
 import { PlanejadorPage } from './pages/producao/PlanejadorPage'
+import { MetaOdaraAvulsaPage } from './pages/producao/MetaOdaraPage'
 import { PosProducaoPage } from './pages/pos-producao/PosProducaoPage'
 import { ReabastecimentoPage } from './pages/reabastecimento/ReabastecimentoPage'
 import { FechamentoSessaoPage } from './pages/producao/FechamentoSessaoPage'
@@ -75,6 +76,8 @@ export default function App() {
           <Route path="producao" element={<SessoesListPage />} />
           <Route path="producao/abrir" element={<AberturaSessaoPage />} />
           <Route path="producao/planejador" element={<PlanejadorPage />} />
+          {/* A Meta Odara sozinha, para o papel 'odara' (migration 134b). */}
+          <Route path="odara" element={<MetaOdaraAvulsaPage />} />
           <Route path="producao/:id/editar" element={<AberturaSessaoPage />} />
           <Route path="producao/:id/fechar" element={<FechamentoSessaoPage />} />
           <Route path="pos-producao" element={<PosProducaoPage />} />

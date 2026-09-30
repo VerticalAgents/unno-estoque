@@ -3,7 +3,7 @@
 // Gerado manualmente a partir do schema PostgreSQL
 // ============================================================
 
-export type PapelUsuario = 'admin' | 'gestao' | 'producao' | 'compras'
+export type PapelUsuario = 'admin' | 'gestao' | 'producao' | 'compras' | 'odara'
 export type SexoEnum = 'M' | 'F' | 'Outro'
 export type TipoEmbalagemFornecedor = 'fardo' | 'caixa' | 'saca' | 'balde' | 'garrafa' | 'lata' | 'display' | 'saco' | 'unidade'
 export type TipoArmazenamentoEP = 'balde' | 'garrafa_fornecedor' | 'balde_fornecedor' | 'caixa_plastica' | 'saco_confeitar' | 'lata' | 'unidade'

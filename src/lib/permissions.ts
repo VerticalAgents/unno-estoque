@@ -19,6 +19,19 @@ const defaultRoutes: Record<PapelUsuario, string[]> = {
     // Quem recebe insumo é quem imprime a etiqueta do lote que acabou de entrar.
     '/etiquetas',
   ],
+  // O Antônio, da Odara: só a Meta Odara (migration 134b).
+  odara: ['/odara'],
+}
+
+/**
+ * Para onde mandar quem abriu uma página que não pode ver. Era sempre o
+ * /dashboard — e quem não pode ver o dashboard (o papel 'odara') ficava num
+ * redirecionamento sem fim.
+ */
+export function primeiraRota(papel: PapelUsuario, permissoes?: PermissoesPapel): string {
+  if (canAccess(papel, '/dashboard', permissoes)) return '/dashboard'
+  const allowed = permissoes?.[papel] ?? defaultRoutes[papel] ?? []
+  return allowed.find(r => r !== '*') ?? '/dashboard'
 }
 
 export function canAccess(papel: PapelUsuario, path: string, permissoes?: PermissoesPapel): boolean {
