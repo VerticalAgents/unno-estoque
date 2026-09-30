@@ -5,6 +5,9 @@ import { useAuth } from '../../contexts/AuthContext'
 import type { EstoqueConsolidado, Lote, Local, MotivoPerdaEnum } from '../../types/database.types'
 import { formatDate, formatQty, daysUntil } from '../../lib/utils'
 import { QtdPorUnidade, usePorUnidade } from '../../lib/porUnidade'
+import { codigoCurtoLote, nomeSemCodigo } from '../../lib/qr'
+import { ordemNatural } from '../../lib/utils'
+import { FileiraUnidades, Peca, formaDaEmbalagem } from './EstoqueVisual'
 import { Button } from '../../components/ui/Button'
 import { Select, Textarea } from '../../components/ui/Input'
 import { Input } from '../../components/ui/Input'
@@ -21,7 +24,13 @@ const MOTIVOS: { value: MotivoPerdaEnum; label: string }[] = [
 
 // ── Types ────────────────────────────────────────────────────
 type LoteEC = Lote
-type RecipienteEP = Local & { quantidade: number | null; validade_ep: string | null }
+type RecipienteEP = Local & {
+  quantidade: number | null
+  validade_ep: string | null
+  conteudo_estimado?: boolean
+  conteudo_conferido_em?: string | null
+  efemero?: boolean
+}
 
 type DescarteAlvo =
   | { tipo: 'lote'; lote: LoteEC }
@@ -198,12 +207,41 @@ export function InsumoDetalhePanel({
   const [recipientesEP, setRecipientesEP] = useState<RecipienteEP[]>([])
   const [loading, setLoading] = useState(true)
   const [descarteAlvo, setDescarteAlvo] = useState<DescarteAlvo | null>(null)
+  /** Formato das embalagens do EC (`insumos_embalagem_config.tipo_embalagem`). */
+  const [tipoEmbalagem, setTipoEmbalagem] = useState<string | null>(null)
+  /** A peça tocada: abre o cartão com o número completo e as ações. */
+  const [sel, setSel] = useState<{ tipo: 'lote' | 'rec'; id: string } | null>(null)
+  const alternar = (s: { tipo: 'lote' | 'rec'; id: string }) =>
+    setSel(atual => (atual?.tipo === s.tipo && atual.id === s.id ? null : s))
+  const loteSel = sel?.tipo === 'lote' ? lotesEC.find(l => l.id === sel.id) ?? null : null
+  const recSel = sel?.tipo === 'rec' ? recipientesEP.find(r => r.id === sel.id) ?? null : null
+
+  /** "10,2 kg", ou "39 garrafas" para óleo e ovo. */
+  function textoQtd(v: number): string {
+    const cfg = porUnidade[insumo.insumo_id]
+    if (!cfg) return formatQty(v, insumo.unidade_medida)
+    const n = Math.floor(v / cfg.peso + 0.0001)
+    return `${n} ${n === 1 ? cfg.tipo : `${cfg.tipo}s`}`
+  }
+
+  /** "#2" do "Pote G Choco em Pó 50% #2"; a embalagem do fornecedor pelo código curto. */
+  function nomeCurto(r: RecipienteEP): string {
+    const n = r.nome.match(/#\d+/)?.[0]
+    if (n) return n
+    return r.efemero ? codigoCurtoLote(r.nome) : nomeSemCodigo(r.nome).replace(/^Produção · /, '')
+  }
+
+  function dataHora(iso: string): string {
+    const d = new Date(iso)
+    const p = (x: number) => String(x).padStart(2, '0')
+    return `${p(d.getDate())}/${p(d.getMonth() + 1)} ${p(d.getHours())}:${p(d.getMinutes())}`
+  }
 
   async function load() {
     if (!profile) return
     setLoading(true)
 
-    const [{ data: lotes }, { data: locais }, { data: estados }] = await Promise.all([
+    const [{ data: lotes }, { data: locais }, { data: estados }, { data: emb }] = await Promise.all([
       supabase
         .from('lotes')
         .select('*')
@@ -222,7 +260,13 @@ export function InsumoDetalhePanel({
       supabase
         .from('locais_estado_atual')
         .select('local_id, quantidade, validade_ep, lote_id'),
+      supabase
+        .from('insumos_embalagem_config')
+        .select('tipo_embalagem')
+        .eq('insumo_id', insumo.insumo_id)
+        .maybeSingle(),
     ])
+    setTipoEmbalagem((emb as { tipo_embalagem: string | null } | null)?.tipo_embalagem ?? null)
 
     setLotesEC((lotes ?? []) as LoteEC[])
 
@@ -284,59 +328,79 @@ export function InsumoDetalhePanel({
             </div>
           ) : (
             <>
-              {/* ── Lotes no EC ── */}
+              {/* ── Estoque central, desenhado ──
+                  Cada embalagem no formato dela, cheia até o que sobrou do
+                  original (Lucca, 29/09/2026). O número completo e as ações
+                  ficam no cartão que abre ao tocar. */}
               <section>
                 <div className="flex items-center gap-2 mb-3">
-                  <span className="text-xs font-bold uppercase tracking-widest text-gray-500">Lotes no EC</span>
+                  <span className="text-xs font-bold uppercase tracking-widest text-gray-500">Estoque central</span>
                   <span className="text-xs bg-gray-100 text-gray-600 rounded-full px-2 py-0.5">{lotesEC.length}</span>
                 </div>
 
                 {lotesEC.length === 0 ? (
-                  <p className="text-sm text-gray-400 italic">Nenhum lote ativo no estoque central.</p>
+                  <p className="text-sm text-gray-400 italic">Nenhuma embalagem no estoque central.</p>
                 ) : (
-                  <div className="space-y-2">
-                    {lotesEC.map(lote => (
-                      <div key={lote.id} className="rounded-lg border border-gray-200 p-3 flex items-start justify-between gap-3">
-                        <div className="space-y-0.5 min-w-0">
-                          <p className="font-mono text-xs font-semibold text-gray-700">{lote.codigo}</p>
-                          {/* Deduzido não pode ter a mesma cara de medido — a
-                              mesma marca que os potes já usam (migration 112/113). */}
-                          <p className={`text-sm font-medium ${lote.saldo_estimado ? 'text-amber-700' : 'text-gray-900'}`}>
-                            {lote.saldo_estimado && '≈ '}
-                            <QtdPorUnidade valor={lote.quantidade_disponivel} unidade={lote.unidade} config={porUnidade[insumo.insumo_id]} />
-                          </p>
-                          {lote.saldo_estimado && (
-                            <p className="text-xs text-amber-700">
-                              estimado — a embalagem não foi pesada
-                            </p>
-                          )}
-                          <div>{validadeTag(lote.validade_pos_abertura)}</div>
-                          {lote.validade_original !== lote.validade_pos_abertura && (
-                            <p className="text-xs text-gray-400">Val. original: {formatDate(lote.validade_original)}</p>
-                          )}
-                        </div>
-                        <div className="shrink-0 flex flex-col gap-1.5">
-                          <button
-                            onClick={() => navigate(`/recebimento/imprimir/${lote.id}`)}
-                            className="flex items-center gap-1 text-xs font-medium text-gray-600 hover:text-gray-900 border border-gray-200 hover:border-gray-400 rounded-md px-2.5 py-1.5 transition-colors"
-                          >
-                            <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <div className="flex flex-wrap gap-1">
+                    {lotesEC.map(lote => {
+                      const rec = Number(lote.quantidade_recebida)
+                      return (
+                        <Peca
+                          key={lote.id}
+                          forma={formaDaEmbalagem(tipoEmbalagem)}
+                          cheio={rec > 0 ? Number(lote.quantidade_disponivel) / rec : null}
+                          estimado={lote.saldo_estimado}
+                          rotulo={codigoCurtoLote(lote.codigo)}
+                          detalhe={textoQtd(Number(lote.quantidade_disponivel))}
+                          selecionada={sel?.tipo === 'lote' && sel.id === lote.id}
+                          onClick={() => alternar({ tipo: 'lote', id: lote.id })}
+                        />
+                      )
+                    })}
+                  </div>
+                )}
+
+                {loteSel && (
+                  <div className="mt-3 rounded-lg border border-gray-200 p-3 flex items-start justify-between gap-3">
+                    <div className="space-y-0.5 min-w-0">
+                      <p className="font-mono text-xs font-semibold text-gray-700">{loteSel.codigo}</p>
+                      {/* Deduzido não pode ter a mesma cara de medido — a
+                          mesma marca que os potes já usam (migration 112/113). */}
+                      <p className={`text-sm font-medium ${loteSel.saldo_estimado ? 'text-amber-700' : 'text-gray-900'}`}>
+                        {loteSel.saldo_estimado && '≈ '}
+                        <QtdPorUnidade valor={loteSel.quantidade_disponivel} unidade={loteSel.unidade} config={porUnidade[insumo.insumo_id]} />
+                        <span className="text-xs font-normal text-gray-400">
+                          {' '}de {formatQty(Number(loteSel.quantidade_recebida), loteSel.unidade)}
+                        </span>
+                      </p>
+                      {loteSel.saldo_estimado && (
+                        <p className="text-xs text-amber-700">estimado — a embalagem não foi pesada</p>
+                      )}
+                      <div>{validadeTag(loteSel.validade_pos_abertura)}</div>
+                      {loteSel.validade_original !== loteSel.validade_pos_abertura && (
+                        <p className="text-xs text-gray-400">Val. original: {formatDate(loteSel.validade_original)}</p>
+                      )}
+                    </div>
+                    <div className="shrink-0 flex flex-col gap-1.5">
+                      <button
+                        onClick={() => navigate(`/recebimento/imprimir/${loteSel.id}`)}
+                        className="flex items-center gap-1 text-xs font-medium text-gray-600 hover:text-gray-900 border border-gray-200 hover:border-gray-400 rounded-md px-2.5 py-1.5 transition-colors"
+                      >
+                        <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                               <path strokeLinecap="round" strokeLinejoin="round" d="M6.72 13.829c-.24.03-.48.062-.72.096m.72-.096a42.415 42.415 0 0110.56 0m-10.56 0L6.34 18m10.94-4.171c.24.03.48.062.72.096m-.72-.096L17.66 18m0 0l.229 2.523a1.125 1.125 0 01-1.12 1.227H7.231c-.662 0-1.18-.568-1.12-1.227L6.34 18m11.318 0h1.091A2.25 2.25 0 0021 15.75V9.456c0-1.081-.768-2.015-1.837-2.175a48.055 48.055 0 00-1.913-.247M6.34 18H5.25A2.25 2.25 0 013 15.75V9.456c0-1.081.768-2.015 1.837-2.175a48.056 48.056 0 011.913-.247m10.5 0a48.536 48.536 0 00-10.5 0m10.5 0V3.375c0-.621-.504-1.125-1.125-1.125h-8.25c-.621 0-1.125.504-1.125 1.125v3.659M18 10.5h.008v.008H18V10.5zm-3 0h.008v.008H15V10.5z" />
                             </svg>
-                            Etiqueta
-                          </button>
-                          <button
-                            onClick={() => setDescarteAlvo({ tipo: 'lote', lote })}
-                            className="flex items-center gap-1 text-xs font-medium text-red-600 hover:text-red-800 border border-red-200 hover:border-red-400 rounded-md px-2.5 py-1.5 transition-colors"
-                          >
-                            <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                        Etiqueta
+                      </button>
+                      <button
+                        onClick={() => setDescarteAlvo({ tipo: 'lote', lote: loteSel })}
+                        className="flex items-center gap-1 text-xs font-medium text-red-600 hover:text-red-800 border border-red-200 hover:border-red-400 rounded-md px-2.5 py-1.5 transition-colors"
+                      >
+                        <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                               <path strokeLinecap="round" strokeLinejoin="round" d="M14.74 9l-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 01-2.244 2.077H8.084a2.25 2.25 0 01-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 00-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 013.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 00-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 00-7.5 0" />
                             </svg>
-                            Descartar
-                          </button>
-                        </div>
-                      </div>
-                    ))}
+                        Descartar
+                      </button>
+                    </div>
                   </div>
                 )}
               </section>
@@ -344,47 +408,95 @@ export function InsumoDetalhePanel({
               {/* Divider */}
               <hr className="border-gray-100" />
 
-              {/* ── Recipientes no EP ── */}
+              {/* ── Produção, desenhada ── */}
               <section>
                 <div className="flex items-center gap-2 mb-3">
-                  <span className="text-xs font-bold uppercase tracking-widest text-gray-500">Recipientes no EP</span>
+                  <span className="text-xs font-bold uppercase tracking-widest text-gray-500">Produção</span>
                   <span className="text-xs bg-gray-100 text-gray-600 rounded-full px-2 py-0.5">{recipientesEP.length}</span>
                 </div>
 
                 {recipientesEP.length === 0 ? (
                   <p className="text-sm text-gray-400 italic">Nenhum recipiente associado a este insumo.</p>
                 ) : (
-                  <div className="space-y-2">
-                    {recipientesEP.map(r => {
-                      const temConteudo = r.quantidade != null && r.quantidade > 0
+                  <div className="flex flex-wrap gap-1">
+                    {[...recipientesEP].sort((a, b) => ordemNatural(a.nome, b.nome)).map(r => {
+                      const q = Number(r.quantidade ?? 0)
+                      const cfg = porUnidade[insumo.insumo_id]
+                      const selecionada = sel?.tipo === 'rec' && sel.id === r.id
+                      // Óleo e ovo: sem pote, uma figurinha por unidade inteira.
+                      if (cfg && !(Number(r.capacidade_max) > 0)) {
+                        const n = Math.floor(q / cfg.peso + 0.0001)
+                        return (
+                          <FileiraUnidades
+                            key={r.id}
+                            n={n}
+                            tipo={cfg.tipo}
+                            rotulo={`${nomeCurto(r)} · ${n} ${n === 1 ? cfg.tipo : `${cfg.tipo}s`}`}
+                            selecionada={selecionada}
+                            onClick={() => alternar({ tipo: 'rec', id: r.id })}
+                          />
+                        )
+                      }
+                      const cap = Number(r.capacidade_max)
                       return (
-                        <div key={r.id} className={`rounded-lg border p-3 flex items-start justify-between gap-3 ${temConteudo ? 'border-gray-200' : 'border-gray-100 bg-gray-50'}`}>
-                          <div className="space-y-0.5 min-w-0">
-                            <p className="text-sm font-medium text-gray-900">{r.nome}</p>
-                            <p className="text-xs text-gray-500">{r.subtipo ?? '—'}</p>
-                            <p className={`text-sm font-semibold ${temConteudo ? 'text-gray-800' : 'text-gray-400'}`}>
-                              {temConteudo
-                                ? <QtdPorUnidade valor={r.quantidade!} unidade={insumo.unidade_medida} config={porUnidade[insumo.insumo_id]} />
-                                : 'Vazio'}
-                            </p>
-                            {r.validade_ep && <div>{validadeTag(r.validade_ep)}</div>}
-                          </div>
-                          {temConteudo && (
-                            <button
-                              onClick={() => setDescarteAlvo({ tipo: 'recipiente', recipiente: r })}
-                              className="shrink-0 flex items-center gap-1 text-xs font-medium text-red-600 hover:text-red-800 border border-red-200 hover:border-red-400 rounded-md px-2.5 py-1.5 transition-colors"
-                            >
-                              <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                                <path strokeLinecap="round" strokeLinejoin="round" d="M14.74 9l-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 01-2.244 2.077H8.084a2.25 2.25 0 01-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 00-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 013.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 00-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 00-7.5 0" />
-                              </svg>
-                              Descartar
-                            </button>
-                          )}
-                        </div>
+                        <Peca
+                          key={r.id}
+                          forma={formaDaEmbalagem(r.subtipo)}
+                          cheio={cap > 0 ? q / cap : null}
+                          estimado={r.conteudo_estimado}
+                          rotulo={nomeCurto(r)}
+                          detalhe={q > 0 ? textoQtd(q) : 'vazio'}
+                          selecionada={selecionada}
+                          onClick={() => alternar({ tipo: 'rec', id: r.id })}
+                        />
                       )
                     })}
                   </div>
                 )}
+
+                {recSel && (() => {
+                  const temConteudo = recSel.quantidade != null && recSel.quantidade > 0
+                  const cap = Number(recSel.capacidade_max)
+                  return (
+                    <div className="mt-3 rounded-lg border border-gray-200 p-3 flex items-start justify-between gap-3">
+                      <div className="space-y-0.5 min-w-0">
+                        <p className="text-sm font-medium text-gray-900">{recSel.nome}</p>
+                        <p className={`text-sm font-semibold ${temConteudo ? (recSel.conteudo_estimado ? 'text-amber-700' : 'text-gray-800') : 'text-gray-400'}`}>
+                          {temConteudo
+                            ? <>
+                                {recSel.conteudo_estimado && '≈ '}
+                                <QtdPorUnidade valor={recSel.quantidade!} unidade={insumo.unidade_medida} config={porUnidade[insumo.insumo_id]} />
+                                {cap > 0 && (
+                                  <span className="text-xs font-normal text-gray-400">
+                                    {' '}de {formatQty(cap, insumo.unidade_medida)}
+                                    {recSel.quantidade! > cap + 0.001 && ' — acima da capacidade cadastrada'}
+                                  </span>
+                                )}
+                              </>
+                            : 'Vazio'}
+                        </p>
+                        {recSel.conteudo_estimado && temConteudo && (
+                          <p className="text-xs text-amber-700">estimado — descontado pela produção, sem pesar</p>
+                        )}
+                        {recSel.conteudo_conferido_em && (
+                          <p className="text-xs text-gray-400">Última pesagem: {dataHora(recSel.conteudo_conferido_em)}</p>
+                        )}
+                        {recSel.validade_ep && <div>{validadeTag(recSel.validade_ep)}</div>}
+                      </div>
+                      {temConteudo && (
+                        <button
+                          onClick={() => setDescarteAlvo({ tipo: 'recipiente', recipiente: recSel })}
+                          className="shrink-0 flex items-center gap-1 text-xs font-medium text-red-600 hover:text-red-800 border border-red-200 hover:border-red-400 rounded-md px-2.5 py-1.5 transition-colors"
+                        >
+                          <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                              <path strokeLinecap="round" strokeLinejoin="round" d="M14.74 9l-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 01-2.244 2.077H8.084a2.25 2.25 0 01-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 00-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 013.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 00-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 00-7.5 0" />
+                            </svg>
+                          Descartar
+                        </button>
+                      )}
+                    </div>
+                  )
+                })()}
               </section>
             </>
           )}
