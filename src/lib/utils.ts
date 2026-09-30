@@ -4,6 +4,8 @@ import type { UnidadeMedida } from '../types/database.types'
 
 export function formatDate(date: string | Date | null | undefined): string {
   if (!date) return '—'
+  // Embalagem não vence: o lote guarda 31/12/2099 por baixo (migration 135b).
+  if (typeof date === 'string' && date.startsWith('2099-12-31')) return 'sem validade'
   const d = typeof date === 'string'
     ? new Date(date.length === 10 ? date + 'T00:00:00' : date)
     : date

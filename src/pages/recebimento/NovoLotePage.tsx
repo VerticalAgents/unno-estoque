@@ -8,6 +8,7 @@ import { Button } from '../../components/ui/Button'
 import { Card } from '../../components/ui/Card'
 import { today } from '../../lib/utils'
 import { criarFornecedor, criarMarca } from '../../lib/cadastroRapido'
+import { SEM_VALIDADE, useEmbalagens } from '../../lib/embalagens'
 
 /**
  * Recebimento de uma carga inteira, e não de um insumo por vez.
@@ -596,6 +597,13 @@ function BlocoItem({
   podeRemover, onRemover, onPatch, onNovaMarca,
 }: BlocoItemProps) {
   const insumo = insumos.find(i => i.id === item.insumo_id)
+  // Display, caixa de embarque e BOPP não vencem (migration 135b).
+  const { ids: embalagens } = useEmbalagens()
+  const semValidade = embalagens.has(item.insumo_id)
+  useEffect(() => {
+    if (semValidade && item.validade_original !== SEM_VALIDADE) onPatch({ validade_original: SEM_VALIDADE })
+    if (!semValidade && item.validade_original === SEM_VALIDADE) onPatch({ validade_original: '' })
+  }, [semValidade, item.validade_original, onPatch])
   const tamanhoEmbalagem = tamanhoDe(item, insumo)
   const tamanhoCadastro = insumo?.tamanho_embalagem ?? null
   const quantidade = parseFloat(item.quantidade_recebida) || 0
@@ -669,13 +677,20 @@ function BlocoItem({
       )}
 
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-        <Input
-          label="Validade (embalagem)"
-          type="date"
-          required
-          value={item.validade_original}
-          onChange={e => onPatch({ validade_original: e.target.value })}
-        />
+        {semValidade ? (
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-1.5">Validade</p>
+            <p className="text-sm text-muted-foreground py-2">Sem validade (embalagem)</p>
+          </div>
+        ) : (
+          <Input
+            label="Validade (embalagem)"
+            type="date"
+            required
+            value={item.validade_original}
+            onChange={e => onPatch({ validade_original: e.target.value })}
+          />
+        )}
         <Input
           label={`Quantidade ${insumo ? `(${insumo.unidade_medida})` : ''}`}
           type="number" inputMode="decimal"

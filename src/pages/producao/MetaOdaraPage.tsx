@@ -44,7 +44,7 @@ type Linha = {
 const PLURAL: Record<string, [string, string]> = {
   fardo: ['fardo', 'fardos'], caixa: ['caixa', 'caixas'], saca: ['saca', 'sacas'],
   saco: ['saco', 'sacos'], balde: ['balde', 'baldes'], garrafa: ['galão/garrafa', 'galões/garrafas'],
-  lata: ['lata', 'latas'], display: ['display', 'displays'],
+  lata: ['lata', 'latas'], display: ['display', 'displays'], bobina: ['bobina', 'bobinas'],
 }
 const nomeEmb = (tipo: string | null, n: number) => {
   const par = PLURAL[tipo ?? ''] ?? ['embalagem', 'embalagens']
@@ -108,7 +108,7 @@ export function MetaOdaraPage() {
     const eid = profile.empresa_id
 
     async function carregar() {
-      const [fch, mts, cfg, est, ext, ins, emb] = await Promise.all([
+      const [fch, mts, cfg, est, ext, ins, emb, cons] = await Promise.all([
         supabase.from('fichas_tecnicas')
           .select('id, nome, versoes:fichas_tecnicas_versoes(id, ativa)')
           .eq('empresa_id', eid).eq('ativo', true).ilike('nome', '%odara%').order('nome'),
@@ -119,6 +119,8 @@ export function MetaOdaraPage() {
         supabase.from('estoque_externo_insumo').select('insumo_id, quantidade, updated_at').eq('empresa_id', eid),
         supabase.from('insumos').select('id, tamanho_embalagem').eq('empresa_id', eid),
         supabase.from('insumos_embalagem_config').select('insumo_id, tipo_embalagem, quantidade_total'),
+        // Display, caixa de embarque e BOPP ficam fora da ficha (migration 135b).
+        supabase.from('embalagem_consumo').select('ficha_id, insumo_id, qtd_por_brownie').eq('empresa_id', eid),
       ])
       if (!vivo) return
 
@@ -135,7 +137,17 @@ export function MetaOdaraPage() {
       for (const it of itens as { versao_id: string; insumo_id: string; quantidade: number }[]) {
         (porVersao[it.versao_id] ??= []).push({ insumo_id: it.insumo_id, quantidade: Number(it.quantidade) })
       }
-      setReceitas(Object.fromEntries(fs.map(f => [f.id, f.versaoId ? porVersao[f.versaoId] ?? [] : []])))
+      // As embalagens entram na "receita" de cada ficha como se fossem insumo:
+      // o gasto por brownie vezes 60 dá o gasto por forma, e daí em diante a
+      // conta (consumo, autonomia, limitante, próxima entrega) é a mesma.
+      const porFichaEmb: Record<string, { insumo_id: string; quantidade: number }[]> = {}
+      for (const c of (cons.data ?? []) as { ficha_id: string; insumo_id: string; qtd_por_brownie: number }[]) {
+        (porFichaEmb[c.ficha_id] ??= []).push({ insumo_id: c.insumo_id, quantidade: Number(c.qtd_por_brownie) * UN_POR_FORMA })
+      }
+      setReceitas(Object.fromEntries(fs.map(f => [f.id, [
+        ...(f.versaoId ? porVersao[f.versaoId] ?? [] : []),
+        ...(porFichaEmb[f.id] ?? []),
+      ]])))
 
       const ms = Object.fromEntries(((mts.data ?? []) as { ficha_id: string; formas_semana: number }[])
         .map(m => [m.ficha_id, Number(m.formas_semana)]))

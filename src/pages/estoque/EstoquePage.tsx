@@ -9,6 +9,7 @@ import { InsumoDetalhePanel } from './InsumoDetalhePanel'
 import { QtdPorUnidade, usePorUnidade } from '../../lib/porUnidade'
 import { BarraNivel } from './EstoqueVisual'
 import { combina } from '../../lib/busca'
+import { useEmbalagens } from '../../lib/embalagens'
 
 /**
  * ESTOQUE DE INSUMOS — a posição de tudo, EC mais EP.
@@ -154,6 +155,9 @@ export function EstoquePage() {
    * fichas desativadas, insumo parado — fica no fim, depois de uma divisória.
    */
   const [daOdara, setDaOdara] = useState<Set<string>>(new Set())
+  /** Display, caixa de embarque e BOPP: um grupo só delas, no fim (migration 135b). */
+  const { ids: embalagens } = useEmbalagens()
+  const grupo = (id: string) => (daOdara.has(id) ? 0 : embalagens.has(id) ? 2 : 1)
 
   /**
    * Capacidade somada dos potes de cada insumo, e se algum está só estimado —
@@ -317,10 +321,12 @@ export function EstoquePage() {
     [estoque, insumosMeta, validades, insumosSemEtiqueta, catMap],
   )
 
-  /** O índice em que começa o grupo "fora da Odara" — só se houver os dois grupos. */
-  function comecaOResto(i: number): boolean {
-    if (i === 0 || daOdara.size === 0) return false
-    return daOdara.has(filtered[i - 1].e.insumo_id) && !daOdara.has(filtered[i].e.insumo_id)
+  /** O título do grupo que começa no índice i, se começar um ali. */
+  function comecaOResto(i: number): string | null {
+    if (i === 0) return null
+    const g = grupo(filtered[i].e.insumo_id)
+    if (g === grupo(filtered[i - 1].e.insumo_id)) return null
+    return g === 2 ? 'Embalagens' : 'Fora das fichas da Odara'
   }
 
   const filtered = useMemo(
@@ -331,9 +337,10 @@ export function EstoquePage() {
       if (filtroAlerta && !l.alertas.includes(filtroAlerta)) return false
       return true
     })
-      // Odara primeiro; dentro de cada grupo, a ordem de sempre (sort é estável).
-      .sort((a, b) => Number(daOdara.has(b.e.insumo_id)) - Number(daOdara.has(a.e.insumo_id))),
-    [linhas, insumosMeta, search, filtroCategoria, filtroAlerta, daOdara],
+      // Odara, o resto, as embalagens; dentro de cada grupo, a ordem de sempre (sort é estável).
+      .sort((a, b) => grupo(a.e.insumo_id) - grupo(b.e.insumo_id)),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [linhas, insumosMeta, search, filtroCategoria, filtroAlerta, daOdara, embalagens.size],
   )
 
   /** Quantos insumos em cada situação — a conta é sobre TUDO, não sobre o filtro. */
@@ -522,7 +529,7 @@ export function EstoquePage() {
                     <Fragment key={e.insumo_id}>
                     {comecaOResto(i) && (
                       <p className="px-4 pt-4 pb-1 text-[0.65rem] font-semibold uppercase tracking-[1px] text-muted-foreground">
-                        Fora das fichas da Odara
+                        {comecaOResto(i)}
                       </p>
                     )}
                     <CartaoLista
@@ -592,7 +599,7 @@ export function EstoquePage() {
                     {comecaOResto(i) && (
                       <tr>
                         <td colSpan={5} className="px-4 pt-5 pb-2 text-[0.65rem] font-semibold uppercase tracking-[1px] text-muted-foreground bg-muted">
-                          Fora das fichas da Odara
+                          {comecaOResto(i)}
                         </td>
                       </tr>
                     )}

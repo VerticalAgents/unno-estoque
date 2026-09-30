@@ -7,6 +7,7 @@ import { Card } from '../../components/ui/Card'
 import { CartaoLista, ListaResponsiva, ListaVazia } from '../../components/ui/ListaResponsiva'
 import { formatDate } from '../../lib/utils'
 import type { StatusExpedicao } from '../../types/database.types'
+import { EntregaEmbalagens } from './EntregaEmbalagens'
 
 interface ExpedicaoRow {
   id: string
@@ -54,6 +55,8 @@ export function ExpedicaoListPage() {
           <Button>+ Nova expedição</Button>
         </Link>
       </div>
+
+      <EntregaEmbalagens />
 
       {loading ? (
         <div className="flex justify-center py-12">
