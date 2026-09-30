@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../contexts/AuthContext'
 import { Card } from '../../components/ui/Card'
@@ -64,7 +64,7 @@ export function MetaOdaraAvulsaPage() {
       <div className="mb-4">
         <h1 className="text-xl font-bold text-gray-900 dark:text-gray-100">Meta Odara</h1>
         <p className="text-sm text-gray-500 dark:text-unno-muted mt-1">
-          Quanto dura cada insumo e quanto pedir para a entrega de sexta. Atualize a coluna "Na Odara" com o estoque de lá.
+          Quanto dura cada insumo e quanto enviar na próxima entrega. Mantenha a coluna "Na Odara" atualizada com o estoque de vocês.
         </p>
       </div>
       <MetaOdaraPage />
@@ -77,6 +77,14 @@ export function MetaOdaraPage() {
   const porUnidade = usePorUnidade()
   /** O papel 'odara' vê a meta, mas só grava o estoque de lá (migration 134b). */
   const soLeMeta = profile?.papel === 'odara'
+  /**
+   * Os textos na perspectiva de quem lê. Para a Mischa's é "pedir" e "na
+   * fábrica"; para quem compra na Odara é "enviar" e "na Mischa's" — a Odara
+   * também tem fábrica, e quem pede não é ele (Lucca, 29/09/2026).
+   */
+  const T = soLeMeta
+    ? { pedir: 'Próxima entrega', fabrica: "Na Mischa's", semFabrica: "sem. na Mischa's", semTotal: 'sem. somando a Odara', haFabrica: "o que há na Mischa's agora" }
+    : { pedir: 'Próxima entrega', fabrica: 'Na fábrica', semFabrica: 'sem. na fábrica', semTotal: 'sem. com a Odara', haFabrica: 'o que há na fábrica agora' }
 
   const [carregando, setCarregando] = useState(true)
   const [fichas, setFichas] = useState<Ficha[]>([])
@@ -145,15 +153,24 @@ export function MetaOdaraPage() {
       const ex = Object.fromEntries(((ext.data ?? []) as { insumo_id: string; quantidade: number | null; updated_at: string }[])
         .map(e => [e.insumo_id, { quantidade: e.quantidade == null ? null : Number(e.quantidade), em: e.updated_at }]))
       setExterno(ex)
-      setOdaraTxt(Object.fromEntries(Object.entries(ex).map(([k, v]) => [k, v.quantidade == null ? '' : String(v.quantidade)])))
-
       const tipos = Object.fromEntries(((emb.data ?? []) as { insumo_id: string; tipo_embalagem: string | null; quantidade_total: number | null }[])
         .map(e => [e.insumo_id, e]))
-      setEmbalagem(Object.fromEntries(((ins.data ?? []) as { id: string; tamanho_embalagem: number | null }[]).map(i => {
-        const t = tipos[i.id]
-        const tam = Number(i.tamanho_embalagem) > 0 ? Number(i.tamanho_embalagem)
-          : Number(t?.quantidade_total) > 0 ? Number(t!.quantidade_total) : null
-        return [i.id, { tam, tipo: t?.tipo_embalagem ?? null }]
+      const embs: Record<string, { tam: number | null; tipo: string | null }> = Object.fromEntries(
+        ((ins.data ?? []) as { id: string; tamanho_embalagem: number | null }[]).map(i => {
+          const t = tipos[i.id]
+          const tam = Number(i.tamanho_embalagem) > 0 ? Number(i.tamanho_embalagem)
+            : Number(t?.quantidade_total) > 0 ? Number(t!.quantidade_total) : null
+          return [i.id, { tam, tipo: t?.tipo_embalagem ?? null }]
+        }))
+      setEmbalagem(embs)
+
+      // O campo "Na Odara" é em EMBALAGENS: lá se conta caixa e fardo, não se
+      // pesa (Lucca, 29/09/2026). O banco guarda na unidade do insumo, que é o
+      // que a autonomia e o desconto do recebimento (migration 132) usam.
+      setOdaraTxt(Object.fromEntries(Object.entries(ex).map(([k, v]) => {
+        if (v.quantidade == null) return [k, '']
+        const tam = embs[k]?.tam
+        return [k, tam ? String(Math.round(v.quantidade / tam * 100) / 100) : String(v.quantidade)]
       })))
 
       setCarregando(false)
@@ -192,7 +209,9 @@ export function MetaOdaraPage() {
   async function salvarOdara(insumoId: string) {
     if (!profile) return
     const txt = (odaraTxt[insumoId] ?? '').replace(',', '.').trim()
-    const valor = txt === '' ? null : parseFloat(txt)
+    const digitado = txt === '' ? null : parseFloat(txt)
+    const tam = embalagem[insumoId]?.tam
+    const valor = digitado == null ? null : Math.round(digitado * (tam ?? 1) * 1000) / 1000
     if (valor !== null && (isNaN(valor) || valor < 0)) return
     if ((externo[insumoId]?.quantidade ?? null) === valor) return
     const { error } = await supabase.from('estoque_externo_insumo').upsert({
@@ -204,6 +223,13 @@ export function MetaOdaraPage() {
   }
 
   // ── A tabela ───────────────────────────────────────────────
+  /**
+   * A ordem da lista é tirada UMA vez, quando a página abre. Reordenar a cada
+   * número digitado fazia a linha editada pular para longe — na prática,
+   * sumir de quem estava olhando (Lucca, 29/09/2026). Recarregar reordena.
+   */
+  const ordem = useRef<string[]>([])
+
   const linhas: Linha[] = useMemo(() => {
     const consumo = new Map<string, number>()
     for (const f of fichas) {
@@ -231,8 +257,17 @@ export function MetaOdaraPage() {
         }
       })
       // A mais urgente primeiro: a que dura menos aqui.
-      .sort((a, b) => a.aqui / a.consumoSemana - b.aqui / b.consumoSemana)
+      // Para quem compra na Odara, o que manda é o estoque TODO (aqui + lá).
+      .sort((a, b) => (soLeMeta ? (a.aqui + (a.odara ?? 0)) : a.aqui) / a.consumoSemana
+                    - (soLeMeta ? (b.aqui + (b.odara ?? 0)) : b.aqui) / b.consumoSemana)
   }, [fichas, receitas, metas, estoque, externo, embalagem])
+
+  const linhasFixas: Linha[] = useMemo(() => {
+    if (carregando || linhas.length === 0) return linhas
+    if (ordem.current.length === 0) ordem.current = linhas.map(l => l.insumo_id)
+    const pos = new Map(ordem.current.map((id, i) => [id, i]))
+    return [...linhas].sort((a, b) => (pos.get(a.insumo_id) ?? 1e9) - (pos.get(b.insumo_id) ?? 1e9))
+  }, [linhas, carregando])
 
   function autonomia(l: Linha) {
     const aqui = l.aqui / l.consumoSemana
@@ -240,7 +275,10 @@ export function MetaOdaraPage() {
     const precisa = l.consumoSemana * (1 + folgaNum / 100)
     const falta = Math.max(0, precisa - l.aqui)
     const embs = l.embTam && falta > 0 ? Math.ceil(falta / l.embTam - 1e-9) : null
-    const nivel = aqui < 1 ? 'vermelho' : aqui < 1 + folgaNum / 100 ? 'amarelo' : 'verde'
+    // A cor segue o que importa para quem lê: a fábrica para a Mischa's, o
+    // estoque total para a Odara (Lucca, 29/09/2026).
+    const ref = soLeMeta ? total : aqui
+    const nivel = ref < 1 ? 'vermelho' : ref < 1 + folgaNum / 100 ? 'amarelo' : 'verde'
     return { aqui, total, falta, embs, nivel }
   }
 
@@ -266,10 +304,11 @@ export function MetaOdaraPage() {
           placeholder="—"
           className="w-24 rounded-controle border border-gray-300 dark:border-white/10 bg-white dark:bg-white/5
                      px-2 py-1 text-right text-sm tabular-nums focus:outline-none focus:border-brand-500"
-          aria-label={`Estoque de ${l.nome} na Odara (${l.unidade})`}
+          aria-label={`Estoque de ${l.nome} na Odara, em ${l.embTam ? nomeEmb(l.embTipo, 2) : l.unidade}`}
         />
         <span className="text-[0.65rem] text-muted-foreground">
-          {l.odaraEm ? `atualizado ${dataCurta(l.odaraEm)}` : l.unidade}
+          {l.embTam ? `${nomeEmb(l.embTipo, 2)} de ${formatQty(l.embTam, l.unidade)}` : l.unidade}
+          {l.odaraEm && ` · ${dataCurta(l.odaraEm)}`}
         </span>
       </div>
     )
@@ -302,8 +341,12 @@ export function MetaOdaraPage() {
     const semanas = temOdara ? a.total : a.aqui
     return (
       <div className="text-right tabular-nums">
-        <p className={`font-semibold ${COR[a.nivel]}`}>{num(a.aqui)} sem. na fábrica</p>
-        {temOdara && <p className="text-xs text-muted-foreground">{num(a.total)} sem. com a Odara</p>}
+        {soLeMeta
+          ? <p className={`font-semibold ${COR[a.nivel]}`}>{num(a.total)} sem. no total</p>
+          : <>
+              <p className={`font-semibold ${COR[a.nivel]}`}>{num(a.aqui)} {T.semFabrica}</p>
+              {temOdara && <p className="text-xs text-muted-foreground">{num(a.total)} {T.semTotal}</p>}
+            </>}
         {porFicha(l, semanas).map(f => (
           <p key={f.id} className="text-xs text-muted-foreground" title={f.dica}>
             ≈ {milhares(f.un)} {f.nome}
@@ -327,6 +370,24 @@ export function MetaOdaraPage() {
       </div>
     )
   }
+
+  /**
+   * A autonomia de cada FICHA: dura o que dura o insumo que acaba primeiro nela.
+   * Não adianta ter uma tonelada de cobertura sem chocolate em pó (Lucca,
+   * 29/09/2026). A conta usa o consumo da meta inteira — um insumo dividido
+   * entre as fichas se gasta pelas duas.
+   */
+  const porFichaGlobal = fichas
+    .filter(f => formasDe(f.id) > 0)
+    .map(f => {
+      const ids = new Set((receitas[f.id] ?? []).map(i => i.insumo_id))
+      const doFicha = linhas.filter(l => ids.has(l.insumo_id))
+      const menor = (fn: (l: Linha) => number) => doFicha.reduce<{ l: Linha | null; s: number }>(
+        (m, l) => { const s = fn(l); return s < m.s ? { l, s } : m }, { l: null, s: Infinity })
+      const fab = menor(l => l.aqui / l.consumoSemana)
+      const tot = menor(l => (l.aqui + (l.odara ?? 0)) / l.consumoSemana)
+      return { f, fab, tot }
+    })
 
   if (carregando) return <p className="text-sm text-gray-500">Carregando…</p>
 
@@ -383,24 +444,58 @@ export function MetaOdaraPage() {
         </div>
       </Card>
 
+      {/* ── Autonomia por ficha ── */}
+      <Card className="p-5">
+        <p className="text-xs font-semibold uppercase tracking-[1px] text-muted-foreground mb-3">
+          Autonomia por ficha
+        </p>
+        <div className="space-y-3">
+          {porFichaGlobal.map(({ f, fab, tot }) => {
+            const ref = soLeMeta ? tot : fab
+            const cor = ref.s < 1 ? COR.vermelho : ref.s < 1 + folgaNum / 100 ? COR.amarelo : COR.verde
+            const un = (s: number) => milhares(s * formasDe(f.id) * UN_POR_FORMA)
+            return (
+              <div key={f.id} className="flex flex-wrap items-baseline gap-x-3 gap-y-0.5">
+                <span className="font-medium text-foreground min-w-[9rem]">
+                  {f.nome.replace(/^Brownie /, '').replace(/ Odara$/, '')}
+                </span>
+                <span className={`font-semibold tabular-nums ${cor}`}>
+                  {num(ref.s)} sem. {soLeMeta ? 'no total' : 'na fábrica'} ≈ {un(ref.s)} brownies
+                </span>
+                {!soLeMeta && tot.s !== fab.s && (
+                  <span className="text-xs text-muted-foreground tabular-nums">
+                    · {num(tot.s)} sem. com a Odara ≈ {un(tot.s)}
+                  </span>
+                )}
+                {ref.l && (
+                  <span className="text-xs text-muted-foreground">
+                    · limitado por <strong className="text-foreground">{ref.l.nome}</strong>
+                  </span>
+                )}
+              </div>
+            )
+          })}
+        </div>
+      </Card>
+
       {/* ── Por insumo ── */}
       <Card>
         <ListaResponsiva
-          cartoes={linhas.length === 0
+          cartoes={linhasFixas.length === 0
             ? <ListaVazia>Defina a meta para ver os insumos.</ListaVazia>
-            : linhas.map(l => {
+            : linhasFixas.map(l => {
                 const a = autonomia(l)
                 return (
                   <CartaoLista
                     key={l.insumo_id}
                     titulo={<span className="font-medium text-foreground">{l.nome}</span>}
                     subtitulo={`${l.codigo} · ${formatQty(l.consumoSemana, l.unidade)}/semana`}
-                    destaque={<span className={`tabular-nums font-semibold ${COR[a.nivel]}`}>{num(a.aqui)} sem.</span>}
+                    destaque={<span className={`tabular-nums font-semibold ${COR[a.nivel]}`}>{num(soLeMeta ? a.total : a.aqui)} sem.</span>}
                     campos={[
-                      { rotulo: 'Na fábrica', valor: <span className="tabular-nums">{qtd(l.aqui, l)}</span> },
+                      { rotulo: T.fabrica, valor: <span className="tabular-nums">{qtd(l.aqui, l)}</span> },
                       { rotulo: 'Na Odara', valor: celulaOdara(l) },
                       { rotulo: 'Autonomia', valor: celulaAutonomia(l) },
-                      { rotulo: 'Pedir p/ sexta', valor: celulaPedido(l) },
+                      { rotulo: T.pedir, valor: celulaPedido(l) },
                     ]}
                   />
                 )
@@ -409,7 +504,7 @@ export function MetaOdaraPage() {
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-border text-left">
-                  {['Insumo', 'Consumo/semana', 'Na fábrica', 'Na Odara', 'Autonomia', 'Pedir p/ sexta'].map((h, i) => (
+                  {['Insumo', 'Consumo/semana', T.fabrica, 'Na Odara', 'Autonomia', T.pedir].map((h, i) => (
                     <th key={h} className={`px-4 py-3 text-[0.65rem] font-semibold uppercase tracking-[1px] text-muted-foreground ${i ? 'text-right' : ''}`}>
                       {h}
                     </th>
@@ -417,7 +512,7 @@ export function MetaOdaraPage() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-border">
-                {linhas.map(l => (
+                {linhasFixas.map(l => (
                   <tr key={l.insumo_id}>
                     <td className="px-4 py-3">
                       <p className="font-medium text-foreground">{l.nome}</p>
@@ -437,8 +532,8 @@ export function MetaOdaraPage() {
       </Card>
 
       <p className="text-xs text-muted-foreground px-1">
-        <strong>Pedir p/ sexta</strong> = uma semana de meta + {num(folgaNum, 0)}% de folga − o que há na fábrica agora,
-        arredondado na embalagem do fornecedor. Conta com o estoque de hoje: quanto mais perto da sexta,
+        <strong>{T.pedir}</strong> = uma semana de meta + {num(folgaNum, 0)}% de folga − {T.haFabrica},
+        arredondado na embalagem do fornecedor. Conta com o estoque de hoje: quanto mais perto da entrega,
         mais exato. <span className="text-red-600 dark:text-red-400 font-semibold">Vermelho</span>: não chega a uma
         semana. <span className="text-amber-600 dark:text-amber-400 font-semibold">Amarelo</span>: chega, mas sem a folga.
       </p>
