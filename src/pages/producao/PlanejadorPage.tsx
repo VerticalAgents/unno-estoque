@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { PlanejadorMesPage } from './PlanejadorMesPage'
 import { PlanejadorSemanaPage } from './PlanejadorSemanaPage'
 import { PlanejadorRecipientesPage } from './PlanejadorRecipientesPage'
+import { MetaOdaraPage } from './MetaOdaraPage'
 
 /**
  * Três níveis de zoom do mesmo planejamento, num item de menu só:
@@ -15,7 +16,7 @@ import { PlanejadorRecipientesPage } from './PlanejadorRecipientesPage'
  * semana escolhida passam por prop, e não pelo `state` da rota.
  */
 export function PlanejadorPage() {
-  const [aba, setAba] = useState<'mes' | 'semana' | 'dia'>('semana')
+  const [aba, setAba] = useState<'mes' | 'semana' | 'dia' | 'odara'>('semana')
   const [formasDoDia, setFormasDoDia] = useState<Record<string, string> | undefined>()
   // O contador faz o clique valer mesmo quando é a mesma semana de antes:
   // sem ele, escolher de novo a semana que já está na prop não dispararia nada.
@@ -25,6 +26,7 @@ export function PlanejadorPage() {
     mes: 'O mês inteiro, semana a semana.',
     semana: 'A meta da semana repartida em dias de produção.',
     dia: 'Quantos recipientes precisam estar abastecidos antes de a produção começar.',
+    odara: 'A meta fixa da semana, quanto dura cada insumo e quanto pedir para a entrega de sexta.',
   }[aba]
 
   return (
@@ -35,7 +37,7 @@ export function PlanejadorPage() {
       </div>
 
       <div className="flex gap-1 border-b border-gray-200 dark:border-white/[.08] mb-5">
-        {([['mes', 'Mês'], ['semana', 'Semana'], ['dia', 'Dia']] as const).map(([key, label]) => (
+        {([['mes', 'Mês'], ['semana', 'Semana'], ['dia', 'Dia'], ['odara', 'Meta Odara']] as const).map(([key, label]) => (
           <button
             key={key}
             onClick={() => setAba(key)}
@@ -72,6 +74,10 @@ export function PlanejadorPage() {
       </div>
       <div className={aba === 'dia' ? '' : 'hidden'}>
         <PlanejadorRecipientesPage formasIniciais={formasDoDia} />
+      </div>
+      {/* Meta Odara: a planilha de reabastecimento da Odara (migration 131). */}
+      <div className={aba === 'odara' ? '' : 'hidden'}>
+        <MetaOdaraPage />
       </div>
     </div>
   )

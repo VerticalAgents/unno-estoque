@@ -34,7 +34,6 @@ import { ContagemListPage } from './pages/contagem/ContagemListPage'
 import { NovaContagemEcPage } from './pages/contagem/NovaContagemEcPage'
 import { NovaContagemEpPage } from './pages/contagem/NovaContagemEpPage'
 import { ContagemResumoPage } from './pages/contagem/ContagemResumoPage'
-import { DevPage } from './pages/dev/DevPage'
 import { ConfiguracoesPage } from './pages/configuracoes/ConfiguracoesPage'
 import { AberturaEstoquePage } from './pages/configuracoes/AberturaEstoquePage'
 import { ProducaoAnteriorPage } from './pages/configuracoes/ProducaoAnteriorPage'
@@ -106,7 +105,6 @@ export default function App() {
           <Route path="configuracoes" element={<ConfiguracoesPage />} />
           <Route path="configuracoes/abertura-estoque" element={<AberturaEstoquePage />} />
           <Route path="configuracoes/producao-anterior" element={<ProducaoAnteriorPage />} />
-          <Route path="dev" element={<DevPage />} />
         </Route>
         <Route path="*" element={<Navigate to="/dashboard" replace />} />
       </Routes>

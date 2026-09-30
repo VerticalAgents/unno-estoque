@@ -136,6 +136,36 @@ export function Peca({
 }
 
 /**
+ * A barrinha de "quão cheios estão os potes" da lista de estoque (Lucca,
+ * 29/09/2026). Mesmas cores e o mesmo listrado do detalhe: quem aprendeu a
+ * ler um lê o outro.
+ */
+export function BarraNivel({ cheio, estimado }: { cheio: number; estimado?: boolean }) {
+  const nivel = Math.max(0, Math.min(1, cheio))
+  const cor = corDoNivel(nivel)
+  return (
+    <span className="inline-flex items-center gap-1.5" title={estimado ? 'algum pote está só estimado' : undefined}>
+      <span className="relative inline-block w-16 h-1.5 rounded-full bg-gray-200 dark:bg-white/10 overflow-hidden">
+        <span
+          className="absolute inset-y-0 left-0 rounded-full"
+          style={{
+            width: `${nivel * 100}%`,
+            background: estimado
+              ? `repeating-linear-gradient(45deg, ${cor} 0 3px, ${cor}55 3px 6px)`
+              : cor,
+          }}
+        />
+      </span>
+      {/* Largura fixa: "94%" e "106%" têm tamanhos diferentes, e sem isto a
+          barra de cada linha começava num lugar. */}
+      <span className={`w-8 text-right text-[0.65rem] tabular-nums ${cheio > 1.005 ? 'text-red-600 font-semibold' : 'text-muted-foreground'}`}>
+        {Math.round(cheio * 100)}%
+      </span>
+    </span>
+  )
+}
+
+/**
  * Óleo e ovo na produção: não há pote, há garrafas e pacotes soltos
  * (migration 126). Uma figurinha por unidade inteira — a aberta não conta,
  * mesma regra do reabastecimento.

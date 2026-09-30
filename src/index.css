@@ -100,6 +100,9 @@
      escuro a um metro da tela, que é a distância de quem confere estoque. */
   --alerta-comprar: #ff7a52;
   --alerta-transferir: #57e2a5;
+  /* No escuro, --destructive é um vinho de FUNDO (#541c15): como cor de texto
+     ele some. O alerta de vencimento precisa de um vermelho claro. */
+  --alerta-vencendo: #f87171;
   --sidebar-ring: #4ade80;
   --sidebar-accent: #313131;
   --sidebar-border: #292929;

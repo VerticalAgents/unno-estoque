@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { Fragment, useEffect, useMemo, useState } from 'react'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../contexts/AuthContext'
 import type { EstoqueConsolidado, CategoriaInsumo, UnidadeMedida } from '../../types/database.types'
@@ -7,6 +7,7 @@ import { CartaoLista, ListaResponsiva, ListaVazia } from '../../components/ui/Li
 import { formatQty, formatKg, formatDate, daysUntil } from '../../lib/utils'
 import { InsumoDetalhePanel } from './InsumoDetalhePanel'
 import { QtdPorUnidade, usePorUnidade } from '../../lib/porUnidade'
+import { BarraNivel } from './EstoqueVisual'
 import { combina } from '../../lib/busca'
 
 /**
@@ -48,7 +49,9 @@ const CORES_SELO: Record<Alerta, string> = {
   comprar:    'bg-acao-500/15 text-acao-700 dark:text-acao-300',
   transferir: 'bg-brand-500/15 text-brand-700 dark:text-brand-300',
   etiquetar:  'bg-muted text-muted-foreground',
-  vencendo:   'bg-destructive/15 text-destructive',
+  // Vermelho da paleta, não o `destructive`: no escuro ele é cor de fundo, e
+  // cor semântica com opacidade (`/15`) nem gera classe.
+  vencendo:   'bg-red-500/15 text-red-600 dark:text-red-400',
 }
 
 /**
@@ -113,13 +116,13 @@ type ValidadeInfo = {
  * distância de quem confere estoque em pé.
  */
 function validadeClass(date: string | null): string {
-  if (!date) return 'text-muted-foreground/40'
+  if (!date) return 'text-muted-foreground'
   const days = daysUntil(date)
   // Mesma família dos alertas: vencido é destructive, a caminho é o laranja
   // da ação. Vermelho e âmbar crus não acompanhavam o tema.
-  if (days <= DIAS_ATENCAO) return 'text-destructive font-semibold'
+  if (days <= DIAS_ATENCAO) return 'text-red-600 dark:text-red-400 font-semibold'
   if (days <= 60) return 'text-acao-600 dark:text-acao-400 font-semibold'
-  return 'text-foreground/70'
+  return 'text-muted-foreground'
 }
 
 /** A mais próxima entre as duas validades — é ela que decide o alerta. */
@@ -144,6 +147,74 @@ export function EstoquePage() {
   const [insumosSemEtiqueta, setInsumosSemEtiqueta] = useState<Set<string>>(new Set())
   /** Óleo e ovo em pó aparecem em garrafas e pacotes (migration 126). */
   const porUnidade = usePorUnidade()
+
+  /**
+   * Os insumos das fichas ativas da Odara vêm primeiro na lista (Lucca,
+   * 29/09/2026): é o que a fábrica produz todo dia. O resto — marca própria,
+   * fichas desativadas, insumo parado — fica no fim, depois de uma divisória.
+   */
+  const [daOdara, setDaOdara] = useState<Set<string>>(new Set())
+
+  /**
+   * Capacidade somada dos potes de cada insumo, e se algum está só estimado —
+   * para a barrinha do EP. Óleo e ovo não têm pote (capacidade nula) e ficam
+   * sem barra.
+   */
+  const [potes, setPotes] = useState<Record<string, { cap: number; estimado: boolean }>>({})
+  useEffect(() => {
+    if (!profile) return
+    supabase
+      .from('locais')
+      .select('insumo_id, capacidade_max, conteudo_estimado')
+      .eq('empresa_id', profile.empresa_id)
+      .eq('tipo', 'estoque_produtivo')
+      .eq('ativo', true)
+      .then(({ data }) => {
+        const m: Record<string, { cap: number; estimado: boolean }> = {}
+        for (const l of (data ?? []) as { insumo_id: string | null; capacidade_max: number | null; conteudo_estimado: boolean }[]) {
+          if (!l.insumo_id) continue
+          const a = m[l.insumo_id] ?? { cap: 0, estimado: false }
+          a.cap += Number(l.capacidade_max ?? 0)
+          a.estimado = a.estimado || l.conteudo_estimado
+          m[l.insumo_id] = a
+        }
+        setPotes(m)
+      })
+  }, [profile])
+
+  /** O EP com a barrinha em cima, quando há capacidade para medir. */
+  function celulaEp(e: EstoqueConsolidado) {
+    const p = potes[e.insumo_id]
+    const qtd = <QtdPorUnidade valor={e.qtd_estoque_produtivo} unidade={e.unidade_medida} config={porUnidade[e.insumo_id]} />
+    if (!p || p.cap <= 0 || porUnidade[e.insumo_id]) return qtd
+    return (
+      <span className="inline-flex flex-col items-end gap-0.5">
+        <BarraNivel cheio={Number(e.qtd_estoque_produtivo) / p.cap} estimado={p.estimado} />
+        <span>{qtd}</span>
+      </span>
+    )
+  }
+  useEffect(() => {
+    if (!profile) return
+    supabase
+      .from('fichas_tecnicas')
+      .select('id, fichas_tecnicas_versoes(ativa, fichas_tecnicas_itens(insumo_id))')
+      .eq('empresa_id', profile.empresa_id)
+      .eq('ativo', true)
+      .ilike('nome', '%odara%')
+      .then(({ data }) => {
+        const ids = new Set<string>()
+        for (const f of (data ?? []) as unknown as {
+          fichas_tecnicas_versoes: { ativa: boolean; fichas_tecnicas_itens: { insumo_id: string }[] }[]
+        }[]) {
+          for (const v of f.fichas_tecnicas_versoes ?? []) {
+            if (!v.ativa) continue
+            for (const it of v.fichas_tecnicas_itens ?? []) ids.add(it.insumo_id)
+          }
+        }
+        setDaOdara(ids)
+      })
+  }, [profile])
 
   useEffect(() => {
     if (!profile) return
@@ -246,6 +317,12 @@ export function EstoquePage() {
     [estoque, insumosMeta, validades, insumosSemEtiqueta, catMap],
   )
 
+  /** O índice em que começa o grupo "fora da Odara" — só se houver os dois grupos. */
+  function comecaOResto(i: number): boolean {
+    if (i === 0 || daOdara.size === 0) return false
+    return daOdara.has(filtered[i - 1].e.insumo_id) && !daOdara.has(filtered[i].e.insumo_id)
+  }
+
   const filtered = useMemo(
     () => linhas.filter(l => {
       const meta = insumosMeta[l.e.insumo_id]
@@ -253,8 +330,10 @@ export function EstoquePage() {
       if (filtroCategoria && meta?.categoria_id !== filtroCategoria) return false
       if (filtroAlerta && !l.alertas.includes(filtroAlerta)) return false
       return true
-    }),
-    [linhas, insumosMeta, search, filtroCategoria, filtroAlerta],
+    })
+      // Odara primeiro; dentro de cada grupo, a ordem de sempre (sort é estável).
+      .sort((a, b) => Number(daOdara.has(b.e.insumo_id)) - Number(daOdara.has(a.e.insumo_id))),
+    [linhas, insumosMeta, search, filtroCategoria, filtroAlerta, daOdara],
   )
 
   /** Quantos insumos em cada situação — a conta é sobre TUDO, não sobre o filtro. */
@@ -332,7 +411,7 @@ export function EstoquePage() {
               <p className="text-[0.6rem] uppercase tracking-[1px] font-semibold text-muted-foreground">
                 Estoque central
               </p>
-              <p className="font-display text-xl font-bold tabular-nums leading-none text-foreground/80">
+              <p className="font-display text-xl font-bold tabular-nums leading-none text-foreground">
                 {formatKg(pesos.central)}
               </p>
             </div>
@@ -340,7 +419,7 @@ export function EstoquePage() {
               <p className="text-[0.6rem] uppercase tracking-[1px] font-semibold text-muted-foreground">
                 Na produção
               </p>
-              <p className="font-display text-xl font-bold tabular-nums leading-none text-foreground/80">
+              <p className="font-display text-xl font-bold tabular-nums leading-none text-foreground">
                 {formatKg(pesos.producao)}
               </p>
             </div>
@@ -375,14 +454,14 @@ export function EstoquePage() {
                 className={[
                   'rounded-bloco border px-4 py-3 text-left transition-all duration-200 ease-out-expo',
                   vazio
-                    ? 'border-border bg-card/60 cursor-default'
+                    ? 'border-border bg-card cursor-default'
                     : 'border-border bg-card shadow-tema [@media(hover:hover)]:hover:-translate-y-0.5 hover:shadow-tema-md',
                   ativo ? 'ring-2 ring-ring border-transparent' : '',
                 ].join(' ')}
               >
                 <p
                   className={`text-2xl font-display font-bold tabular-nums leading-none${
-                    vazio ? ' text-muted-foreground/40' : ''}`}
+                    vazio ? ' text-muted-foreground' : ''}`}
                   style={vazio ? undefined : { color: CORES_TARJA[a] }}
                 >
                   {n}
@@ -439,16 +518,17 @@ export function EstoquePage() {
             cartoes={
               filtered.length === 0
                 ? <ListaVazia>Nenhum insumo encontrado.</ListaVazia>
-                : filtered.map(({ e, val, categoria, alertas }) => (
+                : filtered.map(({ e, val, categoria, alertas }, i) => (
+                    <Fragment key={e.insumo_id}>
+                    {comecaOResto(i) && (
+                      <p className="px-4 pt-4 pb-1 text-[0.65rem] font-semibold uppercase tracking-[1px] text-muted-foreground">
+                        Fora das fichas da Odara
+                      </p>
+                    )}
                     <CartaoLista
-                      key={e.insumo_id}
                       onClick={() => setInsumoSelecionado(e)}
-                      alerta={alertas.length > 0}
                       titulo={
                         <>
-                          {categoria?.cor_hex && (
-                            <span className="w-2 h-2 mt-1.5 rounded-full shrink-0" style={{ backgroundColor: categoria.cor_hex }} />
-                          )}
                           <span className="font-medium text-foreground">{e.insumo_nome}</span>
                         </>
                       }
@@ -462,33 +542,38 @@ export function EstoquePage() {
                       }
                       campos={[
                         { rotulo: 'EC', valor: <span className="tabular-nums whitespace-nowrap"><QtdPorUnidade valor={e.qtd_estoque_central} unidade={e.unidade_medida} config={porUnidade[e.insumo_id]} /></span> },
-                        { rotulo: 'EP', valor: <span className="tabular-nums whitespace-nowrap"><QtdPorUnidade valor={e.qtd_estoque_produtivo} unidade={e.unidade_medida} config={porUnidade[e.insumo_id]} /></span> },
+                        { rotulo: 'EP', valor: <span className="tabular-nums whitespace-nowrap">{celulaEp(e)}</span> },
                         {
                           rotulo: 'Val. EC',
                           valor: val?.validade_ec
                             ? <span className={`tabular-nums ${validadeClass(val.validade_ec)}`}>{formatDate(val.validade_ec)}</span>
-                            : <span className="text-muted-foreground/40">—</span>,
+                            : <span className="text-muted-foreground">—</span>,
                         },
                         {
                           rotulo: 'Val. EP',
                           valor: val?.validade_ep
                             ? <span className={`tabular-nums ${validadeClass(val.validade_ep)}`}>{formatDate(val.validade_ep)}</span>
-                            : <span className="text-muted-foreground/40">—</span>,
+                            : <span className="text-muted-foreground">—</span>,
                         },
                       ]}
                     />
+                    </Fragment>
                   ))
             }
             tabela={
               <table className="w-full text-sm">
                 <thead>
                   <tr className="border-b border-border text-left">
+                    {/* Cinco colunas, e não oito: a categoria já está na bolinha
+                        colorida e as validades descem para baixo da quantidade.
+                        Com oito, a tabela pedia rolagem lateral (Lucca,
+                        29/09/2026). */}
                     {[
-                      { r: 'Insumo' }, { r: 'Categoria' },
-                      { r: 'EC', fim: true }, { r: 'Val. EC', meio: true },
-                      { r: 'EP', fim: true }, { r: 'Val. EP', meio: true },
+                      { r: 'Insumo' },
+                      { r: 'EC', fim: true },
+                      { r: 'EP', fim: true },
                       { r: 'Total', fim: true }, { r: 'Mínimo', fim: true },
-                    ].map(c => (
+                    ].map((c: { r: string; fim?: boolean; meio?: boolean }) => (
                       <th
                         key={c.r}
                         className={[
@@ -501,57 +586,55 @@ export function EstoquePage() {
                     ))}
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-border/60">
-                  {filtered.map(({ e, val, categoria, alertas }) => (
+                <tbody className="divide-y divide-border">
+                  {filtered.map(({ e, val, categoria, alertas }, i) => (
+                    <Fragment key={e.insumo_id}>
+                    {comecaOResto(i) && (
+                      <tr>
+                        <td colSpan={5} className="px-4 pt-5 pb-2 text-[0.65rem] font-semibold uppercase tracking-[1px] text-muted-foreground bg-muted">
+                          Fora das fichas da Odara
+                        </td>
+                      </tr>
+                    )}
                     <tr
-                      key={e.insumo_id}
                       onClick={() => setInsumoSelecionado(e)}
-                      // A tarja fica em box-shadow, e não em border-left: borda
-                      // muda a largura da célula e desalinha a coluna das linhas
-                      // sem alerta.
-                      style={alertas.length > 0
-                        ? { boxShadow: `inset 3px 0 0 ${CORES_TARJA[alertas[0]]}` }
-                        : undefined}
+                      // Sem tarja lateral nem bolinha de categoria: não diziam nada
+                      // que os selos já não dissessem (Lucca, 29/09/2026).
                       className="cursor-pointer transition-colors duration-150 hover:bg-accent"
                     >
                       <td className="px-4 py-3">
                         <div className="flex items-center gap-2 flex-wrap">
-                          {categoria?.cor_hex && (
-                            <div className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: categoria.cor_hex }} />
-                          )}
                           <span className="font-medium text-foreground">{e.insumo_nome}</span>
                           {alertas.map(a => <Selo key={a} tipo={a} />)}
                         </div>
-                        <p className="text-xs text-muted-foreground/70 ml-4">{e.insumo_codigo}</p>
+                        <p className="text-xs text-muted-foreground">
+                          {e.insumo_codigo}{categoria?.nome ? ` · ${categoria.nome}` : ''}
+                        </p>
                       </td>
-                      <td className="px-4 py-3 text-muted-foreground">{categoria?.nome ?? '—'}</td>
-                      <td className="px-4 py-3 text-right tabular-nums text-foreground/80">
+                      <td className="px-4 py-3 text-right tabular-nums whitespace-nowrap text-foreground">
                         <QtdPorUnidade valor={e.qtd_estoque_central} unidade={e.unidade_medida} config={porUnidade[e.insumo_id]} />
+                        {val?.validade_ec && (
+                          <p className={`text-[0.7rem] ${validadeClass(val.validade_ec)}`}>val. {formatDate(val.validade_ec)}</p>
+                        )}
                       </td>
-                      <td className="px-4 py-3 text-center text-xs">
-                        {val?.validade_ec
-                          ? <span className={`tabular-nums ${validadeClass(val.validade_ec)}`}>{formatDate(val.validade_ec)}</span>
-                          : <span className="text-muted-foreground/40">—</span>}
+                      <td className="px-4 py-3 text-right tabular-nums whitespace-nowrap text-foreground">
+                        {celulaEp(e)}
+                        {val?.validade_ep && (
+                          <p className={`text-[0.7rem] ${validadeClass(val.validade_ep)}`}>val. {formatDate(val.validade_ep)}</p>
+                        )}
                       </td>
-                      <td className="px-4 py-3 text-right tabular-nums text-foreground/80">
-                        <QtdPorUnidade valor={e.qtd_estoque_produtivo} unidade={e.unidade_medida} config={porUnidade[e.insumo_id]} />
-                      </td>
-                      <td className="px-4 py-3 text-center text-xs">
-                        {val?.validade_ep
-                          ? <span className={`tabular-nums ${validadeClass(val.validade_ep)}`}>{formatDate(val.validade_ep)}</span>
-                          : <span className="text-muted-foreground/40">—</span>}
-                      </td>
-                      <td className="px-4 py-3 text-right font-semibold tabular-nums text-foreground">
+                      <td className="px-4 py-3 text-right font-semibold tabular-nums whitespace-nowrap text-foreground">
                         <QtdPorUnidade valor={e.qtd_total} unidade={e.unidade_medida} config={porUnidade[e.insumo_id]} />
                       </td>
-                      <td className="px-4 py-3 text-right tabular-nums text-muted-foreground/60">
+                      <td className="px-4 py-3 text-right tabular-nums whitespace-nowrap text-muted-foreground">
                         {e.estoque_minimo ? formatQty(e.estoque_minimo, e.unidade_medida) : '—'}
                       </td>
                     </tr>
+                    </Fragment>
                   ))}
                   {filtered.length === 0 && (
                     <tr>
-                      <td colSpan={8} className="px-4 py-10 text-center text-sm text-muted-foreground">
+                      <td colSpan={5} className="px-4 py-10 text-center text-sm text-muted-foreground">
                         Nenhum insumo encontrado.
                       </td>
                     </tr>
@@ -574,13 +657,6 @@ export function EstoquePage() {
           <span className="flex items-center gap-1.5">
             <span className="w-2 h-2 rounded-full bg-acao-500 inline-block" />
             Vence em até 60 dias
-          </span>
-          <span className="flex items-center gap-1.5">
-            <span
-              className="w-3 h-2 rounded-controle inline-block"
-              style={{ backgroundColor: CORES_TARJA.comprar }}
-            />
-            Tarja na lateral: a linha pede providência
           </span>
         </div>
       )}
