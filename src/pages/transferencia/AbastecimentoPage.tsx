@@ -189,6 +189,8 @@ export function AbastecimentoPage() {
   const [confirmarZerou, setConfirmarZerou] = useState<LoteBipado | null>(null)
   // Explicação exigida quando os potes recebem muito mais do que saiu.
   const [justExcesso, setJustExcesso] = useState('')
+  /** "Conferi, a perda é real" — só existe quando a perda é grande. */
+  const [perdaConferida, setPerdaConferida] = useState(false)
 
   const [erro, setErro] = useState('')
   const [salvando, setSalvando] = useState(false)
@@ -692,12 +694,24 @@ export function AbastecimentoPage() {
   /** Só dá para nomear o lote ajustado quando um único deles tem sobra medida. */
   const unicoComSobra = medidos.filter(l => (sobraDe(l) ?? 0) > 0)
 
+  /**
+   * Perda grande quase nunca é perda: é sobra de embalagem digitada errado.
+   * Em 30/09/2026 a sobra do saco de Essência de Doce de Leite entrou como
+   * 0,52 kg em vez de 9,75, e 9,39 kg viraram perda sem ninguém perceber.
+   * Acima de 20% do que saiu (e de um mínimo absoluto, para o pote pequeno
+   * não disparar à toa), a tela pede para conferir antes de registrar.
+   */
+  const minimoPerda = alvo?.unidade === 'g' || alvo?.unidade === 'ml' ? 300
+    : alvo?.unidade === 'unid' ? 2 : 0.3
+  const perdaGrande = perda > minimoPerda && perda > consumido * 0.2
+
   const podeFechar =
     respondidos.length === lotes.length
     && lotes.length > 0
     && !sobraExcedida
     && consumido > 0
     && (!precisaExplicar || justExcesso.trim().length >= 5)
+    && (!perdaGrande || perdaConferida)
 
   async function confirmarAbastecimento(soDecl = false) {
     if (!alvo || !profile) return
@@ -774,6 +788,7 @@ export function AbastecimentoPage() {
     setPesos({}); setPesosAntes({}); setVazios({}); setNaoUsados({}); setTaras({}); setLotes([]); setSobras({}); setRespostas({})
     setErro(''); setErroScan(''); setTravaFefo(null); setJustFefo('')
     setJustExcesso('')
+    setPerdaConferida(false)
     setSucesso(null)
     // Os saldos mudaram — a lista do passo 1 tem de ser relida, senão a tela
     // volta mostrando os potes como estavam antes de encher.
@@ -1468,6 +1483,29 @@ export function AbastecimentoPage() {
                   ? `Faltam ${5 - justExcesso.trim().length} letra(s) para liberar o botão.`
                   : 'Fica registrado junto com o abastecimento.'}
               </p>
+            </div>
+          )}
+
+          {perdaGrande && respondidos.length === lotes.length && (
+            <div className="p-4 rounded-xl border bg-amber-50 border-amber-300 space-y-3">
+              <p className="font-semibold text-gray-900">
+                Isso registra {formatQty(perda, alvo.unidade)} de perda de {alvo.nome}
+              </p>
+              <p className="text-sm text-gray-700">
+                Saíram {formatQty(consumido, alvo.unidade)} das embalagens e só{' '}
+                {formatQty(colocado, alvo.unidade)} entraram nos potes. Quase sempre é o
+                peso da sobra da embalagem digitado errado. Confira a sobra de cada
+                embalagem antes de registrar.
+              </p>
+              <label className="flex items-center gap-2 text-sm font-medium text-gray-900">
+                <input
+                  type="checkbox"
+                  checked={perdaConferida}
+                  onChange={e => setPerdaConferida(e.target.checked)}
+                  className="w-5 h-5"
+                />
+                Conferi os pesos: a perda é real
+              </label>
             </div>
           )}
 

@@ -80,6 +80,26 @@ type Embalagem = {
 /** Código de resposta de "Fechado": a embalagem está lacrada e volta cheia. */
 const FECHADA = 'F'
 
+/**
+ * Um pote da cozinha de que a abertura desta sessão tirou o consumo previsto.
+ *
+ * A abertura desconta o previsto de QUALQUER pote do insumo — o sistema não
+ * sabe qual balde a equipe vai abrir. Em 30/09/2026 isso zerou o Açúcar #3 e a
+ * Farinha #1, que ficaram intocados, enquanto os potes realmente usados
+ * apareciam com "sumiço" no reabastecimento. Quem sabe o que foi usado é quem
+ * produziu: no fechamento, a equipe bipa os potes intocados e o desconto volta
+ * para eles (Lucca, 30/09/2026). O que não é bipado conta como usado.
+ */
+type PoteDescontado = {
+  local_id: string
+  nome: string
+  insumo_id: string
+  /** Última pesagem. Depois da abertura = foi reabastecido, logo foi usado. */
+  conferido_em: string | null
+}
+
+const chavePotes = (sessaoId: string) => `fechamento_potes_${sessaoId}`
+
 function saveState(sessaoId: string, state: StoredState) {
   try { sessionStorage.setItem(storageKey(sessaoId), JSON.stringify(state)) } catch {}
 }
@@ -98,7 +118,7 @@ export function FechamentoSessaoPage() {
   const { profile } = useAuth()
   const navigate = useNavigate()
 
-  const [sessao, setSessao] = useState<{ codigo: string; data_producao: string } | null>(null)
+  const [sessao, setSessao] = useState<{ codigo: string; data_producao: string; data_abertura: string | null } | null>(null)
   const [skus, setSkus] = useState<SkuRow[]>([])
   /** O que o fechamento realmente mede, por ficha. */
   const [medicoes, setMedicoes] = useState<Record<string, { formas: string; sobra: string }>>({})
@@ -118,13 +138,19 @@ export function FechamentoSessaoPage() {
   const [abertos, setAbertos] = useState<Record<string, boolean>>({})
   const [erroBip, setErroBip] = useState('')
 
+  // Potes intocados, bipados no fechamento.
+  const [potes, setPotes] = useState<PoteDescontado[]>([])
+  const [naoUsados, setNaoUsados] = useState<string[]>([])
+  const [bipandoPotes, setBipandoPotes] = useState(false)
+  const [erroPote, setErroPote] = useState('')
+
   const medicao = (skuId: string) => medicoes[skuId] ?? { formas: '', sobra: '' }
   const numMed = (v: string) => parseFloat((v ?? '').replace(',', '.')) || 0
 
   useEffect(() => {
     if (!id || !profile) return
     Promise.all([
-      supabase.from('sessoes_producao').select('codigo,data_producao').eq('id', id).single(),
+      supabase.from('sessoes_producao').select('codigo,data_producao,data_abertura').eq('id', id).single(),
       supabase.from('sessoes_producao_skus')
         .select('*, ficha_tecnica:fichas_tecnicas(nome), ficha_versao:fichas_tecnicas_versoes(peso_medio_g, perda_esperada_g_forma, rendimento_fornada)')
         .eq('sessao_id', id),
@@ -150,6 +176,11 @@ export function FechamentoSessaoPage() {
     })
 
     carregarEmbalagens()
+    carregarPotes()
+    try {
+      const salvos = sessionStorage.getItem(chavePotes(id))
+      if (salvos) setNaoUsados(JSON.parse(salvos))
+    } catch {}
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id, profile])
 
@@ -203,6 +234,54 @@ export function FechamentoSessaoPage() {
       tara_g: Number(l.peso_tara) > 0 ? Number(l.peso_tara) : null,
       daSessao: insumosDaSessao.has(l.insumo_id),
     })))
+  }
+
+  /** Os potes da cozinha de que o consumo previsto desta sessão saiu. */
+  async function carregarPotes() {
+    if (!id) return
+    const { data: movs } = await supabase
+      .from('movimentacoes').select('id')
+      .eq('sessao_producao_id', id).eq('tipo', 'consumo_producao')
+    const movIds = ((movs ?? []) as { id: string }[]).map(m => m.id)
+    if (movIds.length === 0) { setPotes([]); return }
+
+    const { data: its } = await supabase
+      .from('movimentacoes_itens').select('local_origem_id')
+      .in('movimentacao_id', movIds).not('local_origem_id', 'is', null)
+    const localIds = [...new Set(((its ?? []) as { local_origem_id: string }[]).map(i => i.local_origem_id))]
+    if (localIds.length === 0) { setPotes([]); return }
+
+    const { data: ls } = await supabase
+      .from('locais').select('id, nome, insumo_id, efemero, conteudo_conferido_em').in('id', localIds)
+    setPotes(((ls ?? []) as { id: string; nome: string; insumo_id: string; efemero: boolean | null; conteudo_conferido_em: string | null }[])
+      .filter(l => !l.efemero)
+      .map(l => ({ local_id: l.id, nome: l.nome, insumo_id: l.insumo_id, conferido_em: l.conteudo_conferido_em })))
+  }
+
+  function gravarNaoUsados(lista: string[]) {
+    setNaoUsados(lista)
+    if (id) try { sessionStorage.setItem(chavePotes(id), JSON.stringify(lista)) } catch {}
+  }
+
+  async function biparPote(qr: string) {
+    setErroPote('')
+    const local = await resolverLocalPorQr<{ id: string; efemero: boolean; nome: string }>(qr, 'id, efemero, nome')
+    if (!local) { setErroPote(`Etiqueta não reconhecida: ${qr}`); return }
+    if (local.efemero) {
+      setErroPote(`${local.nome} é embalagem do fornecedor: responda na parte "Embalagens do fornecedor".`)
+      return
+    }
+    const pote = potes.find(p => p.local_id === local.id)
+    if (!pote) {
+      setErroPote(`${local.nome} não levou desconto nesta sessão: não precisa bipar.`)
+      return
+    }
+    const abertura = sessao?.data_abertura ? Date.parse(sessao.data_abertura) : NaN
+    if (pote.conferido_em && !Number.isNaN(abertura) && Date.parse(pote.conferido_em) > abertura) {
+      setErroPote(`${local.nome} foi reabastecido depois que a sessão abriu, então foi usado.`)
+      return
+    }
+    if (!naoUsados.includes(local.id)) gravarNaoUsados([...naoUsados, local.id])
   }
 
   /**
@@ -482,14 +561,45 @@ export function FechamentoSessaoPage() {
       p_observacoes: obs || null,
     })
 
-    setLoading(false)
     if (err || !(data as { ok: boolean })?.ok) {
+      setLoading(false)
       setError((data as { erro?: string })?.erro ?? err?.message ?? 'Erro ao fechar sessão.')
       setShowConfirm(false)
       return
     }
 
+    // Potes intocados: o desconto volta para eles. Vai DEPOIS do fechamento,
+    // para desfazer também qualquer acerto que o fechamento tenha feito neles.
+    // É o mesmo "Não foi usado" do reabastecimento (migrations 125/128).
+    const falhas: string[] = []
+    const porInsumo = new Map<string, string[]>()
+    for (const localId of naoUsados) {
+      const p = potes.find(x => x.local_id === localId)
+      if (p) porInsumo.set(p.insumo_id, [...(porInsumo.get(p.insumo_id) ?? []), localId])
+    }
+    for (const [insumoId, locais] of porInsumo) {
+      const { data: r, error: e } = await supabase.rpc('registrar_abastecimento', {
+        p_empresa_id:     profile.empresa_id,
+        p_responsavel_id: profile.id,
+        p_insumo_id:      insumoId,
+        p_potes:          locais.map(l => ({ local_id: l, nao_usado: true, medido: 'pesado' })),
+        p_lotes:          [],
+        p_justificativa:  `Não foi usado na ${sessao?.codigo ?? 'sessão'} (bipado no fechamento)`,
+      })
+      if (e || !(r as { ok: boolean } | null)?.ok) {
+        falhas.push(...locais.map(l => potes.find(x => x.local_id === l)?.nome ?? l))
+      }
+    }
+
+    setLoading(false)
     try { sessionStorage.removeItem(storageKey(id)) } catch {}
+    try { sessionStorage.removeItem(chavePotes(id)) } catch {}
+    if (falhas.length > 0) {
+      setShowConfirm(false)
+      setError(`A sessão foi fechada, mas o desconto não voltou para: ${falhas.join(', ')}. `
+             + 'Marque "Não foi usado" nesses potes no reabastecimento.')
+      return
+    }
     navigate('/producao')
   }
 
@@ -780,6 +890,67 @@ export function FechamentoSessaoPage() {
               {pendentes.length === 1 ? 'Falta 1 embalagem' : `Faltam ${pendentes.length} embalagens`}
               {' '}— responda todas para fechar a sessão.
             </p>
+          )}
+        </div>
+      )}
+
+      {/* ── Potes que não foram usados ───────────────────────── */}
+      {potes.length > 0 && (
+        <div className="mb-4">
+          <h2 className="text-sm font-semibold text-gray-700 uppercase tracking-wide mb-1">
+            Potes que não foram usados
+          </h2>
+          <p className="text-xs text-gray-500 mb-3">
+            O sistema desconta o previsto de qualquer pote, porque não sabe qual foi aberto.
+            Bipe os potes que ficaram <strong>intocados</strong> nesta sessão: o desconto volta
+            para eles. Os que não forem bipados contam como usados.
+          </p>
+
+          {bipandoPotes ? (
+            <div className="mb-3">
+              <QRScanner
+                onScan={qr => biparPote(qr)}
+                continuo
+                titulo="Potes que não foram usados"
+                label={`${naoUsados.length} bipado${naoUsados.length === 1 ? '' : 's'}`}
+                acaoConcluir={{ rotulo: 'Concluir', onClick: () => setBipandoPotes(false) }}
+                painel={
+                  <div>
+                    {erroPote && <p className="text-xs font-semibold text-red-700 mb-2">{erroPote}</p>}
+                    <div className="space-y-1">
+                      {naoUsados.map(l => (
+                        <p key={l} className="text-xs text-emerald-700 font-semibold truncate">
+                          ✓ {potes.find(p => p.local_id === l)?.nome ?? l}
+                        </p>
+                      ))}
+                    </div>
+                  </div>
+                }
+              />
+            </div>
+          ) : (
+            <Button variant="secondary" size="lg" fullWidth className="mb-3"
+                    onClick={() => { setErroPote(''); setBipandoPotes(true) }}>
+              Bipar potes que não foram usados
+            </Button>
+          )}
+
+          {erroPote && !bipandoPotes && (
+            <p className="text-xs font-semibold text-red-700 mb-2">{erroPote}</p>
+          )}
+
+          {naoUsados.length > 0 && (
+            <Card className="p-3 space-y-1.5">
+              {naoUsados.map(l => (
+                <div key={l} className="flex items-center justify-between gap-2 text-sm">
+                  <span className="truncate text-gray-900">{potes.find(p => p.local_id === l)?.nome ?? l}</span>
+                  <button type="button" onClick={() => gravarNaoUsados(naoUsados.filter(x => x !== l))}
+                          className="text-xs font-medium text-gray-400 hover:text-red-600 shrink-0">
+                    Tirar
+                  </button>
+                </div>
+              ))}
+            </Card>
           )}
         </div>
       )}
