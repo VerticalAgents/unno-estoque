@@ -25,9 +25,16 @@
 import pg from 'pg'
 import fs from 'node:fs'
 
-const [, , DE, ATE, SAIDA] = process.argv
+const [, , DE, ATE, SAIDA, ...OPCOES] = process.argv
 if (!DE || !ATE || !SAIDA) {
-  console.error('uso: node relatorio.mjs <AAAA-MM-DD> <AAAA-MM-DD> <saida.html>')
+  console.error('uso: node relatorio.mjs <AAAA-MM-DD> <AAAA-MM-DD> <saida.html> [--comparar <AAAA-MM-DD> <AAAA-MM-DD>]')
+  process.exit(1)
+}
+// --comparar: o período anterior (em geral o mês passado), para o "cresceu quanto".
+const iCmp = OPCOES.indexOf('--comparar')
+const CMP = iCmp >= 0 ? OPCOES.slice(iCmp + 1, iCmp + 3) : null
+if (CMP && CMP.length < 2) {
+  console.error('--comparar precisa de duas datas')
   process.exit(1)
 }
 if (!process.env.DBURL) {
@@ -42,13 +49,18 @@ await c.connect()
 //
 // Uma linha por (dia, ficha). O rendimento sai da ficha e não de uma constante:
 // 60 é a convenção Odara, não uma lei do sistema.
-const { rows: linhas } = await c.query(`
+const consulta = (de, ate) => c.query(`
   SELECT s.data_producao,
          f.codigo AS ficha_codigo,
          f.nome   AS ficha_nome,
          COALESCE(ftv.rendimento_fornada, 60)      AS rendimento,
          sk.multiplicador                          AS formas,
-         sk.quantidade_produzida                   AS entregue,
+         -- Sessão ainda aberta tem quantidade_produzida nula. Tratar nulo como
+         -- zero fazia a produção inteira virar descarte (setembro/2026 mostrou
+         -- 2.903 de Doce de Leite descartados assim). Sem fechamento, o que
+         -- saiu do forno é o entregue — e o dia fica "sem conferência".
+         COALESCE(sk.quantidade_produzida,
+                  sk.multiplicador * COALESCE(ftv.rendimento_fornada, 60)) AS entregue,
          sk.quantidade_perdida                     AS descarte,
          (pp.id IS NOT NULL)                       AS teve_pos
     FROM sessoes_producao_skus sk
@@ -57,7 +69,9 @@ const { rows: linhas } = await c.query(`
     LEFT JOIN fichas_tecnicas_versoes ftv ON ftv.id = sk.ficha_versao_id
     LEFT JOIN pos_producao pp ON pp.sessao_id = s.id
    WHERE s.data_producao BETWEEN $1 AND $2
-   ORDER BY s.data_producao, f.codigo`, [DE, ATE])
+   ORDER BY s.data_producao, f.codigo`, [de, ate])
+const { rows: linhas } = await consulta(DE, ATE)
+const { rows: anteriores } = CMP ? await consulta(CMP[0], CMP[1]) : { rows: [] }
 
 if (!linhas.length) {
   console.error(`nenhuma produção entre ${DE} e ${ATE}`)
@@ -150,6 +164,27 @@ const porFicha = fichas.map(f => {
   return { ...f, formas, entregue, descarte: forno - entregue,
            parte: T.entregue ? entregue / T.entregue * 100 : 0 }
 })
+
+// ── Contra o período anterior ───────────────────────────────
+// Comparado pelo que saiu do forno, por sabor: é o volume que a fábrica fez,
+// sem depender de quanto foi conferido na desenforma em cada mês.
+const fornoDe = ls => ls.reduce((s, l) => s + n(l.formas) * n(l.rendimento), 0)
+const cmp = CMP && anteriores.length ? (() => {
+  const nomes = [...new Set([...linhas, ...anteriores].map(l => l.ficha_nome))].sort()
+  return {
+    de: CMP[0], ate: CMP[1],
+    forno: fornoDe(anteriores),
+    formas: anteriores.reduce((s, l) => s + n(l.formas), 0),
+    dias: new Set(anteriores.map(l => iso(l.data_producao))).size,
+    porSabor: nomes.map(nome => ({
+      nome,
+      agora: fornoDe(linhas.filter(l => l.ficha_nome === nome)),
+      antes: fornoDe(anteriores.filter(l => l.ficha_nome === nome)),
+    })),
+  }
+})() : null
+const variacao = (agora, antes) => antes ? (agora - antes) / antes * 100 : null
+const sinal = v => v === null ? 'novo' : (v >= 0 ? '+' : '−') + f1(Math.abs(v)) + '%'
 
 const maiorDia = dias.reduce((a, d) => d.forno > a.forno ? d : a, dias[0])
 const menorDia = dias.reduce((a, d) => d.forno < a.forno ? d : a, dias[0])
@@ -305,7 +340,7 @@ const html = `<title>Produção e entrega · ${br(DE)} a ${br(ATE)}</title>
   .stat { padding: 1.1rem; gap: 0.2rem; }
 
   .metrica b, .elo b, .stat b {
-    font-family: var(--mono); font-variant-numeric: tabular-nums;
+    font-family: var(--sans); font-variant-numeric: tabular-nums;
     font-weight: 600; letter-spacing: -0.03em; line-height: 1;
   }
   .metrica b { font-size: clamp(1.5rem, 4vw, 1.9rem); }
@@ -337,14 +372,14 @@ const html = `<title>Produção e entrega · ${br(DE)} a ${br(ATE)}</title>
 
   .numeros { display: flex; gap: 1.6rem; flex-wrap: wrap; font-variant-numeric: tabular-nums; }
   .numeros div { display: flex; flex-direction: column; gap: 0.1rem; }
-  .numeros strong { font-family: var(--mono); font-size: 1.15rem; font-weight: 600; }
+  .numeros strong { font-family: var(--sans); font-size: 1.15rem; font-weight: 600; }
   .numeros span { font-size: 0.72rem; color: var(--ink-3); }
 
   .barra-participacao { height: 8px; background: var(--surface-2); overflow: hidden; }
   .barra-participacao i { display: block; height: 100%; }
 
   .participacao {
-    font-family: var(--mono); font-size: 0.78rem; color: var(--ink-2);
+    font-family: var(--sans); font-size: 0.78rem; color: var(--ink-2);
     font-variant-numeric: tabular-nums; margin: 0;
   }
 
@@ -378,9 +413,9 @@ const html = `<title>Produção e entrega · ${br(DE)} a ${br(ATE)}</title>
   thead th.n, tbody td.n, tfoot td.n { text-align: right; }
 
   tbody td { padding: 0.6rem; border-bottom: 1px solid var(--line); font-size: 0.9rem; }
-  tbody td.dia { font-family: var(--mono); color: var(--ink-2); white-space: nowrap; }
-  tbody td.n { font-family: var(--mono); }
-  tbody td.desc { font-family: var(--mono); text-align: right; color: var(--descarte); }
+  tbody td.dia { font-family: var(--sans); color: var(--ink-2); white-space: nowrap; }
+  tbody td.n { font-family: var(--sans); }
+  tbody td.desc { font-family: var(--sans); text-align: right; color: var(--descarte); }
   tbody td.desc.vazio { color: var(--vago); }
 
   .celula-barra { width: 26%; padding-right: 0 !important; }
@@ -396,7 +431,7 @@ const html = `<title>Produção e entrega · ${br(DE)} a ${br(ATE)}</title>
   .selo.declarado { border-color: var(--dado-b); color: var(--dado-b); }
 
   tfoot td {
-    padding: 0.75rem 0.6rem; font-family: var(--mono);
+    padding: 0.75rem 0.6rem; font-family: var(--sans);
     font-weight: 600; border-top: 2px solid var(--ink);
   }
 
@@ -407,20 +442,31 @@ const html = `<title>Produção e entrega · ${br(DE)} a ${br(ATE)}</title>
   .motivo .trilho { height: 20px; background: var(--surface-2); }
   .motivo .trilho i { display: block; height: 100%; background: var(--descarte); }
   .motivo .qt {
-    font-family: var(--mono); font-variant-numeric: tabular-nums;
+    font-family: var(--sans); font-variant-numeric: tabular-nums;
     font-size: 0.95rem; font-weight: 600; min-width: 3.5rem; text-align: right;
   }
 
   .semanas { display: flex; flex-direction: column; gap: 0.5rem; }
   .semana { display: flex; align-items: center; gap: 0.9rem; }
-  .semana .rot { font-family: var(--mono); font-size: 0.78rem; color: var(--ink-2); width: 6.5rem; flex: none; }
+  .semana .rot { font-family: var(--sans); font-size: 0.78rem; color: var(--ink-2); width: 6.5rem; flex: none; }
   .semana .trilho { flex: 1; height: 18px; background: var(--surface-2); }
   .semana .trilho i { display: block; height: 100%; background: var(--dado-a); }
-  .semana .val { font-family: var(--mono); font-size: 0.85rem; font-variant-numeric: tabular-nums; width: 4.5rem; text-align: right; }
+  .semana .val { font-family: var(--sans); font-size: 0.85rem; font-variant-numeric: tabular-nums; width: 4.5rem; text-align: right; }
 
   .achado { background: var(--surface); border-left: 3px solid var(--acento); padding: 1.2rem 1.4rem; }
   .achado p { margin: 0; color: var(--ink-2); font-size: 0.92rem; max-width: 62ch; }
   .achado strong { color: var(--ink); }
+
+  .comparacao { display: flex; flex-direction: column; gap: 0.5rem; }
+  .comparacao .linha {
+    display: grid; grid-template-columns: 1fr auto auto auto; gap: 1rem;
+    padding: 0.5rem 0; border-bottom: 1px solid var(--line);
+    font-variant-numeric: tabular-nums; align-items: baseline;
+  }
+  .comparacao .linha.total { font-weight: 600; border-bottom: 2px solid var(--ink); }
+  .comparacao .linha span:not(:first-child) { text-align: right; }
+  .comparacao .cab { font-size: 0.72rem; color: var(--ink-3); text-transform: uppercase; letter-spacing: 0.08em; }
+  .sobe { color: var(--ok); } .desce { color: var(--acento); }
 
   footer {
     border-top: 1px solid var(--line); padding-top: 1.2rem;
@@ -447,6 +493,16 @@ const html = `<title>Produção e entrega · ${br(DE)} a ${br(ATE)}</title>
     <div class="metrica"><b>${num(T.descarte)}</b><span>unidades descartadas</span></div>
     <div class="metrica forte"><b>${num(T.entregue)}</b><span>unidades entregues</span></div>
   </section>
+${cmp ? `
+  <section class="secao">
+    <h2>Contra ${br(cmp.de)} a ${br(cmp.ate)}</h2>
+    <p>Saída do forno, antes do descarte. ${dias.length} dias de produção agora, contra ${cmp.dias} no período anterior.</p>
+    <div class="comparacao">
+      <div class="linha cab"><span>Sabor</span><span>Antes</span><span>Agora</span><span>Variação</span></div>
+${cmp.porSabor.map(x => { const v = variacao(x.agora, x.antes); return `      <div class="linha"><span>${x.nome.replace(/^Brownie /, '')}</span><span>${num(x.antes)}</span><span>${num(x.agora)}</span><span class="${v === null || v >= 0 ? 'sobe' : 'desce'}">${sinal(v)}</span></div>` }).join('\n')}
+      <div class="linha total"><span>Total</span><span>${num(cmp.forno)}</span><span>${num(T.forno)}</span><span class="${T.forno >= cmp.forno ? 'sobe' : 'desce'}">${sinal(variacao(T.forno, cmp.forno))}</span></div>
+    </div>
+  </section>` : ''}
 
   <section class="secao">
     <h2>Do forno até a entrega</h2>
@@ -568,8 +624,10 @@ ${pico && pico.un > 20 ? `
     </div>` : ''}
   </section>
 
+<!--EXTRA-->
+
   <footer>
-    <span>Origem: MischaFlex — sessões de produção e pós-produção</span>
+    <span>Origem: unno-estoque — sessões de produção e pós-produção</span>
     <span>Rendimento: ${rendPadrao} unidades por forma</span>
     <span>Emitido em ${br(new Date(Date.now() - 3 * 3600e3).toISOString())}</span>
   </footer>
@@ -597,5 +655,8 @@ console.log(JSON.stringify({
     entregue: f.entregue, descarte: f.descarte })),
   motivos: motivos.map(m => ({ nome: m.nome, unidades: m.un })),
   maior_descarte_unico: pico ?? null,
+  anterior: cmp ? { periodo: [cmp.de, cmp.ate], dias: cmp.dias, formas: cmp.formas,
+    forno: cmp.forno, variacao: cmp.forno ? Number(variacao(T.forno, cmp.forno).toFixed(1)) : null,
+    por_sabor: cmp.porSabor } : null,
   arquivo: SAIDA,
 }, null, 1))
