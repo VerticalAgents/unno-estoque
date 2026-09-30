@@ -7,13 +7,14 @@ import { Card, CardBody, CardHeader } from '../../components/ui/Card'
 /**
  * O mês inteiro numa tela.
  *
- * A aba Semana é onde se planeja; esta é onde se enxerga. Vem de
- * `v_plano_semana` (migrations 049/051), que já traz planejado e realizado lado
- * a lado — inclusive produção que aconteceu sem estar no plano.
+ * A aba Semana é onde se planeja; esta é onde se enxerga. O calendário mostra
+ * as SESSÕES DE PRODUÇÃO — planejadas, abertas e fechadas — lidas direto de
+ * `sessoes_producao`. Até 30/09/2026 ele lia só `v_plano_semana`, que parte dos
+ * planos semanais: com a meta fixa da Meta Odara ninguém mais salva plano, e
+ * setembro inteiro aparecia vazio com 16 sessões feitas.
  *
- * O que ela NÃO mostra: semana sem plano salvo aparece vazia, mesmo que tenha
- * havido produção. A view parte dos planos, e sem plano não há com o que
- * comparar.
+ * O plano semanal, onde existir, ainda aparece — como chip tracejado, só nos
+ * dias em que não virou sessão.
  */
 
 const FORMAS_POR_BATELADA = 4
@@ -23,18 +24,38 @@ const MESES = [
   'julho', 'agosto', 'setembro', 'outubro', 'novembro', 'dezembro',
 ]
 
-interface LinhaMes {
+type Situacao = 'planejada' | 'aberta' | 'fechada' | 'plano'
+
+/** Uma ficha numa sessão (ou numa linha de plano semanal sem sessão). */
+interface Chip {
+  key: string
   data: string
   ficha_id: string
   ficha_codigo: string
   ficha_nome: string
-  formas_planejadas: number
-  unidades_planejadas: number
-  formas_realizadas: number | null
+  situacao: Situacao
+  sessao: string | null
+  /** Fechada: o que saiu do forno. Senão: o que foi planejado. */
+  formas: number
+  /** Só nas fechadas. */
   unidades_produzidas: number | null
-  em_andamento: boolean
-  fora_do_plano: boolean
+  /** Planejada e aberta: o que se espera tirar. */
+  unidades_previstas: number
 }
+
+const COR: Record<Situacao, string> = {
+  planejada: 'bg-gray-100 text-gray-700 dark:bg-white/[.06] dark:text-unno-text',
+  aberta: 'bg-blue-50 text-blue-700 dark:bg-blue-500/15 dark:text-blue-300',
+  fechada: 'bg-brand-500/10 text-brand-700 dark:bg-brand-500/15 dark:text-brand-300',
+  plano: 'border border-dashed border-gray-300 text-gray-500 dark:border-white/20 dark:text-unno-muted',
+}
+
+const LEGENDA: { s: Situacao; rotulo: string; amostra: string }[] = [
+  { s: 'planejada', rotulo: 'sessão planejada', amostra: 'bg-gray-100 dark:bg-white/[.06]' },
+  { s: 'aberta', rotulo: 'sessão aberta', amostra: 'bg-blue-100 dark:bg-blue-500/30' },
+  { s: 'fechada', rotulo: 'sessão fechada', amostra: 'bg-brand-500/20' },
+  { s: 'plano', rotulo: 'plano semanal sem sessão', amostra: 'border border-dashed border-gray-400' },
+]
 
 // Datas sempre como string YYYY-MM-DD, montadas componente a componente:
 // `new Date('2026-08-03')` é meia-noite UTC e no Brasil cai no dia 2.
@@ -59,6 +80,22 @@ function fmt(n: number, casas = 0) {
   return n.toLocaleString('pt-BR', { minimumFractionDigits: 0, maximumFractionDigits: casas })
 }
 
+interface SessaoBanco {
+  id: string
+  codigo: string
+  status: 'planejada' | 'aberta' | 'fechada'
+  data_producao: string
+  sessoes_producao_skus: {
+    id: string
+    ficha_tecnica_id: string
+    multiplicador: number | null
+    formas_assadas: number | null
+    quantidade_planejada: number | null
+    quantidade_produzida: number | null
+    ficha: { codigo: string; nome: string } | null
+  }[]
+}
+
 export function PlanejadorMesPage({
   onAbrirSemana,
 }: {
@@ -70,7 +107,7 @@ export function PlanejadorMesPage({
 
   const [ano, setAno] = useState(hoje.getFullYear())
   const [mes, setMes] = useState(hoje.getMonth())      // 0 = janeiro
-  const [linhas, setLinhas] = useState<LinhaMes[]>([])
+  const [chips, setChips] = useState<Chip[]>([])
   const [loading, setLoading] = useState(true)
   const [erro, setErro] = useState('')
 
@@ -99,75 +136,119 @@ export function PlanejadorMesPage({
   const carregar = useCallback(async () => {
     if (!profile || !primeiroDia || !ultimoDia) return
     setLoading(true)
-    const { data, error } = await supabase
-      .from('v_plano_semana')
-      .select('data, ficha_id, ficha_codigo, ficha_nome, formas_planejadas, unidades_planejadas, formas_realizadas, unidades_produzidas, em_andamento, fora_do_plano')
-      .eq('empresa_id', profile.empresa_id)
-      .gte('data', primeiroDia)
-      .lte('data', ultimoDia)
+    const [sess, plano] = await Promise.all([
+      supabase
+        .from('sessoes_producao')
+        .select(`id, codigo, status, data_producao,
+          sessoes_producao_skus(id, ficha_tecnica_id, multiplicador, formas_assadas,
+            quantidade_planejada, quantidade_produzida,
+            ficha:fichas_tecnicas!ficha_tecnica_id(codigo, nome))`)
+        .eq('empresa_id', profile.empresa_id)
+        .neq('status', 'cancelada')
+        .gte('data_producao', primeiroDia)
+        .lte('data_producao', ultimoDia),
+      supabase
+        .from('v_plano_semana')
+        .select('data, ficha_id, ficha_codigo, ficha_nome, formas_planejadas, unidades_planejadas')
+        .eq('empresa_id', profile.empresa_id)
+        .gt('formas_planejadas', 0)
+        .gte('data', primeiroDia)
+        .lte('data', ultimoDia),
+    ])
 
-    if (error) { setErro(error.message); setLoading(false); return }
+    const falha = sess.error ?? plano.error
+    if (falha) { setErro(falha.message); setLoading(false); return }
     setErro('')
-    // O banco devolve as somas como texto (são bigint); sem converter, "44" + 1
-    // viraria "441" na hora de totalizar.
-    setLinhas(((data ?? []) as unknown as Record<string, unknown>[]).map(r => ({
-      data: String(r.data).slice(0, 10),
-      ficha_id: String(r.ficha_id),
-      ficha_codigo: String(r.ficha_codigo),
-      ficha_nome: String(r.ficha_nome),
-      formas_planejadas: Number(r.formas_planejadas ?? 0),
-      unidades_planejadas: Number(r.unidades_planejadas ?? 0),
-      formas_realizadas: r.formas_realizadas == null ? null : Number(r.formas_realizadas),
-      unidades_produzidas: r.unidades_produzidas == null ? null : Number(r.unidades_produzidas),
-      em_andamento: Boolean(r.em_andamento),
-      fora_do_plano: Boolean(r.fora_do_plano),
-    })))
+
+    const out: Chip[] = []
+    const comSessao = new Set<string>()
+    for (const s of (sess.data ?? []) as unknown as SessaoBanco[]) {
+      const data = String(s.data_producao).slice(0, 10)
+      for (const k of s.sessoes_producao_skus ?? []) {
+        const fechada = s.status === 'fechada'
+        comSessao.add(`${data}|${k.ficha_tecnica_id}`)
+        out.push({
+          key: k.id,
+          data,
+          ficha_id: k.ficha_tecnica_id,
+          ficha_codigo: k.ficha?.codigo ?? '?',
+          ficha_nome: k.ficha?.nome ?? '',
+          situacao: s.status,
+          sessao: s.codigo,
+          formas: Number((fechada ? k.formas_assadas ?? k.multiplicador : k.multiplicador) ?? 0),
+          unidades_produzidas: fechada ? Number(k.quantidade_produzida ?? 0) : null,
+          unidades_previstas: Number(k.quantidade_planejada ?? 0),
+        })
+      }
+    }
+    // O banco devolve as somas como texto (são bigint): converter antes de somar.
+    for (const r of (plano.data ?? []) as unknown as Record<string, unknown>[]) {
+      const data = String(r.data).slice(0, 10)
+      const fichaId = String(r.ficha_id)
+      if (comSessao.has(`${data}|${fichaId}`)) continue
+      out.push({
+        key: `plano-${data}-${fichaId}`,
+        data,
+        ficha_id: fichaId,
+        ficha_codigo: String(r.ficha_codigo),
+        ficha_nome: String(r.ficha_nome),
+        situacao: 'plano',
+        sessao: null,
+        formas: Number(r.formas_planejadas ?? 0),
+        unidades_produzidas: null,
+        unidades_previstas: Number(r.unidades_planejadas ?? 0),
+      })
+    }
+    out.sort((a, b) => (a.ficha_codigo < b.ficha_codigo ? -1 : 1))
+    setChips(out)
     setLoading(false)
   }, [profile, primeiroDia, ultimoDia])
 
   useEffect(() => { carregar() }, [carregar])
 
   const porDia = useMemo(() => {
-    const mapa = new Map<string, LinhaMes[]>()
-    for (const l of linhas) {
-      const atual = mapa.get(l.data) ?? []
-      atual.push(l)
-      mapa.set(l.data, atual)
+    const mapa = new Map<string, Chip[]>()
+    for (const c of chips) {
+      const atual = mapa.get(c.data) ?? []
+      atual.push(c)
+      mapa.set(c.data, atual)
     }
     return mapa
-  }, [linhas])
+  }, [chips])
 
-  /** Só o que cai dentro do mês — as bordas das semanas vazam para os vizinhos. */
+  /** Só sessões, e só o que cai dentro do mês — as bordas das semanas vazam. */
   const doMes = useMemo(
-    () => linhas.filter(l => paraData(l.data).getMonth() === mes),
-    [linhas, mes],
+    () => chips.filter(c => c.situacao !== 'plano' && paraData(c.data).getMonth() === mes),
+    [chips, mes],
   )
 
   const totais = useMemo(() => {
-    const formas = doMes.reduce((s, l) => s + l.formas_planejadas, 0)
-    const unidades = doMes.reduce((s, l) => s + l.unidades_planejadas, 0)
-    const formasReais = doMes.reduce((s, l) => s + (l.formas_realizadas ?? 0), 0)
-    const unidadesReais = doMes.reduce((s, l) => s + (l.unidades_produzidas ?? 0), 0)
-    // Bateladas por ficha e por dia: uma batelada não mistura produtos.
-    const bateladas = doMes.reduce(
-      (s, l) => s + Math.ceil(l.formas_planejadas / FORMAS_POR_BATELADA), 0)
-    const dias = new Set(doMes.filter(l => l.formas_planejadas > 0).map(l => l.data)).size
-    return { formas, unidades, formasReais, unidadesReais, bateladas, dias }
+    const formas = doMes.reduce((s, c) => s + c.formas, 0)
+    // Bateladas por ficha e por sessão: uma batelada não mistura produtos.
+    const bateladas = doMes.reduce((s, c) => s + Math.ceil(c.formas / FORMAS_POR_BATELADA), 0)
+    const fechadas = doMes.filter(c => c.situacao === 'fechada')
+    const produzidas = fechadas.reduce((s, c) => s + (c.unidades_produzidas ?? 0), 0)
+    const previstas = doMes
+      .filter(c => c.situacao !== 'fechada')
+      .reduce((s, c) => s + c.unidades_previstas, 0)
+    const formasFechadas = fechadas.reduce((s, c) => s + c.formas, 0)
+    const sessoesFechadas = new Set(fechadas.map(c => c.sessao)).size
+    const dias = new Set(doMes.map(c => c.data)).size
+    return { formas, bateladas, produzidas, previstas, formasFechadas, sessoesFechadas, dias }
   }, [doMes])
 
   const porFicha = useMemo(() => {
-    const mapa = new Map<string, { codigo: string; nome: string; formas: number; reais: number }>()
-    for (const l of doMes) {
-      const atual = mapa.get(l.ficha_id)
-        ?? { codigo: l.ficha_codigo, nome: l.ficha_nome, formas: 0, reais: 0 }
-      atual.formas += l.formas_planejadas
-      atual.reais += l.formas_realizadas ?? 0
-      mapa.set(l.ficha_id, atual)
+    const mapa = new Map<string, { codigo: string; nome: string; formas: number; fechadas: number }>()
+    for (const c of doMes) {
+      const atual = mapa.get(c.ficha_id)
+        ?? { codigo: c.ficha_codigo, nome: c.ficha_nome, formas: 0, fechadas: 0 }
+      atual.formas += c.formas
+      if (c.situacao === 'fechada') atual.fechadas += c.formas
+      mapa.set(c.ficha_id, atual)
     }
     return [...mapa.values()].sort((a, b) => (a.codigo < b.codigo ? -1 : 1))
   }, [doMes])
 
-  const temRealizado = doMes.some(l => l.formas_realizadas != null)
   const hojeISO = paraISO(hoje)
 
   function mudarMes(delta: -1 | 1) {
@@ -196,16 +277,18 @@ export function PlanejadorMesPage({
       {/* ── Resumo do mês ───────────────────────────────────── */}
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
         {[
-          { r: 'Planejado', v: `${fmt(totais.formas)} formas`, s: `${fmt(totais.bateladas)} bateladas` },
-          { r: 'Unidades', v: fmt(totais.unidades), s: 'previstas no mês' },
+          { r: 'Formas', v: `${fmt(totais.formas)} formas`, s: `${fmt(totais.bateladas)} bateladas` },
+          {
+            r: 'Unidades',
+            v: fmt(totais.produzidas),
+            s: totais.previstas > 0 ? `produzidas · +${fmt(totais.previstas)} previstas` : 'produzidas no mês',
+          },
           { r: 'Dias com produção', v: String(totais.dias), s: 'no mês' },
-          temRealizado
+          totais.sessoesFechadas > 0
             ? {
                 r: 'Produzido',
-                v: `${fmt(totais.formasReais)} formas`,
-                s: totais.formas > 0
-                  ? `${fmt((100 * totais.formasReais) / totais.formas, 0)}% do plano`
-                  : '—',
+                v: `${fmt(totais.formasFechadas)} formas`,
+                s: `${totais.sessoesFechadas} ${totais.sessoesFechadas === 1 ? 'sessão fechada' : 'sessões fechadas'}`,
               }
             : { r: 'Produzido', v: '—', s: 'nenhuma sessão fechada' },
         ].map(c => (
@@ -238,7 +321,9 @@ export function PlanejadorMesPage({
 
             {semanas.map(semana => {
               const formasSemana = semana.reduce(
-                (s, dia) => s + (porDia.get(dia) ?? []).reduce((t, l) => t + l.formas_planejadas, 0), 0)
+                (s, dia) => s + (porDia.get(dia) ?? [])
+                  .filter(c => c.situacao !== 'plano')
+                  .reduce((t, c) => t + c.formas, 0), 0)
               return (
                 <div
                   key={semana[0]}
@@ -261,7 +346,7 @@ export function PlanejadorMesPage({
                   {semana.map(dia => {
                     const d = paraData(dia)
                     const foraDoMes = d.getMonth() !== mes
-                    const itens = (porDia.get(dia) ?? []).filter(l => l.formas_planejadas > 0 || l.formas_realizadas != null)
+                    const itens = porDia.get(dia) ?? []
                     return (
                       <div
                         key={dia}
@@ -280,24 +365,18 @@ export function PlanejadorMesPage({
                         </span>
 
                         <div className="mt-1 space-y-0.5">
-                          {itens.map(l => (
+                          {itens.map(c => (
                             <div
-                              key={l.ficha_id}
-                              className={[
-                                'text-[0.7rem] leading-tight rounded px-1 py-0.5 truncate',
-                                l.fora_do_plano ? 'bg-amber-50 text-amber-800'
-                                  : l.em_andamento ? 'bg-blue-50 text-blue-700'
-                                  : l.formas_realizadas != null && l.formas_realizadas !== l.formas_planejadas
-                                    ? 'bg-amber-50 text-amber-800'
-                                    : l.formas_realizadas != null ? 'bg-brand-500/10 text-brand-700'
-                                    : 'bg-gray-100 text-gray-700 dark:bg-white/[.06] dark:text-unno-text',
-                              ].join(' ')}
-                              title={`${l.ficha_codigo} ${l.ficha_nome}`}
+                              key={c.key}
+                              className={`text-[0.7rem] leading-tight rounded px-1 py-0.5 truncate ${COR[c.situacao]}`}
+                              title={[
+                                c.sessao ?? 'plano semanal',
+                                c.situacao === 'plano' ? null : `sessão ${c.situacao}`,
+                                `${c.ficha_codigo} ${c.ficha_nome}`,
+                                c.unidades_produzidas != null ? `${fmt(c.unidades_produzidas)} unidades` : null,
+                              ].filter(Boolean).join(' · ')}
                             >
-                              {l.ficha_codigo.replace('FT-', '')}{' '}
-                              {l.formas_realizadas != null
-                                ? `${l.formas_realizadas}/${l.formas_planejadas}f`
-                                : `${l.formas_planejadas}f`}
+                              {c.ficha_codigo.replace('FT-', '')} {c.formas}f
                             </div>
                           ))}
                         </div>
@@ -312,20 +391,13 @@ export function PlanejadorMesPage({
       </Card>
 
       {/* Legenda: as cores só ajudam se alguém disser o que significam */}
-      {temRealizado && (
+      {chips.length > 0 && (
         <div className="flex flex-wrap gap-3 text-xs text-gray-500 dark:text-unno-muted">
-          <span className="flex items-center gap-1.5">
-            <span className="w-3 h-3 rounded bg-gray-100 dark:bg-white/[.06]" /> só planejado
-          </span>
-          <span className="flex items-center gap-1.5">
-            <span className="w-3 h-3 rounded bg-brand-500/20" /> produzido conforme o plano
-          </span>
-          <span className="flex items-center gap-1.5">
-            <span className="w-3 h-3 rounded bg-amber-100" /> diferente do plano
-          </span>
-          <span className="flex items-center gap-1.5">
-            <span className="w-3 h-3 rounded bg-blue-100" /> sessão aberta
-          </span>
+          {LEGENDA.filter(l => chips.some(c => c.situacao === l.s)).map(l => (
+            <span key={l.s} className="flex items-center gap-1.5">
+              <span className={`w-3 h-3 rounded ${l.amostra}`} /> {l.rotulo}
+            </span>
+          ))}
         </div>
       )}
 
@@ -338,8 +410,8 @@ export function PlanejadorMesPage({
               <thead className="text-xs uppercase text-gray-500 dark:text-unno-muted border-b border-gray-200 dark:border-white/[.06]">
                 <tr>
                   <th className="text-left px-4 py-2 font-medium">Produto</th>
-                  <th className="text-right px-3 py-2 font-medium">Planejado</th>
-                  {temRealizado && <th className="text-right px-3 py-2 font-medium">Produzido</th>}
+                  <th className="text-right px-3 py-2 font-medium">Formas</th>
+                  <th className="text-right px-3 py-2 font-medium">Fechadas</th>
                   <th className="text-right px-4 py-2 font-medium">Participação</th>
                 </tr>
               </thead>
@@ -351,13 +423,11 @@ export function PlanejadorMesPage({
                       <span className="text-gray-900 dark:text-unno-text">{f.nome}</span>
                     </td>
                     <td className="px-3 py-2 text-right tabular-nums text-gray-600 dark:text-unno-muted">
-                      {fmt(f.formas)} formas
+                      {fmt(f.formas)}
                     </td>
-                    {temRealizado && (
-                      <td className="px-3 py-2 text-right tabular-nums text-gray-900 dark:text-unno-text">
-                        {fmt(f.reais)} formas
-                      </td>
-                    )}
+                    <td className="px-3 py-2 text-right tabular-nums text-gray-900 dark:text-unno-text">
+                      {fmt(f.fechadas)}
+                    </td>
                     <td className="px-4 py-2 text-right tabular-nums text-gray-500">
                       {totais.formas > 0 ? `${fmt((100 * f.formas) / totais.formas, 1)}%` : '—'}
                     </td>
@@ -371,12 +441,11 @@ export function PlanejadorMesPage({
 
       {loading && <p className="text-xs text-gray-400">Carregando…</p>}
 
-      {!loading && doMes.length === 0 && (
+      {!loading && chips.length === 0 && (
         <Card>
           <CardBody className="text-center py-10">
             <p className="text-sm text-gray-500 dark:text-unno-muted">
-              Nenhuma semana planejada em {MESES[mes]}. Clique numa semana do calendário
-              para montar o plano dela.
+              Nenhuma sessão de produção em {MESES[mes]}.
             </p>
           </CardBody>
         </Card>
