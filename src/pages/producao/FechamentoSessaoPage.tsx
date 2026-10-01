@@ -144,6 +144,9 @@ export function FechamentoSessaoPage() {
   const [bipandoPotes, setBipandoPotes] = useState(false)
   const [erroPote, setErroPote] = useState('')
 
+  /** O que a produção não teve: sai do estoque central no fechamento (migration 137). */
+  const [doEstoqueCentral, setDoEstoqueCentral] = useState<{ nome: string; qtd: number; unidade: string }[]>([])
+
   const medicao = (skuId: string) => medicoes[skuId] ?? { formas: '', sobra: '' }
   const numMed = (v: string) => parseFloat((v ?? '').replace(',', '.')) || 0
 
@@ -177,6 +180,7 @@ export function FechamentoSessaoPage() {
 
     carregarEmbalagens()
     carregarPotes()
+    carregarPendentes()
     try {
       const salvos = sessionStorage.getItem(chavePotes(id))
       if (salvos) setNaoUsados(JSON.parse(salvos))
@@ -256,6 +260,34 @@ export function FechamentoSessaoPage() {
     setPotes(((ls ?? []) as { id: string; nome: string; insumo_id: string; efemero: boolean | null; conteudo_conferido_em: string | null }[])
       .filter(l => !l.efemero)
       .map(l => ({ local_id: l.id, nome: l.nome, insumo_id: l.insumo_id, conferido_em: l.conteudo_conferido_em })))
+  }
+
+  async function carregarPendentes() {
+    if (!id) return
+    const [pend, linhas] = await Promise.all([
+      supabase.from('consumo_pendente')
+        .select('quantidade, unidade, insumo:insumos(nome)')
+        .eq('sessao_id', id).eq('status', 'aberto'),
+      supabase.from('sessoes_producao_locais')
+        .select('consumo_teorico, consumo_aplicado, insumo:insumos(nome, unidade_medida)')
+        .eq('sessao_id', id),
+    ])
+    const soma = new Map<string, { qtd: number; unidade: string }>()
+    const somar = (nome: string, qtd: number, unidade: string) => {
+      const a = soma.get(nome) ?? { qtd: 0, unidade }
+      soma.set(nome, { qtd: a.qtd + qtd, unidade })
+    }
+    for (const p of (pend.data ?? []) as unknown as { quantidade: number; unidade: string; insumo: { nome: string } | null }[]) {
+      somar(p.insumo?.nome ?? '?', Number(p.quantidade), p.unidade)
+    }
+    for (const l of (linhas.data ?? []) as unknown as { consumo_teorico: number; consumo_aplicado: number; insumo: { nome: string; unidade_medida: string } | null }[]) {
+      const resto = Number(l.consumo_teorico ?? 0) - Number(l.consumo_aplicado ?? 0)
+      if (resto > 0) somar(l.insumo?.nome ?? '?', resto, l.insumo?.unidade_medida ?? '')
+    }
+    setDoEstoqueCentral([...soma.entries()]
+      .filter(([, v]) => v.qtd > 0.005)
+      .map(([nome, v]) => ({ nome, qtd: v.qtd, unidade: v.unidade }))
+      .sort((a, b) => a.nome.localeCompare(b.nome, 'pt-BR')))
   }
 
   function gravarNaoUsados(lista: string[]) {
@@ -892,6 +924,29 @@ export function FechamentoSessaoPage() {
             </p>
           )}
         </div>
+      )}
+
+      {/* ── O que a produção não teve ───────────────────────── */}
+      {doEstoqueCentral.length > 0 && (
+        <Card className="p-4 mb-4 border border-amber-300 bg-amber-50">
+          <h2 className="text-sm font-semibold text-gray-900 mb-1">
+            Vai sair do estoque central ao fechar
+          </h2>
+          <p className="text-xs text-gray-600 mb-3">
+            Estes insumos não estavam (todos) na produção. Se forem transferidos antes de fechar,
+            o desconto sai da produção; senão, sai das embalagens do estoque central.
+          </p>
+          <div className="space-y-1">
+            {doEstoqueCentral.map(d => (
+              <div key={d.nome} className="flex justify-between text-sm">
+                <span className="text-gray-900 truncate">{d.nome}</span>
+                <span className="tabular-nums text-gray-900 whitespace-nowrap ml-3">
+                  {d.qtd.toLocaleString('pt-BR', { maximumFractionDigits: 3 })} {d.unidade}
+                </span>
+              </div>
+            ))}
+          </div>
+        </Card>
       )}
 
       {/* ── Potes que não foram usados ───────────────────────── */}

@@ -343,7 +343,9 @@ export function AberturaSessaoPage() {
               <p className="text-sm text-gray-600 dark:text-unno-muted mt-0.5">
                 {bloqueado
                   ? 'Abasteça os recipientes antes de abrir. A regra está como "Bloqueia" em Configurações → Travas.'
-                  : 'Se abrir assim, a produção para no meio para abastecer.'}
+                  : 'Se abrir assim, a produção para no meio para abastecer. O consumo do que '
+                    + 'falta fica pendente: é descontado quando o insumo chegar na produção e, se '
+                    + 'não chegar até o fechamento, sai do estoque central.'}
               </p>
             </div>
 
