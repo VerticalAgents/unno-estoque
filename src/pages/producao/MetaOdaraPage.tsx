@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../contexts/AuthContext'
+import { Badge } from '../../components/ui/Badge'
 import { Card } from '../../components/ui/Card'
 import { Button } from '../../components/ui/Button'
 import { CampoNumerico } from '../../components/ui/CampoNumerico'
@@ -372,23 +373,38 @@ export function MetaOdaraPage() {
       })
   }
 
+  // Mesma largura nos dois, canto levemente arredondado (Lucca, 02/10/2026).
+  // O ! vence o rounded-full do Badge, que vem antes na folha do Tailwind.
+  const BADGE_SEMANAS = 'normal-case tracking-normal whitespace-nowrap !rounded-md w-[8.5rem] justify-center'
+
+  /** Cor do badge pelas semanas que o estoque aguenta: menos de uma, sem a folga, com folga. */
+  const corSemanas = (sem: number) =>
+    sem < 1 ? 'danger' as const : sem < 1 + folgaNum / 100 ? 'warning' as const : 'success' as const
+
+  /**
+   * Dois badges, um para a fábrica e um para o estoque todo (fábrica + Odara),
+   * cada um com a própria cor (Lucca, 02/10/2026: as linhas soltas ficavam
+   * feias). Os brownies que cada um aguenta ficam no "title" do badge.
+   */
   function celulaAutonomia(l: Linha) {
     const a = autonomia(l)
     const temOdara = l.odara != null
-    const semanas = temOdara ? a.total : a.aqui
+    const dica = (semanas: number) => porFicha(l, semanas)
+      .map(f => `≈ ${milhares(f.un)} ${f.nome} (${f.dica})`).join(' · ')
     return (
-      <div className="text-right tabular-nums">
-        {soLeMeta
-          ? <p className={`font-semibold ${COR[a.nivel]}`}>{num(a.total)} sem. no total</p>
-          : <>
-              <p className={`font-semibold ${COR[a.nivel]}`}>{num(a.aqui)} {T.semFabrica}</p>
-              {temOdara && <p className="text-xs text-muted-foreground">{num(a.total)} {T.semTotal}</p>}
-            </>}
-        {porFicha(l, semanas).map(f => (
-          <p key={f.id} className="text-xs text-muted-foreground" title={f.dica}>
-            ≈ {milhares(f.un)} {f.nome}
-          </p>
-        ))}
+      <div className="flex flex-col items-end gap-1 tabular-nums">
+        <span title={dica(a.aqui)}>
+          <Badge variant={corSemanas(a.aqui)} className={BADGE_SEMANAS}>
+            {soLeMeta ? "Mischa's" : 'Fábrica'} · {num(a.aqui)} sem.
+          </Badge>
+        </span>
+        {temOdara && (
+          <span title={dica(a.total)}>
+            <Badge variant={corSemanas(a.total)} className={BADGE_SEMANAS}>
+              Total · {num(a.total)} sem.
+            </Badge>
+          </span>
+        )}
       </div>
     )
   }
