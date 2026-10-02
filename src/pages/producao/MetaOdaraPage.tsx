@@ -274,6 +274,31 @@ export function MetaOdaraPage() {
                     - (soLeMeta ? (b.aqui + (b.odara ?? 0)) : b.aqui) / b.consumoSemana)
   }, [fichas, receitas, metas, estoque, externo, embalagem])
 
+  /**
+   * Insumo que fica na Odara mas não entra em ficha técnica — o spray
+   * desmoldante (Lucca, 02/10/2026). Sem consumo por forma, não tem autonomia
+   * nem pedido: aparece só o estoque, aqui e lá, para a Odara ver e editar.
+   * Entra na lista quem tem estoque na Odara registrado.
+   */
+  const foraDaFicha: Linha[] = useMemo(() => {
+    const naLista = new Set(linhas.map(l => l.insumo_id))
+    return Object.keys(externo)
+      .filter(id => !naLista.has(id) && estoque[id])
+      .map(id => ({
+        insumo_id: id,
+        codigo: estoque[id].codigo,
+        nome: estoque[id].nome,
+        unidade: estoque[id].unidade,
+        consumoSemana: 0,
+        aqui: estoque[id].total,
+        odara: externo[id]?.quantidade ?? null,
+        odaraEm: externo[id]?.em ?? null,
+        embTam: embalagem[id]?.tam ?? null,
+        embTipo: embalagem[id]?.tipo ?? null,
+      }))
+      .sort((a, b) => a.nome.localeCompare(b.nome))
+  }, [linhas, externo, estoque, embalagem])
+
   const linhasFixas: Linha[] = useMemo(() => {
     if (carregando || linhas.length === 0) return linhas
     if (ordem.current.length === 0) ordem.current = linhas.map(l => l.insumo_id)
@@ -542,6 +567,54 @@ export function MetaOdaraPage() {
           }
         />
       </Card>
+
+      {/* ── Fora da ficha técnica ── */}
+      {foraDaFicha.length > 0 && (
+        <Card>
+          <div className="px-4 pt-4">
+            <p className="text-xs font-semibold uppercase tracking-[1px] text-muted-foreground">Fora da ficha técnica</p>
+            <p className="text-xs text-muted-foreground mt-1">Não tem consumo por forma: aqui vai só o estoque.</p>
+          </div>
+          <ListaResponsiva
+            cartoes={foraDaFicha.map(l => (
+              <CartaoLista
+                key={l.insumo_id}
+                titulo={<span className="font-medium text-foreground">{l.nome}</span>}
+                subtitulo={l.codigo}
+                campos={[
+                  { rotulo: T.fabrica, valor: <span className="tabular-nums">{qtd(l.aqui, l)}</span> },
+                  { rotulo: 'Na Odara', valor: celulaOdara(l) },
+                ]}
+              />
+            ))}
+            tabela={
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b border-border text-left">
+                    {['Insumo', T.fabrica, 'Na Odara'].map((h, i) => (
+                      <th key={h} className={`px-4 py-3 text-[0.65rem] font-semibold uppercase tracking-[1px] text-muted-foreground ${i ? 'text-right' : ''}`}>
+                        {h}
+                      </th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-border">
+                  {foraDaFicha.map(l => (
+                    <tr key={l.insumo_id}>
+                      <td className="px-4 py-3">
+                        <p className="font-medium text-foreground">{l.nome}</p>
+                        <p className="text-xs text-muted-foreground">{l.codigo}</p>
+                      </td>
+                      <td className="px-4 py-3 text-right tabular-nums whitespace-nowrap text-foreground">{qtd(l.aqui, l)}</td>
+                      <td className="px-4 py-3">{celulaOdara(l)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            }
+          />
+        </Card>
+      )}
 
       <p className="text-xs text-muted-foreground px-1">
         <strong>{T.pedir}</strong> = uma semana de meta + {num(folgaNum, 0)}% de folga − {T.haFabrica},
