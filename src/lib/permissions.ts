@@ -21,6 +21,8 @@ const defaultRoutes: Record<PapelUsuario, string[]> = {
   ],
   // O Antônio, da Odara: só a Meta Odara (migration 134b).
   odara: ['/odara'],
+  // Só usa o Unno Tarefas (migration 139b): nenhuma rota aqui, e o AuthContext barra no login.
+  tarefas: [],
 }
 
 /**

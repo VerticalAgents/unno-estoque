@@ -55,6 +55,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       return
     }
 
+    // Papel "tarefas" (migration 139b): login só do Unno Tarefas. O banco já não entrega dado do
+    // estoque para ele; aqui é só para a pessoa não ficar numa tela vazia sem saber por quê.
+    if (prof.papel === 'tarefas') {
+      setMotivoSaida('Este login é só do app de tarefas. Ele não entra no estoque.')
+      await logout()
+      return
+    }
+
     setProfile(prof)
     await loadPermissoes(prof.empresa_id)
   }

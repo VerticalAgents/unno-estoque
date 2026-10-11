@@ -71,6 +71,7 @@ const PAPEIS: { value: string; label: string }[] = [
   { value: 'compras', label: 'Compras' },
   // Só a Meta Odara, e só grava o estoque de lá (migration 134b).
   { value: 'odara', label: 'Odara (só Meta Odara)' },
+  { value: 'tarefas', label: 'Só tarefas (sem acesso ao estoque)' },
 ]
 
 export function ConfiguracoesPage() {
@@ -1284,7 +1285,8 @@ function PermissoesSection() {
   const [saving, setSaving] = useState(false)
   const [msg, setMsg] = useState('')
 
-  const papeisEditaveis = PAPEIS.filter(p => p.value !== 'admin') // admin sempre tem acesso total
+  // admin sempre tem acesso total; "tarefas" não entra no estoque, então não tem rota para escolher
+  const papeisEditaveis = PAPEIS.filter(p => p.value !== 'admin' && p.value !== 'tarefas')
 
   function openEdit(papel: string) {
     setEditPapel(papel)
