@@ -222,7 +222,9 @@ export function TransferenciaPage() {
     // a pessoa escaneando de novo. Ninguém aponta a câmera duas vezes para a
     // mesma etiqueta nesse intervalo — e a repetição é comum no celular.
     const agora = Date.now()
-    if (ultimaLeitura.current.qr === qr && agora - ultimaLeitura.current.em < 2000) return
+    // Com justificativa é o botão da trava, não a câmera.
+    if (!justificativa && ultimaLeitura.current.qr === qr
+        && agora - ultimaLeitura.current.em < 2000) return
     ultimaLeitura.current = { qr, em: agora }
 
     setScanError('')
@@ -280,6 +282,11 @@ export function TransferenciaPage() {
       espaco_livre?: number; ja_escaneado?: number
       total_com_este?: number; volta_ao_estoque?: number
     } | null
+
+    // Recusado não foi lido: a leitura só conta quando entra na lista. Sem
+    // isto o "Escanear mesmo assim" de uma trava esbarrava no próprio lote
+    // ("Este lote já foi escaneado") e nenhuma justificativa passava.
+    if (error || resp?.trava || !resp?.ok) idsLidos.current.delete(novo.id)
 
     if (error) {
       setScanError(error.message)
