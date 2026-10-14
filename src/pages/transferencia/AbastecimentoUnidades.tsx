@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../contexts/AuthContext'
 import { QRScanner } from '../../components/qr/QRScanner'
@@ -42,6 +42,19 @@ type Passo = 'contar' | 'caixas' | 'confirmar' | 'ok'
 const plural = (tipo: string, n: number) => (n === 1 ? tipo : `${tipo}s`)
 const Maiuscula = (s: string) => s.charAt(0).toUpperCase() + s.slice(1)
 
+/**
+ * A dica que ficou no lugar da trava FEFO (migration 142, Lucca 14/10/2026):
+ * sugere usar antes a embalagem mais antiga, sem dizer qual. Quem escolhe é o
+ * operador; o sistema aceita qualquer uma. Usada também no reabastecimento de pote.
+ */
+export function DicaMaisAntiga() {
+  return (
+    <p className="mt-3 p-3 rounded-controle bg-amber-50 border border-amber-300 text-sm text-amber-900">
+      Dica: use primeiro a embalagem que está há mais tempo no estoque.
+    </p>
+  )
+}
+
 /** − [ n ] + — fora do componente para o campo não perder o foco a cada tecla. */
 function Contador({ valor, onChange }: { valor: string; onChange: (v: string) => void }) {
   const n = /^\d+$/.test(valor.trim()) ? parseInt(valor, 10) : 0
@@ -81,36 +94,7 @@ export function AbastecimentoUnidades({ insumo, onVoltar, onConcluido }: {
   const [passo, setPasso] = useState<Passo>('contar')
   const [tinha, setTinha] = useState('')
   const [caixas, setCaixas] = useState<Caixa[]>([])
-  /**
-   * A caixa aberta que a trava FEFO vai cobrar primeiro — mesma ordem de
-   * `validar_scan_lote`. Dita antes da leitura, e não só depois do erro.
-   */
-  const [aberta, setAberta] = useState<{ id: string; codigo: string; tem: number } | null>(null)
-  useEffect(() => {
-    let vivo = true
-    supabase.from('lotes')
-      .select('id, codigo, quantidade_disponivel, quantidade_recebida, validade_pos_abertura')
-      .eq('insumo_id', insumo.insumo_id).eq('status', 'ativo').gt('quantidade_disponivel', 0)
-      .then(({ data }) => {
-        if (!vivo) return
-        const a = ((data ?? []) as {
-          id: string; codigo: string; quantidade_disponivel: number; quantidade_recebida: number
-          validade_pos_abertura: string | null
-        }[])
-          .filter(l => Number(l.quantidade_disponivel) < Number(l.quantidade_recebida))
-          .sort((x, y) => (x.validade_pos_abertura ?? '9999-12-31').localeCompare(y.validade_pos_abertura ?? '9999-12-31')
-                       || x.codigo.localeCompare(y.codigo))[0]
-        setAberta(a ? {
-          id: a.id, codigo: a.codigo,
-          tem: Math.floor(Number(a.quantidade_disponivel) / insumo.peso + 0.0001),
-        } : null)
-      })
-    return () => { vivo = false }
-  }, [insumo.insumo_id, insumo.peso])
-  const bipePrimeiro = aberta && !caixas.some(c => c.id === aberta.id) && caixas.length === 0 ? aberta : null
   const [erroScan, setErroScan] = useState('')
-  const [travaFefo, setTravaFefo] = useState<{ qr: string; bloqueia: boolean; mensagem: string } | null>(null)
-  const [justFefo, setJustFefo] = useState('')
   const [lendo, setLendo] = useState(false)
   const [erro, setErro] = useState('')
   const [salvando, setSalvando] = useState(false)
@@ -127,7 +111,7 @@ export function AbastecimentoUnidades({ insumo, onVoltar, onConcluido }: {
   }
   const podeConferir = caixas.every(c => caixaComErro(c) === null)
 
-  async function bipar(qr: string, justificativa?: string) {
+  async function bipar(qr: string) {
     setErroScan('')
     if (!profile) return
 
@@ -151,23 +135,17 @@ export function AbastecimentoUnidades({ insumo, onVoltar, onConcluido }: {
     }
     if (caixas.some(c => c.id === lote.id)) { setErroScan(emb === 'saco' ? 'Este saco já foi bipado.' : 'Esta caixa já foi bipada.'); return }
 
-    // A mesma trava FEFO do reabastecimento de pote: a caixa aberta sai antes.
+    // A trava FEFO saiu (migration 142): qualquer caixa vale. A leitura segue
+    // pelo banco pelas outras regras (outro insumo, outra marca).
     const { data } = await supabase.rpc('validar_scan_lote', {
       p_empresa_id:    profile.empresa_id,
       p_lote_id:       lote.id,
       p_ja_escaneados: caixas.map(c => c.id),
-      p_justificativa: justificativa?.trim() || null,
+      p_justificativa: null,
     })
-    const resp = data as { erro?: string; trava?: string; modo?: string; mensagem?: string } | null
-    if (resp?.trava === 'fefo') {
-      setTravaFefo({ qr, bloqueia: resp.modo !== 'avisa', mensagem: resp.mensagem ?? '' })
-      setLendo(false)
-      return
-    }
+    const resp = data as { erro?: string; trava?: string } | null
     if (resp?.erro && !resp?.trava) { setErroScan(resp.erro); return }
 
-    setTravaFefo(null)
-    setJustFefo('')
     setCaixas(prev => [...prev, {
       id: lote.id,
       codigo: lote.codigo,
@@ -262,43 +240,10 @@ export function AbastecimentoUnidades({ insumo, onVoltar, onConcluido }: {
               Bipe o QR de cada {emb} de onde você tirou{' '}
               {plural(tipo, 2)}, e diga {g('quantas', 'quantos')} saíram de cada.
             </p>
-            {bipePrimeiro && (
-              <p className="mt-3 p-3 rounded-controle bg-amber-50 border border-amber-300 text-sm text-amber-900">
-                Bipe primeiro {emb === 'saco' ? 'o saco aberto' : 'a caixa aberta'}:{' '}
-                <strong className="font-mono">{bipePrimeiro.codigo}</strong>{' '}
-                ({bipePrimeiro.tem} {plural(tipo, bipePrimeiro.tem)}).
-              </p>
-            )}
+            <DicaMaisAntiga />
           </Card>
 
-          {travaFefo && (
-            <div className={`p-4 rounded-bloco border space-y-3 ${
-              travaFefo.bloqueia ? 'bg-red-50 border-red-300' : 'bg-amber-50 border-amber-300'
-            }`}>
-              <p className="font-semibold text-gray-900">Há uma embalagem aberta no estoque</p>
-              <p className="text-sm text-gray-700">{travaFefo.mensagem}</p>
-              {travaFefo.bloqueia ? (
-                <Button variant="secondary" size="sm" fullWidth onClick={() => setTravaFefo(null)}>Entendi</Button>
-              ) : (
-                <>
-                  <textarea rows={2} value={justFefo} onChange={e => setJustFefo(e.target.value)}
-                    placeholder="Por que não a aberta?"
-                    className="block w-full rounded-controle border border-gray-300 bg-white px-3 py-2 text-sm" />
-                  <div className="flex gap-2">
-                    <Button variant="ghost" size="sm" onClick={() => { setTravaFefo(null); setJustFefo('') }}>
-                      Cancelar
-                    </Button>
-                    <Button size="sm" disabled={justFefo.trim().length < 5}
-                            onClick={() => bipar(travaFefo.qr, justFefo)}>
-                      Usar mesmo assim
-                    </Button>
-                  </div>
-                </>
-              )}
-            </div>
-          )}
-
-          {lendo && !travaFefo ? (
+          {lendo ? (
             <Card className="p-5">
               <QRScanner
                 onScan={qr => bipar(qr)}
@@ -313,12 +258,6 @@ export function AbastecimentoUnidades({ insumo, onVoltar, onConcluido }: {
                 acaoConcluir={{ rotulo: 'Terminei de bipar', onClick: () => setLendo(false) }}
                 painel={
                   <div className="text-xs">
-                    {bipePrimeiro && (
-                      <p className="mb-2 font-semibold text-amber-800">
-                        Bipe primeiro: <span className="font-mono">{bipePrimeiro.codigo}</span>{' '}
-                        ({emb === 'saco' ? 'aberto' : 'aberta'})
-                      </p>
-                    )}
                     {erroScan && <p className="font-semibold text-red-700 mb-2">{erroScan}</p>}
                     {caixas.map(c => (
                       <div key={c.id} className="flex justify-between gap-2">
@@ -330,7 +269,7 @@ export function AbastecimentoUnidades({ insumo, onVoltar, onConcluido }: {
                 }
               />
             </Card>
-          ) : !travaFefo && (
+          ) : (
             <Button variant="secondary" size="lg" fullWidth onClick={() => { setErroScan(''); setLendo(true) }}>
               Bipar {caixas.length ? g2('outro', 'outra') : g2('o', 'a')} {emb}
             </Button>

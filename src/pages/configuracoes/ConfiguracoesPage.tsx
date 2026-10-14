@@ -49,15 +49,16 @@ const TRAVAS: { chave: string; titulo: string; descricao: string }[] = [
     descricao:
       'A produção começa e para no meio para abastecer. É o problema que o planejador existe para evitar.',
   },
-  {
-    chave: 'fefo',
-    titulo: 'Deixar para trás o lote que está aberto',
-    descricao:
-      'Ao escanear no estoque central, o lote aberto do insumo tem que vir primeiro. '
-      + 'Onde ele vai parar dentro dos recipientes não importa — o que não pode é ele '
-      + 'ficar na prateleira enquanto embalagens fechadas são abertas.',
-  },
 ]
+
+/**
+ * Travas que já existiram e saíram. Só dão nome às exceções antigas do
+ * histórico; não aparecem na lista para configurar.
+ */
+const TRAVAS_EXTINTAS: Record<string, string> = {
+  // Migration 142 (Lucca, 14/10/2026): o operador bipa a embalagem que quiser.
+  fefo: 'Deixar para trás o lote que está aberto (trava retirada)',
+}
 
 const UFS = [
   'AC','AL','AP','AM','BA','CE','DF','ES','GO','MA','MT','MS','MG',
@@ -706,7 +707,7 @@ function TravasTab() {
               <div key={e.id} className="text-sm border-t border-gray-100 dark:border-white/[.08] pt-2">
                 <p className="text-xs text-gray-400 dark:text-unno-dim">
                   {new Date(e.created_at).toLocaleString('pt-BR')} ·{' '}
-                  {TRAVAS.find(t => t.chave === e.chave)?.titulo ?? e.chave}
+                  {TRAVAS.find(t => t.chave === e.chave)?.titulo ?? TRAVAS_EXTINTAS[e.chave] ?? e.chave}
                 </p>
                 <p className="text-gray-700 dark:text-unno-text">{e.justificativa}</p>
               </div>

@@ -11,7 +11,7 @@ import { formatQty, ordemNatural } from '../../lib/utils'
 import { parseLoteDoInsumo } from '../../lib/qr'
 import { bancada, daBancada, usaTara } from '../../lib/unidades'
 import type { UnidadeMedida } from '../../types/database.types'
-import { AbastecimentoUnidades, type InsumoPorUnidade } from './AbastecimentoUnidades'
+import { AbastecimentoUnidades, DicaMaisAntiga, type InsumoPorUnidade } from './AbastecimentoUnidades'
 
 /**
  * Abastecer os potes do EP: o operador DECLARA o que fez.
@@ -63,7 +63,6 @@ type InsumoAlvo = {
   /** O que está disponível no estoque central, para orientar quem vai buscar. */
   lotes_ec: number
   saldo_ec: number
-  proximo: { codigo: string; saldo: number; aberto: boolean } | null
 }
 
 type LoteBipado = {
@@ -168,10 +167,6 @@ export function AbastecimentoPage() {
   // Passo 3
   const [lotes, setLotes] = useState<LoteBipado[]>([])
   const [erroScan, setErroScan] = useState('')
-  const [travaFefo, setTravaFefo] = useState<{
-    qr: string; bloqueia: boolean; mensagem: string
-  } | null>(null)
-  const [justFefo, setJustFefo] = useState('')
 
   /**
    * Passo 4 — o que aconteceu com cada embalagem.
@@ -237,8 +232,7 @@ export function AbastecimentoPage() {
           .select('insumo_id, tara_embalagem_g, tem_subunidades, subunidade_tipo, subunidade_peso'),
         supabase
           .from('lotes')
-          .select('id, codigo, insumo_id, quantidade_disponivel, quantidade_recebida, '
-                + 'validade_pos_abertura')
+          .select('id, insumo_id, quantidade_disponivel')
           .eq('empresa_id', empresa)
           .eq('status', 'ativo')
           .gt('quantidade_disponivel', 0),
@@ -285,7 +279,7 @@ export function AbastecimentoPage() {
             nome: linha.insumo_nome,
             unidade: linha.unidade_medida,
             potes: [], conteudo: 0, capacidade: 0,
-            lotes_ec: 0, saldo_ec: 0, proximo: null,
+            lotes_ec: 0, saldo_ec: 0,
           }
           porInsumo.set(linha.insumo_id, ins)
         }
@@ -302,27 +296,15 @@ export function AbastecimentoPage() {
         ins.capacidade += Number(linha.capacidade_max ?? 0)
       }
 
-      // O lote que deve sair primeiro: o aberto, se houver; senão o de validade
-      // mais próxima. É a mesma ordem que a trava FEFO cobra na bipagem — dizer
-      // isto aqui evita que o operador desça com a embalagem errada.
-      const ordenados = ((lotesEc.data ?? []) as unknown as {
-        id: string; codigo: string; insumo_id: string
-        quantidade_disponivel: number; quantidade_recebida: number
-        validade_pos_abertura: string | null
-      }[]).slice().sort((x, y) =>
-        (x.validade_pos_abertura ?? '9999-12-31').localeCompare(y.validade_pos_abertura ?? '9999-12-31')
-        || x.codigo.localeCompare(y.codigo))
-
-      for (const l of ordenados) {
+      // A tela não aponta mais qual embalagem pegar: a trava FEFO saiu
+      // (migration 142) e o operador escolhe. Fica só a dica fixa no passo 3.
+      for (const l of (lotesEc.data ?? []) as unknown as {
+        id: string; insumo_id: string; quantidade_disponivel: number
+      }[]) {
         const ins = porInsumo.get(l.insumo_id)
         if (!ins) continue
         ins.lotes_ec += 1
         ins.saldo_ec += Number(l.quantidade_disponivel ?? 0)
-        const aberto = Number(l.quantidade_disponivel) < Number(l.quantidade_recebida)
-        // Um aberto sempre desbanca um fechado, mesmo que venha depois na ordem.
-        if (!ins.proximo || (aberto && !ins.proximo.aberto)) {
-          ins.proximo = { codigo: l.codigo, saldo: Number(l.quantidade_disponivel), aberto }
-        }
       }
 
       for (const ins of porInsumo.values()) {
@@ -522,13 +504,6 @@ export function AbastecimentoPage() {
   const colocado = potesDeclarados.reduce((s, x) => s + x.res.colocou, 0)
 
   /**
-   * A embalagem aberta que tem de ser bipada primeiro — a mesma que
-   * `validar_scan_lote` cobra (aberta, validade mais curta, depois o código).
-   * Some assim que uma aberta entra na lista: aí a trava já foi cumprida.
-   */
-  const bipePrimeiro = alvo?.proximo?.aberto && !lotes.some(l => l.aberto) ? alvo.proximo : null
-
-  /**
    * Só "Não foi usado", sem nenhum pote recebendo insumo (migration 128).
    *
    * O reabastecimento começa com a produção ainda rodando: o #1 é recarregado
@@ -552,13 +527,13 @@ export function AbastecimentoPage() {
   // ── Passo 3: as embalagens que foram usadas ───────────────
 
   /**
-   * Aceita o lote lido, honrando só a trava FEFO.
+   * Aceita o lote lido, qualquer que seja: a trava FEFO saiu (migration 142).
    *
    * `validar_scan_lote` também cobra capacidade — e aqui isso não faz sentido:
    * os potes já foram enchidos, o espaço livre já é zero, e a trava dispararia
    * em toda leitura. O que aconteceu já aconteceu; a bipagem só registra.
    */
-  async function bipar(qr: string, justificativa?: string) {
+  async function bipar(qr: string) {
     setErroScan('')
     if (!alvo || !profile) return
 
@@ -591,26 +566,16 @@ export function AbastecimentoPage() {
       p_empresa_id:    profile.empresa_id,
       p_lote_id:       lote.id,
       p_ja_escaneados: lotes.map(l => l.id),
-      p_justificativa: justificativa?.trim() || null,
+      p_justificativa: null,
     })
     const resp = data as {
       ok?: boolean; erro?: string; trava?: string; modo?: string; mensagem?: string
     } | null
 
-    if (resp?.trava === 'fefo') {
-      setTravaFefo({
-        qr,
-        bloqueia: resp.modo !== 'avisa',
-        mensagem: resp.mensagem ?? '',
-      })
-      return
-    }
     // Erro de coerência (outro insumo, outra marca) continua valendo; a trava de
     // capacidade é ignorada de propósito.
     if (resp?.erro && !resp?.trava) { setErroScan(resp.erro); return }
 
-    setTravaFefo(null)
-    setJustFefo('')
     setLotes(prev => [...prev, {
       id: lote.id,
       codigo: lote.codigo,
@@ -786,7 +751,7 @@ export function AbastecimentoPage() {
     setPasso('insumo')
     setAlvo(null)
     setPesos({}); setPesosAntes({}); setVazios({}); setNaoUsados({}); setTaras({}); setLotes([]); setSobras({}); setRespostas({})
-    setErro(''); setErroScan(''); setTravaFefo(null); setJustFefo('')
+    setErro(''); setErroScan('')
     setJustExcesso('')
     setPerdaConferida(false)
     setSucesso(null)
@@ -907,12 +872,6 @@ export function AbastecimentoPage() {
                   <p className="text-xs text-gray-500 dark:text-unno-muted mt-2">
                     No estoque central: {formatQty(ins.saldo_ec, ins.unidade)} em {ins.lotes_ec}{' '}
                     embalagem{ins.lotes_ec === 1 ? '' : 's'}
-                    {ins.proximo && (
-                      <>
-                        {' · '}pegue <strong className="text-gray-700 dark:text-unno-text">{ins.proximo.codigo}</strong>
-                        {ins.proximo.aberto && ' (já aberta)'}
-                      </>
-                    )}
                   </p>
                 )}
               </Card>
@@ -957,12 +916,7 @@ export function AbastecimentoPage() {
               tinha dentro, encha, e pese de novo. Os que você não mexeu ficam em
               branco.
             </p>
-            {alvo.proximo && (
-              <p className="text-xs text-gray-600 dark:text-unno-muted mt-2">
-                Comece pela embalagem <strong>{alvo.proximo.codigo}</strong>
-                {alvo.proximo.aberto && ', que já está aberta'}.
-              </p>
-            )}
+            <DicaMaisAntiga />
           </Card>
 
           {alvo.potes.map(pote => {
@@ -1179,16 +1133,7 @@ export function AbastecimentoPage() {
               Agora bipe todas as embalagens que você usou — as que zeraram e as
               que sobraram.
             </p>
-            {/* O lote aberto que a trava FEFO vai cobrar, dito ANTES da leitura. Antes
-                a tela só dizia o código depois do erro, e quem bipava tinha de adivinhar
-                qual embalagem era a aberta (Lucca, 29/09/2026). */}
-            {bipePrimeiro && alvo && (
-              <p className="mt-3 p-3 rounded-controle bg-amber-50 border border-amber-300 text-sm text-amber-900">
-                Bipe primeiro a embalagem aberta:{' '}
-                <strong className="font-mono">{bipePrimeiro.codigo}</strong>{' '}
-                ({formatQty(bipePrimeiro.saldo, alvo.unidade)}).
-              </p>
-            )}
+            <DicaMaisAntiga />
           </Card>
 
           {lotes.length > 0 && (
@@ -1218,83 +1163,41 @@ export function AbastecimentoPage() {
             </Card>
           )}
 
-          {travaFefo ? (
-            <div className={`p-4 rounded-xl border space-y-3 ${
-              travaFefo.bloqueia ? 'bg-red-50 border-red-300' : 'bg-amber-50 border-amber-300'
-            }`}>
-              <p className="font-semibold text-gray-900">Há uma embalagem aberta no estoque</p>
-              <p className="text-sm text-gray-700">{travaFefo.mensagem}</p>
-              {travaFefo.bloqueia ? (
-                <Button variant="secondary" size="sm" fullWidth onClick={() => setTravaFefo(null)}>
-                  Entendi
-                </Button>
-              ) : (
-                <>
-                  <textarea
-                    rows={2}
-                    value={justFefo}
-                    onChange={e => setJustFefo(e.target.value)}
-                    placeholder="Ex: a embalagem aberta foi separada para descarte"
-                    className="block w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm
-                               focus:outline-none focus:border-brand-500 focus:ring-[3px] focus:ring-brand-500/10"
-                  />
-                  <div className="flex gap-2">
-                    <Button variant="ghost" size="sm" onClick={() => { setTravaFefo(null); setJustFefo('') }}>
-                      Cancelar
-                    </Button>
-                    <Button
-                      size="sm" fullWidth
-                      disabled={justFefo.trim().length < 5}
-                      onClick={() => bipar(travaFefo.qr, justFefo)}
-                    >
-                      Registrar mesmo assim
-                    </Button>
+          <Card className="p-5">
+            <QRScanner
+              onScan={qr => bipar(qr)}
+              continuo
+              titulo={alvo.nome}
+              label={`${lotes.length} bipada${lotes.length === 1 ? '' : 's'}`}
+              dicaDigitar={{
+                texto: `Só a tarja preta da etiqueta — o insumo já é ${alvo.nome}. O espaço vira ponto e depois barra; os zeros da frente não precisam.`,
+                exemplo: '5.2/2',
+                tarja: true,
+              }}
+              acaoConcluir={{
+                rotulo: 'Terminei de bipar',
+                onClick: () => { setErroScan(''); setPasso('fechar') },
+              }}
+              painel={
+                <div className="text-xs">
+                  {erroScan && <p className="font-semibold text-red-700 mb-2">{erroScan}</p>}
+                  <div className="space-y-1">
+                    {lotes.map(l => (
+                      <div key={l.id} className="flex justify-between gap-2">
+                        <span className="font-mono text-emerald-700 font-semibold truncate">✓ {l.codigo}</span>
+                        <span className="text-gray-500 shrink-0">{formatQty(l.saldo, l.unidade)}</span>
+                      </div>
+                    ))}
                   </div>
-                </>
-              )}
-            </div>
-          ) : (
-            <Card className="p-5">
-              <QRScanner
-                onScan={qr => bipar(qr)}
-                continuo
-                titulo={alvo.nome}
-                label={`${lotes.length} bipada${lotes.length === 1 ? '' : 's'}`}
-                dicaDigitar={{
-                  texto: `Só a tarja preta da etiqueta — o insumo já é ${alvo.nome}. O espaço vira ponto e depois barra; os zeros da frente não precisam.`,
-                  exemplo: '5.2/2',
-                  tarja: true,
-                }}
-                acaoConcluir={{
-                  rotulo: 'Terminei de bipar',
-                  onClick: () => { setErroScan(''); setPasso('fechar') },
-                }}
-                painel={
-                  <div className="text-xs">
-                    {bipePrimeiro && (
-                      <p className="mb-2 font-semibold text-amber-800">
-                        Bipe primeiro: <span className="font-mono">{bipePrimeiro.codigo}</span> (aberta)
-                      </p>
-                    )}
-                    {erroScan && <p className="font-semibold text-red-700 mb-2">{erroScan}</p>}
-                    <div className="space-y-1">
-                      {lotes.map(l => (
-                        <div key={l.id} className="flex justify-between gap-2">
-                          <span className="font-mono text-emerald-700 font-semibold truncate">✓ {l.codigo}</span>
-                          <span className="text-gray-500 shrink-0">{formatQty(l.saldo, l.unidade)}</span>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                }
-              />
-              {erroScan && (
-                <div className="mt-3 p-3 bg-red-50 border border-red-200 rounded-lg text-sm text-red-700">
-                  {erroScan}
                 </div>
-              )}
-            </Card>
-          )}
+              }
+            />
+            {erroScan && (
+              <div className="mt-3 p-3 bg-red-50 border border-red-200 rounded-lg text-sm text-red-700">
+                {erroScan}
+              </div>
+            )}
+          </Card>
 
           <Button
             size="xl" fullWidth
