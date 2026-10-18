@@ -929,12 +929,13 @@ export function FechamentoSessaoPage() {
       {/* ── O que a produção não teve ───────────────────────── */}
       {doEstoqueCentral.length > 0 && (
         <Card className="p-4 mb-4 border border-amber-300 bg-amber-50">
+          {/* Desde a 143 nada sai do estoque central: a falta vira dívida dos baldes. */}
           <h2 className="text-sm font-semibold text-gray-900 mb-1">
-            Vai sair do estoque central ao fechar
+            Vai ficar devendo ao fechar
           </h2>
           <p className="text-xs text-gray-600 mb-3">
-            Estes insumos não estavam (todos) na produção. Se forem transferidos antes de fechar,
-            o desconto sai da produção; senão, sai das embalagens do estoque central.
+            Estes insumos não estavam (todos) nos baldes. Se forem transferidos antes de fechar,
+            o desconto sai agora; senão, sai dos baldes na próxima transferência.
           </p>
           <div className="space-y-1">
             {doEstoqueCentral.map(d => (

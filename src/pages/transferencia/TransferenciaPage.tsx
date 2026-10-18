@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../contexts/AuthContext'
-import type { Lote, Local } from '../../types/database.types'
+import type { Lote, Local, UnidadeMedida } from '../../types/database.types'
 import { QRScanner } from '../../components/qr/QRScanner'
 import { Button } from '../../components/ui/Button'
 import { Card } from '../../components/ui/Card'
@@ -153,6 +153,33 @@ export function TransferenciaPage() {
       .eq('ativo', true)
       .eq('efemero', false)
       .then(({ count }) => setRecipientesDoInsumo(count ?? 0))
+  }, [lote?.insumo_id])
+
+  /**
+   * O que a produção ficou devendo deste insumo (migration 143).
+   *
+   * Quando a sessão fecha sem o insumo nos baldes, a falta não sai mais do
+   * estoque central: fica pendurada e sai do balde na próxima transferência.
+   * Esta é a transferência — quem bipa precisa saber que o balde vai receber
+   * menos no sistema do que o que entrou nele.
+   */
+  const [divida, setDivida] = useState<{ qtd: number; unidade: UnidadeMedida; sessoes: string[] } | null>(null)
+
+  useEffect(() => {
+    if (!lote) { setDivida(null); return }
+    supabase
+      .from('consumo_pendente')
+      .select('quantidade, unidade, sessao:sessoes_producao!inner(codigo, status)')
+      .eq('insumo_id', lote.insumo_id)
+      .eq('status', 'aberto')
+      .eq('sessao.status', 'fechada')
+      .then(({ data }) => {
+        const linhas = (data ?? []) as unknown as { quantidade: number; unidade: UnidadeMedida; sessao: { codigo: string } }[]
+        const qtd = linhas.reduce((s, l) => s + Number(l.quantidade), 0)
+        setDivida(qtd > 0.005
+          ? { qtd, unidade: linhas[0].unidade, sessoes: linhas.map(l => l.sessao.codigo) }
+          : null)
+      })
   }, [lote?.insumo_id])
 
   // ── Helpers ───────────────────────────────────────────────
@@ -779,6 +806,15 @@ export function TransferenciaPage() {
               <span className="text-brand-700">{formatQty(totalQty, unidade)}</span>
             </div>
           </Card>
+
+          {divida && (
+            <Card className="p-4 border border-amber-300 bg-amber-50">
+              <p className="text-sm text-gray-900">
+                A produção ficou devendo <strong>{formatQty(divida.qtd, divida.unidade)}</strong> de{' '}
+                {lote.insumo.nome} ({divida.sessoes.join(', ')}). Sai do balde nesta transferência.
+              </p>
+            </Card>
+          )}
 
           {painelCabe}
 
