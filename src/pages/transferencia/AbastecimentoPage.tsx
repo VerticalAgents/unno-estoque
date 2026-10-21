@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../contexts/AuthContext'
@@ -9,107 +9,48 @@ import { Input } from '../../components/ui/Input'
 import { ConfirmModal } from '../../components/ui/ConfirmModal'
 import { formatQty, ordemNatural } from '../../lib/utils'
 import { parseLoteDoInsumo } from '../../lib/qr'
-import { bancada, daBancada, usaTara } from '../../lib/unidades'
 import type { UnidadeMedida } from '../../types/database.types'
-import { AbastecimentoUnidades, DicaMaisAntiga, type InsumoPorUnidade } from './AbastecimentoUnidades'
+import { DicaMaisAntiga } from './AbastecimentoUnidades'
 
 /**
- * Abastecer os potes do EP: o operador DECLARA o que fez.
+ * Reabastecer os baldes, SEM BALANÇA (migration 145).
  *
- * O fluxo antigo movia quantidade por aritmética — o sistema decidia quanto
- * cabia e truncava o último lote bipado. Quem virava "embalagem aberta" no
- * papel era escolhido pela ORDEM DA BIPAGEM, não por quem foi aberta de fato.
+ * Até a 145 o balde era pesado antes e depois de encher, e o sistema tentava
+ * saber quantos kg havia em cada um descontando o consumo teórico numa fila
+ * que a equipe não segue. O número vivia errado e a pesagem não servia para
+ * nada que importasse.
  *
- * Aqui a ordem é a da vida real:
+ * O balde agora serve à RASTREABILIDADE: que lotes estão dentro dele. Decisão
+ * do Lucca (21/10/2026):
  *
- *   1. escolher o insumo que vai ser abastecido (a tela diz quanto falta);
- *   2. dizer como cada pote chegou (vazio ou pesando tanto), encher e PESAR;
- *   3. bipar as embalagens usadas, já no fim;
- *   4. dizer quais zeraram e quanto sobrou nas outras.
+ *   1. escolher o insumo;
+ *   2. marcar os baldes que encheu e dizer se cada um ESTAVA VAZIO — é o
+ *      "estava vazio" que tira os lotes velhos do balde;
+ *   3. bipar os fardos e dizer QUANTO VOLTOU para o estoque do que não foi
+ *      inteiro (pegou 10 kg, voltou 3 kg).
  *
- * AS DUAS PESAGENS DO PASSO 2 são o que tira a suposição do caminho. Com uma
- * só, o quanto entrou saía de "peso final menos o que o SISTEMA achava que
- * havia" — e o sistema erra sempre que a produção consome diferente do
- * teórico. Com as duas, é subtração de medições, e a discordância com o saldo
- * suposto vira acerto de recipiente, com nome e movimento próprios.
+ * No fim do dia todo balde está cheio: é isso que o sistema assume.
  *
- * A diferença entre o que saiu das embalagens e o que entrou nos potes é
- * perda de abastecimento — gravada como movimento, sem travar nada.
- *
- * Os outros modos de armazenamento (pacote do fornecedor, porcionado, e o que
- * pergunta a cada pacote) continuam na TransferenciaPage, em /transferencia/scan.
+ * Os outros modos de armazenamento (pacote do fornecedor, porcionado, óleo e
+ * ovo) continuam em "Levar embalagem original", em /transferencia/scan.
  */
 
-type Passo = 'insumo' | 'potes' | 'lotes' | 'fechar' | 'sucesso'
+type Passo = 'insumo' | 'baldes' | 'lotes' | 'sucesso'
 
-type Pote = {
-  local_id: string
-  nome: string
-  capacidade: number | null
-  ja_tem: number
-  peso_tara: number | null
-  /** Última vez que o pote foi pesado (contagem ou reabastecimento). null = nunca. */
-  conferido_em: string | null
-}
+type Balde = { local_id: string; nome: string; lotes: number }
 
 type InsumoAlvo = {
   insumo_id: string
   codigo: string
   nome: string
   unidade: UnidadeMedida
-  potes: Pote[]
-  conteudo: number
-  capacidade: number
+  baldes: Balde[]
   /** O que está disponível no estoque central, para orientar quem vai buscar. */
   lotes_ec: number
   saldo_ec: number
 }
 
-type LoteBipado = {
-  id: string
-  codigo: string
-  saldo: number
-  unidade: UnidadeMedida
-  /** Embalagem que já tinha sido aberta antes desta operação. */
-  aberto: boolean
-}
-
-/**
- * O que foi feito com a embalagem depois de encher os potes.
- *
- * As três dizem coisas diferentes, e a diferença é o que separa saldo de perda:
- *
- *   nao_pesei  guardei o resto sem pesar. O quanto saiu vem da balança do pote,
- *              e o saldo que fica é deduzido — o lote sai marcado como estimado.
- *   pesou      pesei a sobra. Número firme, e é ele que manda.
- *   zerou      acabou, foi para o lixo. O que não entrou no pote é perda.
- */
-type RespostaEmbalagem = 'nao_pesei' | 'pesou' | 'zerou'
-
-/** Quanto foi declarado num pote, ou o motivo de o número não servir. */
-type Colocado =
-  | { estado: 'vazio' }
-  | { estado: 'erro'; mensagem: string }
-  | {
-      estado: 'ok'
-      /** O que havia no pote antes, medido: zero se chegou vazio. */
-      antes: number
-      colocou: number
-      conteudoFinal: number
-      /** Medido menos o que o sistema supunha. Diferente de zero = acerto. */
-      acerto: number
-      /** "Não foi usado": o antes é a última pesagem, não uma medição de agora. */
-      naoUsado: boolean
-      /** "Não foi usado" sem pesar o depois: vai só como declaração. */
-      semDepois: boolean
-    }
-
-/** "28/09 16:13", no fuso de quem está olhando. */
-function dataCurta(iso: string): string {
-  const d = new Date(iso)
-  const p = (n: number) => String(n).padStart(2, '0')
-  return `${p(d.getDate())}/${p(d.getMonth() + 1)} ${p(d.getHours())}:${p(d.getMinutes())}`
-}
+type LoteBipado = { id: string; codigo: string; saldo: number; unidade: UnidadeMedida }
 
 export function AbastecimentoPage() {
   const { profile } = useAuth()
@@ -117,92 +58,25 @@ export function AbastecimentoPage() {
 
   const [passo, setPasso] = useState<Passo>('insumo')
   const [carregando, setCarregando] = useState(true)
-  // Muda quando a lista precisa ser relida — depois de abastecer, os saldos
-  // que a tela mostra estão velhos.
+  // Muda quando a lista precisa ser relida, depois de reabastecer.
   const [recarga, setRecarga] = useState(0)
   const [insumos, setInsumos] = useState<InsumoAlvo[]>([])
   const [alvo, setAlvo] = useState<InsumoAlvo | null>(null)
-  /** Insumos contados em garrafas/pacotes, e o escolhido (migration 126). */
-  const [porUnidade, setPorUnidade] = useState<(InsumoPorUnidade & { codigo: string })[]>([])
-  const [alvoUnidade, setAlvoUnidade] = useState<InsumoPorUnidade | null>(null)
-  /** Peso da embalagem do fornecedor vazia, em gramas, por insumo (migration 124). */
-  const [taraEmbalagem, setTaraEmbalagem] = useState<Record<string, number>>({})
 
-  // Passo 2 — o que a balança disse, por pote. Texto, porque o campo é texto:
-  // converter cedo transforma "12," em 12 e o operador perde o que digitou.
-  /** Peso na balança DEPOIS de encher. */
-  const [pesos, setPesos] = useState<Record<string, string>>({})
-  /**
-   * Peso na balança ANTES de encher, e quais chegaram vazios.
-   *
-   * É esta pesagem que tira a suposição do caminho: `colocou` vira subtração de
-   * duas medições, e a diferença entre o que a balança acusa e o que o sistema
-   * supunha aparece com nome próprio (acerto de balde) em vez de se esconder
-   * dentro do excesso no fim.
-   */
-  const [pesosAntes, setPesosAntes] = useState<Record<string, string>>({})
-  const [vazios, setVazios] = useState<Record<string, boolean>>({})
-  /**
-   * Pote que o operador declarou vazio quando o sistema esperava conteúdo.
-   *
-   * Declarar vazio apaga dos livros o que estivesse ali dentro, e é um erro que
-   * só aparece semanas depois, na auditoria. Com o balde voltando pela metade
-   * virando rotina, "chegou vazio" deixa de ser o caso comum e o dedo erra
-   * mais — por isso a pergunta, em vez de só a dica na tela.
-   */
-  const [confirmarVazio, setConfirmarVazio] = useState<Pote | null>(null)
-  const [taras, setTaras] = useState<Record<string, string>>({})
-  /**
-   * Potes declarados "Não foi usado" (migration 125).
-   *
-   * O consumo teórico sai dos potes pela fila, não pelo que a equipe abriu, e
-   * um pote intocado aparece vazio. Pesar pote intocado para provar isso toma
-   * tempo (Lucca, 28/09/2026): o botão devolve a ele o que o teórico tirou
-   * desde a última pesagem, nos mesmos lotes, e dispensa a pesagem do antes.
-   */
-  const [naoUsados, setNaoUsados] = useState<Record<string, boolean>>({})
-  /** Por pote, quanto o teórico tirou dele desde a última pesagem. */
-  const [desdePesagem, setDesdePesagem] = useState<Record<string, number>>({})
+  /** Por balde enchido: estava vazio? `undefined` = ainda não respondeu. */
+  const [enchidos, setEnchidos] = useState<Record<string, boolean | undefined>>({})
 
-  // Passo 3
   const [lotes, setLotes] = useState<LoteBipado[]>([])
+  /** Quanto voltou de cada fardo, como texto — "3," não pode virar 3 no meio da digitação. */
+  const [voltou, setVoltou] = useState<Record<string, string>>({})
   const [erroScan, setErroScan] = useState('')
-
-  /**
-   * Passo 4 — o que aconteceu com cada embalagem.
-   *
-   * `nao_pesei` é o padrão porque é o caso comum: ninguém põe um fardo de 25 kg
-   * na balança para devolvê-lo à prateleira. Enquanto essa resposta não existiu,
-   * quem não tinha o número só conseguia seguir por "Zerou" — e "Zerou" manda
-   * para o lixo tudo o que não entrou no pote. Foram 47 kg de insumo escritos
-   * como desperdício em quatro dias (migration 113).
-   */
-  const [respostas, setRespostas] = useState<Record<string, RespostaEmbalagem>>({})
-  /** O peso digitado, quando a resposta foi `pesou`. */
-  const [sobras, setSobras] = useState<Record<string, string>>({})
-  /** Embalagem que o operador declarou vazia — pergunta antes, como no balde. */
-  const [confirmarZerou, setConfirmarZerou] = useState<LoteBipado | null>(null)
-  // Explicação exigida quando os potes recebem muito mais do que saiu.
-  const [justExcesso, setJustExcesso] = useState('')
-  /** "Conferi, a perda é real" — só existe quando a perda é grande. */
-  const [perdaConferida, setPerdaConferida] = useState(false)
 
   const [erro, setErro] = useState('')
   const [salvando, setSalvando] = useState(false)
   const [confirmar, setConfirmar] = useState(false)
-  /** Confirmação do "Não foi usado" registrado sozinho (migration 128). */
-  const [confirmarDecl, setConfirmarDecl] = useState(false)
-  const [sucesso, setSucesso] = useState<{
-    colocado: number; consumido: number; perda: number; recipientes: string
-    ajustes: { codigo: string; sobra_declarada: number; sobra_ajustada: number }[]
-    potesCederam: number
-    /** Só "Não foi usado": nada entrou, nada saiu do estoque central. */
-    soDeclaracao?: boolean
-  } | null>(null)
+  const [sucesso, setSucesso] = useState<{ levou: number; baldes: number; esvaziados: number } | null>(null)
 
-  const b = bancada(alvo?.unidade ?? '')
-
-  // ── Passo 1: o que existe para abastecer ──────────────────
+  // ── Passo 1: o que existe para reabastecer ────────────────
 
   useEffect(() => {
     if (!profile) return
@@ -211,95 +85,68 @@ export function AbastecimentoPage() {
     async function carregar() {
       const empresa = profile!.empresa_id
 
-      const [comp, locs, cfg, tarasEmb, lotesEc] = await Promise.all([
+      const [comp, locs, cfg, lotesEc, conteudo] = await Promise.all([
         supabase
           .from('v_recipientes_composicao')
-          .select('local_id, local_nome, capacidade_max, insumo_id, insumo_codigo, '
-                + 'insumo_nome, unidade_medida, quantidade_total')
+          .select('local_id, local_nome, insumo_id, insumo_codigo, insumo_nome, unidade_medida')
           .eq('empresa_id', empresa),
-        // A view não traz `peso_tara` nem `efemero`, e os dois importam: a tara
-        // para converter o peso do pote, e o `efemero` para não listar as
-        // embalagens do fornecedor que viraram ponto de consumo (migration 073).
+        // A view não traz `efemero`: sem ele a lista mostraria as embalagens do
+        // fornecedor que viraram ponto de consumo (migration 073).
         supabase
           .from('locais')
-          .select('id, peso_tara, efemero, conteudo_conferido_em')
+          .select('id, efemero')
           .eq('empresa_id', empresa)
           .eq('tipo', 'estoque_produtivo')
           .eq('ativo', true),
-        supabase.from('insumos_armazenamento_config')
-          .select('insumo_id, modo_ep, insumo:insumos(nome, codigo, empresa_id)'),
-        supabase.from('insumos_embalagem_config')
-          .select('insumo_id, tara_embalagem_g, tem_subunidades, subunidade_tipo, subunidade_peso'),
+        supabase.from('insumos_armazenamento_config').select('insumo_id, modo_ep'),
         supabase
           .from('lotes')
           .select('id, insumo_id, quantidade_disponivel')
           .eq('empresa_id', empresa)
           .eq('status', 'ativo')
           .gt('quantidade_disponivel', 0),
+        supabase.from('locais_lotes').select('local_id'),
       ])
 
       if (!vivo) return
 
-      const extras = new Map(
-        ((locs.data ?? []) as {
-          id: string; peso_tara: number | null; efemero: boolean
-          conteudo_conferido_em: string | null
-        }[])
-          .map(l => [l.id, l]),
+      const efemero = new Map(
+        ((locs.data ?? []) as { id: string; efemero: boolean }[]).map(l => [l.id, l.efemero]),
       )
-      // Sem linha de config o insumo é de recipiente — é o mesmo padrão que a
-      // TransferenciaPage aplica (`modo_ep ?? 'recipiente'`).
-      setTaraEmbalagem(Object.fromEntries(
-        ((tarasEmb.data ?? []) as { insumo_id: string; tara_embalagem_g: number | null }[])
-          .filter(t => Number(t.tara_embalagem_g) > 0)
-          .map(t => [t.insumo_id, Number(t.tara_embalagem_g)]),
-      ))
-
+      // Sem linha de config o insumo é de recipiente (`modo_ep ?? 'recipiente'`).
       const modos = new Map(
         ((cfg.data ?? []) as { insumo_id: string; modo_ep: string | null }[])
           .map(c => [c.insumo_id, c.modo_ep ?? 'recipiente']),
       )
+      const lotesNoBalde = new Map<string, number>()
+      for (const l of (conteudo.data ?? []) as { local_id: string }[]) {
+        lotesNoBalde.set(l.local_id, (lotesNoBalde.get(l.local_id) ?? 0) + 1)
+      }
 
       const porInsumo = new Map<string, InsumoAlvo>()
-
       for (const linha of (comp.data ?? []) as unknown as {
-        local_id: string; local_nome: string; capacidade_max: number | null
-        insumo_id: string; insumo_codigo: string; insumo_nome: string
-        unidade_medida: UnidadeMedida; quantidade_total: number
+        local_id: string; local_nome: string
+        insumo_id: string; insumo_codigo: string; insumo_nome: string; unidade_medida: UnidadeMedida
       }[]) {
-        const extra = extras.get(linha.local_id)
-        if (!extra || extra.efemero) continue
+        if (!efemero.has(linha.local_id) || efemero.get(linha.local_id)) continue
         if ((modos.get(linha.insumo_id) ?? 'recipiente') !== 'recipiente') continue
 
         let ins = porInsumo.get(linha.insumo_id)
         if (!ins) {
           ins = {
-            insumo_id: linha.insumo_id,
-            codigo: linha.insumo_codigo,
-            nome: linha.insumo_nome,
-            unidade: linha.unidade_medida,
-            potes: [], conteudo: 0, capacidade: 0,
-            lotes_ec: 0, saldo_ec: 0,
+            insumo_id: linha.insumo_id, codigo: linha.insumo_codigo, nome: linha.insumo_nome,
+            unidade: linha.unidade_medida, baldes: [], lotes_ec: 0, saldo_ec: 0,
           }
           porInsumo.set(linha.insumo_id, ins)
         }
-
-        ins.potes.push({
-          local_id: linha.local_id,
-          nome: linha.local_nome,
-          capacidade: linha.capacidade_max,
-          ja_tem: Number(linha.quantidade_total ?? 0),
-          peso_tara: extra.peso_tara,
-          conferido_em: extra.conteudo_conferido_em,
+        ins.baldes.push({
+          local_id: linha.local_id, nome: linha.local_nome,
+          lotes: lotesNoBalde.get(linha.local_id) ?? 0,
         })
-        ins.conteudo += Number(linha.quantidade_total ?? 0)
-        ins.capacidade += Number(linha.capacidade_max ?? 0)
       }
 
-      // A tela não aponta mais qual embalagem pegar: a trava FEFO saiu
-      // (migration 142) e o operador escolhe. Fica só a dica fixa no passo 3.
       for (const l of (lotesEc.data ?? []) as unknown as {
-        id: string; insumo_id: string; quantidade_disponivel: number
+        insumo_id: string; quantidade_disponivel: number
       }[]) {
         const ins = porInsumo.get(l.insumo_id)
         if (!ins) continue
@@ -307,46 +154,7 @@ export function AbastecimentoPage() {
         ins.saldo_ec += Number(l.quantidade_disponivel ?? 0)
       }
 
-      for (const ins of porInsumo.values()) {
-        ins.potes.sort((x, y) => ordemNatural(x.nome, y.nome))
-      }
-
-      // Óleo e ovo em pó: sem pote, contados em garrafas e pacotes (migration
-      // 126). A lista sai do cadastro, não da view — com a produção zerada o
-      // insumo precisa continuar aparecendo aqui.
-      const subunidades = new Map(
-        ((tarasEmb.data ?? []) as {
-          insumo_id: string; tem_subunidades: boolean
-          subunidade_tipo: string | null; subunidade_peso: number | null
-        }[])
-          .filter(e => e.tem_subunidades && Number(e.subunidade_peso) > 0)
-          .map(e => [e.insumo_id, e]),
-      )
-      const conteudoEp = new Map<string, number>()
-      for (const linha of (comp.data ?? []) as unknown as { insumo_id: string; quantidade_total: number }[]) {
-        conteudoEp.set(linha.insumo_id, (conteudoEp.get(linha.insumo_id) ?? 0) + Number(linha.quantidade_total ?? 0))
-      }
-      setPorUnidade(
-        ((cfg.data ?? []) as unknown as {
-          insumo_id: string; modo_ep: string | null
-          insumo: { nome: string; codigo: string; empresa_id: string } | null
-        }[])
-          .filter(c => c.modo_ep === 'unidade' && c.insumo?.empresa_id === empresa
-                    && subunidades.has(c.insumo_id))
-          .map(c => {
-            const e = subunidades.get(c.insumo_id)!
-            return {
-              insumo_id: c.insumo_id,
-              nome: c.insumo!.nome,
-              tem: conteudoEp.get(c.insumo_id) ?? 0,
-              peso: Number(e.subunidade_peso),
-              tipo: e.subunidade_tipo ?? 'unidade',
-              codigo: c.insumo!.codigo,
-            }
-          })
-          .sort((x, y) => ordemNatural(x.codigo, y.codigo)),
-      )
-
+      for (const ins of porInsumo.values()) ins.baldes.sort((x, y) => ordemNatural(x.nome, y.nome))
       setInsumos([...porInsumo.values()].sort((x, y) => ordemNatural(x.codigo, y.codigo)))
       setCarregando(false)
     }
@@ -355,183 +163,26 @@ export function AbastecimentoPage() {
     return () => { vivo = false }
   }, [profile?.empresa_id, recarga])
 
-  // Quanto cada pote do insumo escolhido recuperaria com "Não foi usado". É a
-  // mesma função que o banco usa na hora de gravar, para a tela não prometer
-  // um número diferente.
-  useEffect(() => {
-    if (!alvo) { setDesdePesagem({}); return }
-    let vivo = true
-    Promise.all(alvo.potes.map(async p => {
-      const { data } = await supabase.rpc('consumo_teorico_desde_pesagem', { p_local_id: p.local_id })
-      const total = ((data ?? []) as { quantidade: number }[])
-        .reduce((s, l) => s + Number(l.quantidade), 0)
-      return [p.local_id, Number(total.toFixed(3))] as const
-    })).then(pares => { if (vivo) setDesdePesagem(Object.fromEntries(pares)) })
-    return () => { vivo = false }
-  }, [alvo?.insumo_id])
+  // ── Passo 2: os baldes ────────────────────────────────────
 
-  /** O que o pote volta a ter com "Não foi usado": o de agora + o que o teórico tirou. */
-  const voltaATer = (pote: Pote): number =>
-    Number((pote.ja_tem + (desdePesagem[pote.local_id] ?? 0)).toFixed(6))
+  const marcados = alvo ? alvo.baldes.filter(bd => bd.local_id in enchidos) : []
+  const faltaResponder = marcados.filter(bd => enchidos[bd.local_id] === undefined)
+  const podeIrAosFardos = marcados.length > 0 && faltaResponder.length === 0
 
-  // ── Passo 2: o que cada pote recebeu ──────────────────────
-
-  /**
-   * Do peso na balança para o que entrou no pote.
-   *
-   * O campo é o peso BRUTO — pote e conteúdo — porque é o que o visor mostra
-   * e é o único jeito de matar o erro de contar embalagens: quem esquece que
-   * colocou oito e registra nove some com um pacote no estoque. A tara vem do
-   * cadastro do recipiente e vale para as duas pesagens.
-   *
-   * DUAS PESAGENS, NÃO UMA. Antes o que entrou era `peso final menos o que o
-   * sistema achava que havia dentro` — e o sistema erra sempre que a produção
-   * consome diferente do teórico. Agora é subtração de duas medições, e a
-   * discordância com o sistema vira `acerto`, que a tela mostra em vez de
-   * deixar virar "os potes receberam a mais" no fim.
-   */
-  function colocadoNo(pote: Pote): Colocado {
-    const bruto = (pesos[pote.local_id] ?? '').replace(',', '.').trim()
-    const naoUsado = !!naoUsados[pote.local_id]
-
-    // "Não foi usado" sem o depois: só a declaração. O pote volta à última
-    // pesagem e não recebe nada.
-    if (naoUsado && bruto === '') {
-      const antes = voltaATer(pote)
-      return {
-        estado: 'ok', antes, colocou: 0, conteudoFinal: antes, acerto: 0,
-        naoUsado: true, semDepois: true,
-      }
-    }
-    if (bruto === '') return { estado: 'vazio' }
-
-    const n = parseFloat(bruto)
-    if (isNaN(n) || n < 0) return { estado: 'erro', mensagem: 'Peso inválido.' }
-
-    // A tara sai do cadastro do pote; enquanto ela não existe, o que foi
-    // digitado agora serve — e é salvo assim que o operador confirma.
-    // `parseFloat` devolve NaN, não null, então `??` não filtraria nada aqui.
-    let tara = 0
-    if (usaTara(alvo?.unidade ?? '')) {
-      const digitada = parseFloat((taras[pote.local_id] ?? '').replace(',', '.'))
-      tara = pote.peso_tara ?? (isNaN(digitada) ? 0 : digitada)
-      if (tara <= 0) {
-        return { estado: 'erro', mensagem: 'Informe primeiro o peso do pote vazio.' }
-      }
-    }
-
-    // O que havia antes: zero se o operador disse que chegou vazio, senão a
-    // pesagem. Sem uma das duas respostas não há o que calcular.
-    let antes: number
-    if (naoUsado) {
-      antes = voltaATer(pote)
-    } else if (vazios[pote.local_id]) {
-      antes = 0
-    } else {
-      const brutoAntes = (pesosAntes[pote.local_id] ?? '').replace(',', '.').trim()
-      if (brutoAntes === '') {
-        return {
-          estado: 'erro',
-          mensagem: 'Diga se o pote chegou vazio ou pese o que havia dentro dele.',
-        }
-      }
-      const na = parseFloat(brutoAntes)
-      if (isNaN(na) || na < 0) return { estado: 'erro', mensagem: 'Peso inválido.' }
-      antes = daBancada(Math.max(0, na - tara), b.fator)
-    }
-
-    const conteudoFinal = daBancada(Math.max(0, n - tara), b.fator)
-    const colocou = Number((conteudoFinal - antes).toFixed(6))
-
-    if (naoUsado) {
-      // Até 2% abaixo da última pesagem é ruído de balança: não recebeu nada e
-      // vale o número de agora — mesma regra do banco (migration 125).
-      if (colocou < 0 && -colocou > antes * 0.02 + 0.0005) {
-        return {
-          estado: 'erro',
-          mensagem: `Pesou ${formatQty(conteudoFinal, alvo!.unidade)}, menos do que os `
-                  + `${formatQty(antes, alvo!.unidade)} da última pesagem — então ele foi usado. `
-                  + 'Desmarque "Não foi usado" e pese o antes.',
-        }
-      }
-      const recebeu = Math.max(0, colocou)
-      return {
-        estado: 'ok',
-        antes: recebeu > 0 ? antes : conteudoFinal,
-        colocou: recebeu,
-        conteudoFinal,
-        acerto: 0,
-        naoUsado: true,
-        semDepois: false,
-      }
-    }
-
-    if (colocou < -0.0005) {
-      return {
-        estado: 'erro',
-        mensagem: `O pote terminou com ${formatQty(conteudoFinal, alvo!.unidade)} e começou com `
-                + `${formatQty(antes, alvo!.unidade)}. Confira a balança ou a tara.`,
-      }
-    }
-    if (colocou <= 0) {
-      return { estado: 'erro', mensagem: 'Este pote não recebeu nada — deixe o campo em branco.' }
-    }
-
-    return {
-      estado: 'ok',
-      antes,
-      colocou,
-      conteudoFinal,
-      acerto: Number((antes - pote.ja_tem).toFixed(6)),
-      naoUsado: false,
-      semDepois: false,
-    }
-  }
-
-  const potesDeclarados = useMemo(() => {
-    if (!alvo) return []
-    return alvo.potes
-      .map(p => ({ pote: p, res: colocadoNo(p) }))
-      .filter((x): x is { pote: Pote; res: Extract<Colocado, { estado: 'ok' }> } =>
-        x.res.estado === 'ok')
-  }, [alvo, pesos, pesosAntes, vazios, taras, naoUsados, desdePesagem])
-
-  const temErroDePeso = useMemo(
-    () => (alvo?.potes ?? []).some(p => colocadoNo(p).estado === 'erro'),
-    [alvo, pesos, pesosAntes, vazios, taras, naoUsados, desdePesagem],
-  )
-
-  const colocado = potesDeclarados.reduce((s, x) => s + x.res.colocou, 0)
-
-  /**
-   * Só "Não foi usado", sem nenhum pote recebendo insumo (migration 128).
-   *
-   * O reabastecimento começa com a produção ainda rodando: o #1 é recarregado
-   * à tarde e só no fim do dia se sabe que o #3 ficou intocado. Aí não há
-   * embalagem para bipar — a declaração vai sozinha.
-   */
-  const soDeclaracao = colocado <= 0 && potesDeclarados.length > 0
-    && potesDeclarados.every(x => x.res.naoUsado)
-
-  /** A tara digitada agora vale para sempre: é atributo do pote, não da operação. */
-  async function salvarTara(pote: Pote) {
-    const valor = parseFloat((taras[pote.local_id] ?? '').replace(',', '.'))
-    if (isNaN(valor) || valor <= 0 || !alvo) return
-    await supabase.from('locais').update({ peso_tara: valor }).eq('id', pote.local_id)
-    setAlvo({
-      ...alvo,
-      potes: alvo.potes.map(p => p.local_id === pote.local_id ? { ...p, peso_tara: valor } : p),
+  function alternarBalde(id: string) {
+    setEnchidos(prev => {
+      const novo = { ...prev }
+      if (id in novo) delete novo[id]
+      else novo[id] = undefined
+      return novo
     })
   }
 
-  // ── Passo 3: as embalagens que foram usadas ───────────────
+  // ── Passo 3: os fardos ────────────────────────────────────
 
   /**
-   * Aceita o lote lido, qualquer que seja: a trava FEFO saiu (migration 142).
-   *
-   * `validar_scan_lote` também cobra capacidade — e aqui isso não faz sentido:
-   * os potes já foram enchidos, o espaço livre já é zero, e a trava dispararia
-   * em toda leitura. O que aconteceu já aconteceu; a bipagem só registra.
+   * Aceita o fardo lido, qualquer que seja: a trava FEFO saiu (142) e a de
+   * capacidade não faz sentido aqui — os baldes já foram enchidos.
    */
   async function bipar(qr: string) {
     setErroScan('')
@@ -539,13 +190,13 @@ export function AbastecimentoPage() {
 
     const { data: loteData } = await supabase
       .from('lotes')
-      .select('id, codigo, insumo_id, unidade, quantidade_disponivel, quantidade_recebida, status')
+      .select('id, codigo, insumo_id, unidade, quantidade_disponivel, status')
       .eq('codigo', parseLoteDoInsumo(qr, alvo.codigo))
       .maybeSingle()
 
     const lote = loteData as {
       id: string; codigo: string; insumo_id: string; unidade: UnidadeMedida
-      quantidade_disponivel: number; quantidade_recebida: number; status: string
+      quantidade_disponivel: number; status: string
     } | null
 
     if (!lote) { setErroScan(`QR não reconhecido: ${qr}`); return }
@@ -557,206 +208,75 @@ export function AbastecimentoPage() {
       setErroScan(`${lote.codigo} não está disponível no estoque central (${lote.status}).`)
       return
     }
-    if (lotes.some(l => l.id === lote.id)) {
-      setErroScan('Esta embalagem já foi bipada.')
-      return
-    }
+    if (lotes.some(l => l.id === lote.id)) { setErroScan('Este fardo já foi bipado.'); return }
 
     const { data } = await supabase.rpc('validar_scan_lote', {
-      p_empresa_id:    profile.empresa_id,
-      p_lote_id:       lote.id,
-      p_ja_escaneados: lotes.map(l => l.id),
-      p_justificativa: null,
+      p_empresa_id: profile.empresa_id, p_lote_id: lote.id,
+      p_ja_escaneados: lotes.map(l => l.id), p_justificativa: null,
     })
-    const resp = data as {
-      ok?: boolean; erro?: string; trava?: string; modo?: string; mensagem?: string
-    } | null
-
-    // Erro de coerência (outro insumo, outra marca) continua valendo; a trava de
-    // capacidade é ignorada de propósito.
+    const resp = data as { erro?: string; trava?: string } | null
+    // Erro de coerência (outro insumo, outra marca) vale; a trava de capacidade não.
     if (resp?.erro && !resp?.trava) { setErroScan(resp.erro); return }
 
     setLotes(prev => [...prev, {
-      id: lote.id,
-      codigo: lote.codigo,
-      saldo: Number(lote.quantidade_disponivel),
-      unidade: lote.unidade,
-      aberto: Number(lote.quantidade_disponivel) < Number(lote.quantidade_recebida),
+      id: lote.id, codigo: lote.codigo, saldo: Number(lote.quantidade_disponivel), unidade: lote.unidade,
     }])
   }
 
-  // ── Passo 4: o que zerou e o que sobrou ───────────────────
-
-  const respostaDe = (lote: LoteBipado): RespostaEmbalagem =>
-    respostas[lote.id] ?? 'nao_pesei'
-
-  /** A tara da embalagem do insumo deste abastecimento, na unidade de bancada (g ou ml). */
-  const taraBancada = alvo ? (taraEmbalagem[alvo.insumo_id] ?? 0) : 0
-
-  /**
-   * A sobra que o operador MEDIU. `null` quando ninguém pesou.
-   *
-   * Pesa-se a embalagem inteira; a tara do cadastro sai aqui (migration 124).
-   * Antes a tela dizia "não precisa descontar o peso da embalagem" e ninguém
-   * descontava — o saco entrava no estoque como insumo.
-   */
-  function sobraDe(lote: LoteBipado): number | null {
-    if (respostaDe(lote) === 'zerou') return 0
-    if (respostaDe(lote) !== 'pesou') return null
-    const txt = (sobras[lote.id] ?? '').replace(',', '.').trim()
-    if (txt === '') return null
+  /** Quanto voltou, ou o motivo de o número não servir. Em branco = voltou nada. */
+  function voltouDe(l: LoteBipado): { ok: true; valor: number } | { ok: false; msg: string } {
+    const txt = (voltou[l.id] ?? '').replace(',', '.').trim()
+    if (txt === '') return { ok: true, valor: 0 }
     const n = parseFloat(txt)
-    if (isNaN(n) || n < 0) return null
-    return daBancada(Math.max(0, n - taraBancada), b.fator)
+    if (isNaN(n) || n < 0) return { ok: false, msg: 'Número inválido.' }
+    if (n >= l.saldo) return { ok: false, msg: `Ele só tinha ${formatQty(l.saldo, l.unidade)}: se voltou tudo, tire da lista.` }
+    return { ok: true, valor: n }
   }
 
-  /** Só falta responder quem escolheu "Sobrou" e ainda não digitou o peso. */
-  const respondidos = lotes.filter(l => respostaDe(l) !== 'pesou' || sobraDe(l) !== null)
-  const sobraExcedida = lotes.some(l => {
-    const s = sobraDe(l)
-    return s !== null && s > l.saldo + 0.001
-  })
+  const levou = lotes.reduce((s, l) => {
+    const v = voltouDe(l)
+    return s + (v.ok ? l.saldo - v.valor : 0)
+  }, 0)
+  const podeRegistrar = lotes.length > 0 && lotes.every(l => voltouDe(l).ok)
 
-  const naoPesados = lotes.filter(l => respostaDe(l) === 'nao_pesei')
-  const medidos = lotes.filter(l => respostaDe(l) !== 'nao_pesei')
-
-  /**
-   * O mesmo cálculo da migration 113, para a tela não prometer um número
-   * diferente do que o banco vai gravar.
-   *
-   * Quem foi pesado manda. O que entrou nos potes e não veio dessas embalagens
-   * saiu das que ninguém pesou — a balança do pote é quem responde por elas,
-   * esvaziando a mais velha antes de abrir a próxima.
-   */
-  const consumidoMedido = medidos.reduce((s, l) => s + (l.saldo - (sobraDe(l) ?? 0)), 0)
-  let porAtribuir = Math.max(0, Number((colocado - consumidoMedido).toFixed(3)))
-  const saiuDeCada = new Map<string, number>()
-  for (const l of naoPesados) {
-    const leva = Math.min(porAtribuir, l.saldo)
-    saiuDeCada.set(l.id, leva)
-    porAtribuir = Number((porAtribuir - leva).toFixed(3))
-  }
-  const consumido = Number(
-    (consumidoMedido + [...saiuDeCada.values()].reduce((a, x) => a + x, 0)).toFixed(3))
-  const perda = Math.max(0, Number((consumido - colocado).toFixed(3)))
-
-  /** Quanto saiu desta embalagem — medido para quem pesou, deduzido para o resto. */
-  const saiuDe = (l: LoteBipado): number =>
-    respostaDe(l) === 'nao_pesei'
-      ? (saiuDeCada.get(l.id) ?? 0)
-      : l.saldo - (sobraDe(l) ?? 0)
-
-  /**
-   * A folga de balança — mesma regra da migration 084, 2% do que saiu.
-   *
-   * O pote e a sobra são duas pesagens independentes, e duas medições nunca
-   * fecham no grama. Até 2% é ruído; acima disso o tamanho é de embalagem
-   * esquecida, e aí a tela pede uma explicação em vez de deixar passar calado.
-   */
-  const excesso = Number((colocado - consumido).toFixed(3))
-  const folga = Number((consumido * 0.02).toFixed(3))
-  const precisaExplicar = excesso > folga
-  /** Só dá para nomear o lote ajustado quando um único deles tem sobra medida. */
-  const unicoComSobra = medidos.filter(l => (sobraDe(l) ?? 0) > 0)
-
-  /**
-   * Perda grande quase nunca é perda: é sobra de embalagem digitada errado.
-   * Em 30/09/2026 a sobra do saco de Essência de Doce de Leite entrou como
-   * 0,52 kg em vez de 9,75, e 9,39 kg viraram perda sem ninguém perceber.
-   * Acima de 20% do que saiu (e de um mínimo absoluto, para o pote pequeno
-   * não disparar à toa), a tela pede para conferir antes de registrar.
-   */
-  const minimoPerda = alvo?.unidade === 'g' || alvo?.unidade === 'ml' ? 300
-    : alvo?.unidade === 'unid' ? 2 : 0.3
-  const perdaGrande = perda > minimoPerda && perda > consumido * 0.2
-
-  const podeFechar =
-    respondidos.length === lotes.length
-    && lotes.length > 0
-    && !sobraExcedida
-    && consumido > 0
-    && (!precisaExplicar || justExcesso.trim().length >= 5)
-    && (!perdaGrande || perdaConferida)
-
-  async function confirmarAbastecimento(soDecl = false) {
+  async function registrar() {
     if (!alvo || !profile) return
     setSalvando(true)
     setErro('')
 
-    const { data, error } = await supabase.rpc('registrar_abastecimento', {
+    const { data, error } = await supabase.rpc('registrar_reabastecimento_sem_peso', {
       p_empresa_id:     profile.empresa_id,
       p_responsavel_id: profile.id,
       p_insumo_id:      alvo.insumo_id,
-      // As duas pesagens, não o resultado da subtração: quem calcula quanto
-      // entrou é o banco, e é lá que a diferença com o saldo suposto vira
-      // acerto de recipiente.
-      //
-      // "Não foi usado" não manda o antes: quem sabe a última pesagem e o que o
-      // teórico tirou desde então é o banco (migration 125). Sem depois, o
-      // campo nem vai — o banco lê isso como "só a declaração".
-      p_potes: potesDeclarados.map(x => x.res.naoUsado
-        ? {
-            local_id:  x.pote.local_id,
-            nao_usado: true,
-            ...(x.res.semDepois ? {} : { depois: x.res.conteudoFinal }),
-            medido:    'pesado',
-          }
-        : {
-            local_id: x.pote.local_id,
-            antes:    x.res.antes,
-            depois:   x.res.conteudoFinal,
-            medido:   vazios[x.pote.local_id] ? 'vazio' : 'pesado',
-          }),
-      // `null` não é zero: zero afirma que a embalagem foi esvaziada, e é o
-      // banco que deduz quanto saiu de quem ninguém pesou (migration 113).
-      p_lotes: soDecl ? [] : lotes.map(l => ({ lote_id: l.id, sobra: sobraDe(l) })),
-      p_justificativa: justExcesso.trim() || null,
+      p_baldes: marcados.map(bd => ({ local_id: bd.local_id, estava_vazio: !!enchidos[bd.local_id] })),
+      p_lotes:  lotes.map(l => {
+        const v = voltouDe(l)
+        return { lote_id: l.id, voltou: v.ok ? v.valor : 0 }
+      }),
     })
 
     setSalvando(false)
     setConfirmar(false)
-    setConfirmarDecl(false)
 
-    const resp = data as {
-      ok: boolean; erro?: string; trava?: string; mensagem?: string
-      colocado?: number; consumido?: number; perda?: number; recipientes?: string
-      sobras_ajustadas?: { codigo: string; sobra_declarada: number; sobra_ajustada: number }[]
-      potes_cederam?: number
-    } | null
-
-    // O banco tem a última palavra sobre a folga: a tela calcula os 2% para
-    // avisar antes, mas quem decide é a RPC.
-    if (resp?.trava === 'excesso_abastecimento') {
-      setErro(resp.mensagem ?? 'Os recipientes receberam bem mais do que saiu das embalagens.')
-      return
-    }
+    const resp = data as { ok: boolean; erro?: string; levou?: number; baldes?: number; esvaziados?: number } | null
     if (error || !resp?.ok) {
-      setErro(resp?.erro ?? error?.message ?? 'Não foi possível registrar o abastecimento.')
+      setErro(resp?.erro ?? error?.message ?? 'Não foi possível registrar o reabastecimento.')
       return
     }
-
-    setSucesso({
-      colocado:    Number(resp.colocado ?? 0),
-      consumido:   Number(resp.consumido ?? 0),
-      perda:       Number(resp.perda ?? 0),
-      recipientes: resp.recipientes ?? '',
-      ajustes:     resp.sobras_ajustadas ?? [],
-      potesCederam: Number(resp.potes_cederam ?? 0),
-      soDeclaracao: soDecl,
-    })
+    setSucesso({ levou: Number(resp.levou ?? 0), baldes: Number(resp.baldes ?? 0), esvaziados: Number(resp.esvaziados ?? 0) })
     setPasso('sucesso')
+  }
+
+  function limpar() {
+    setEnchidos({}); setLotes([]); setVoltou({})
+    setErro(''); setErroScan('')
   }
 
   function recomecar() {
     setPasso('insumo')
     setAlvo(null)
-    setPesos({}); setPesosAntes({}); setVazios({}); setNaoUsados({}); setTaras({}); setLotes([]); setSobras({}); setRespostas({})
-    setErro(''); setErroScan('')
-    setJustExcesso('')
-    setPerdaConferida(false)
+    limpar()
     setSucesso(null)
-    // Os saldos mudaram — a lista do passo 1 tem de ser relida, senão a tela
-    // volta mostrando os potes como estavam antes de encher.
     setCarregando(true)
     setInsumos([])
     setRecarga(n => n + 1)
@@ -764,14 +284,12 @@ export function AbastecimentoPage() {
 
   // ── Render ────────────────────────────────────────────────
 
-  const PASSOS: Passo[] = ['insumo', 'potes', 'lotes', 'fechar']
+  const PASSOS: Passo[] = ['insumo', 'baldes', 'lotes']
   const indice = PASSOS.indexOf(passo)
 
   return (
     <div className="p-4 max-w-lg mx-auto">
       <div className="mb-6">
-        {/* Só no primeiro passo: depois de escolher o insumo, sair daqui é
-            abandonar o que já foi pesado. */}
         {passo === 'insumo' && (
           <button
             onClick={() => navigate('/transferencia')}
@@ -782,11 +300,11 @@ export function AbastecimentoPage() {
         )}
         <h1 className="text-xl font-bold text-gray-900 dark:text-unno-text">Reabastecer recipientes</h1>
         <p className="text-sm text-gray-500 dark:text-unno-muted mt-0.5">
-          Encha os potes, pese, e depois diga quais embalagens usou
+          Encha os baldes e bipe os fardos que usou. Sem pesar.
         </p>
       </div>
 
-      {passo !== 'sucesso' && !alvoUnidade && (
+      {passo !== 'sucesso' && (
         <div className="flex gap-1.5 mb-6">
           {PASSOS.map((s, i) => (
             <div
@@ -799,27 +317,18 @@ export function AbastecimentoPage() {
         </div>
       )}
 
-      {/* ── Óleo e ovo em pó: fluxo próprio, contado em unidades ── */}
-      {alvoUnidade && (
-        <AbastecimentoUnidades
-          insumo={alvoUnidade}
-          onVoltar={() => setAlvoUnidade(null)}
-          onConcluido={() => { setAlvoUnidade(null); recomecar() }}
-        />
-      )}
-
       {/* ── Passo 1: escolher o insumo ── */}
-      {passo === 'insumo' && !alvoUnidade && (
+      {passo === 'insumo' && (
         <div className="space-y-4">
-          {carregando && <p className="text-sm text-gray-500">Carregando os recipientes…</p>}
+          {carregando && <p className="text-sm text-gray-500">Carregando os baldes…</p>}
 
-          {!carregando && insumos.length === 0 && porUnidade.length === 0 && (
+          {!carregando && insumos.length === 0 && (
             <Card className="p-5">
               <p className="text-sm font-semibold text-gray-900 dark:text-unno-text">
-                Nenhum insumo com recipiente no estoque produtivo
+                Nenhum insumo com balde na produção
               </p>
               <p className="text-xs text-gray-600 dark:text-unno-muted mt-1">
-                Cadastre os potes, baldes e caixas antes de abastecer.
+                Cadastre os potes e baldes antes de reabastecer.
               </p>
               <Button variant="secondary" size="sm" className="mt-3" onClick={() => navigate('/recipientes')}>
                 Cadastrar recipiente
@@ -827,357 +336,130 @@ export function AbastecimentoPage() {
             </Card>
           )}
 
-          {insumos.map(ins => {
-            const falta = Math.max(ins.capacidade - ins.conteudo, 0)
-            const cheio = falta <= 0.001
-            const semLote = ins.lotes_ec === 0
-            const pct = ins.capacidade > 0
-              ? Math.min(100, Math.round((ins.conteudo / ins.capacidade) * 100))
-              : 0
-            return (
-              <Card
-                key={ins.insumo_id}
-                className={`p-4 ${cheio ? 'opacity-60' : ''}`}
-                onClick={() => {
-                  setAlvo(ins)
-                  setPesos({}); setPesosAntes({}); setVazios({}); setNaoUsados({}); setTaras({}); setLotes([]); setSobras({}); setRespostas({})
-                  setJustExcesso(''); setErro('')
-                  setPasso('potes')
-                }}
-              >
-                <div className="flex justify-between items-start gap-3">
-                  <div className="min-w-0">
-                    <p className="font-semibold text-gray-900 dark:text-unno-text truncate">{ins.nome}</p>
-                    <p className="text-xs text-gray-500 dark:text-unno-muted">
-                      {ins.potes.length} recipiente{ins.potes.length === 1 ? '' : 's'}
-                    </p>
-                  </div>
-                  <span className={`text-xs font-semibold shrink-0 ${cheio ? 'text-gray-400' : 'text-brand-700 dark:text-brand-400'}`}>
-                    {cheio ? 'Cheio' : `Cabe ${formatQty(falta, ins.unidade)}`}
-                  </span>
+          {insumos.map(ins => (
+            <Card
+              key={ins.insumo_id}
+              className="p-4"
+              onClick={() => { setAlvo(ins); limpar(); setPasso('baldes') }}
+            >
+              <div className="flex justify-between items-start gap-3">
+                <div className="min-w-0">
+                  <p className="font-semibold text-gray-900 dark:text-unno-text truncate">{ins.nome}</p>
+                  <p className="text-xs text-gray-500 dark:text-unno-muted">
+                    {ins.baldes.length} balde{ins.baldes.length === 1 ? '' : 's'}
+                  </p>
                 </div>
-
-                <div className="mt-3 h-2 rounded-full bg-gray-100 dark:bg-white/10 overflow-hidden">
-                  <div className="h-full bg-brand-500 rounded-full" style={{ width: `${pct}%` }} />
-                </div>
-                <p className="text-xs text-gray-500 dark:text-unno-muted mt-1">
-                  {formatQty(ins.conteudo, ins.unidade)} de {formatQty(ins.capacidade, ins.unidade)} nos potes
+              </div>
+              {ins.lotes_ec === 0 ? (
+                <p className="text-xs text-amber-700 mt-2">Sem fardo no estoque central para este insumo.</p>
+              ) : (
+                <p className="text-xs text-gray-500 dark:text-unno-muted mt-2">
+                  No estoque central: {formatQty(ins.saldo_ec, ins.unidade)} em {ins.lotes_ec}{' '}
+                  fardo{ins.lotes_ec === 1 ? '' : 's'}
                 </p>
-
-                {semLote ? (
-                  <p className="text-xs text-amber-700 mt-2">
-                    Sem embalagem no estoque central para este insumo.
-                  </p>
-                ) : (
-                  <p className="text-xs text-gray-500 dark:text-unno-muted mt-2">
-                    No estoque central: {formatQty(ins.saldo_ec, ins.unidade)} em {ins.lotes_ec}{' '}
-                    embalagem{ins.lotes_ec === 1 ? '' : 's'}
-                  </p>
-                )}
-              </Card>
-            )
-          })}
-
-          {!carregando && porUnidade.map(ins => {
-            const n = Math.floor(ins.tem / ins.peso + 0.0001)
-            return (
-              <Card key={ins.insumo_id} className="p-4" onClick={() => setAlvoUnidade(ins)}>
-                <div className="flex justify-between items-start gap-3">
-                  <div className="min-w-0">
-                    <p className="font-semibold text-gray-900 dark:text-unno-text truncate">{ins.nome}</p>
-                    <p className="text-xs text-gray-500 dark:text-unno-muted">
-                      contado em {ins.tipo}s, sem pesar
-                    </p>
-                  </div>
-                  <span className="text-xs font-semibold shrink-0 text-brand-700 dark:text-brand-400">
-                    Na produção: {n} {n === 1 ? ins.tipo : `${ins.tipo}s`}
-                  </span>
-                </div>
-              </Card>
-            )
-          })}
-
-          {/* O botão "Outro tipo de transferência" morava aqui, no fim da
-              rolagem e por baixo do dock do celular. Metade da operação —
-              glucose, doce de leite, desmoldante — ficava atrás dele sem que
-              nada na tela dissesse isso. Quem escolhe o caminho agora é a
-              porta de entrada, em /transferencia. */}
+              )}
+            </Card>
+          ))}
         </div>
       )}
 
-      {/* ── Passo 2: encher e pesar ── */}
-      {passo === 'potes' && alvo && (
+      {/* ── Passo 2: os baldes que encheu ── */}
+      {passo === 'baldes' && alvo && (
         <div className="space-y-4">
           <Card className="p-4">
-            <p className="text-xs text-gray-500 font-medium">ABASTECENDO</p>
+            <p className="text-xs text-gray-500 font-medium">REABASTECENDO</p>
             <p className="font-semibold text-gray-900 dark:text-unno-text">{alvo.nome}</p>
             <p className="text-xs text-gray-500 dark:text-unno-muted mt-1">
-              Para cada pote que você mexer: diga se ele chegou vazio ou pese o que
-              tinha dentro, encha, e pese de novo. Os que você não mexeu ficam em
-              branco.
+              Toque nos baldes que você encheu e diga se cada um estava vazio antes. Os que você
+              não mexeu ficam como estão.
             </p>
-            <DicaMaisAntiga />
           </Card>
 
-          {alvo.potes.map(pote => {
-            const res = colocadoNo(pote)
-            const precisaTara = usaTara(alvo.unidade) && !pote.peso_tara
-            const naoUsado = !!naoUsados[pote.local_id]
+          {alvo.baldes.map(bd => {
+            const marcado = bd.local_id in enchidos
+            const resposta = enchidos[bd.local_id]
             return (
-              <Card key={pote.local_id} className="p-4">
-                <div className="flex justify-between items-start gap-3 mb-3">
-                  <div className="min-w-0">
-                    <p className="font-semibold text-gray-900 dark:text-unno-text truncate">{pote.nome}</p>
-                    <p className="text-xs text-gray-500 dark:text-unno-muted">
-                      Já tinha {formatQty(pote.ja_tem, alvo.unidade)}
-                      {pote.capacidade != null && ` · comporta ${formatQty(pote.capacidade, alvo.unidade)}`}
-                    </p>
-                  </div>
-                </div>
+              <Card key={bd.local_id} className={`p-4 ${marcado ? 'ring-2 ring-brand-500' : ''}`}>
+                <button
+                  type="button"
+                  onClick={() => alternarBalde(bd.local_id)}
+                  className="w-full flex justify-between items-center gap-3 text-left"
+                >
+                  <span className="min-w-0">
+                    <span className="block font-semibold text-gray-900 dark:text-unno-text">{bd.nome}</span>
+                    <span className="block text-xs text-gray-500 dark:text-unno-muted">
+                      {bd.lotes === 0 ? 'nenhum lote registrado' : `${bd.lotes} lote${bd.lotes === 1 ? '' : 's'} registrado${bd.lotes === 1 ? '' : 's'} dentro`}
+                    </span>
+                  </span>
+                  <span className={`text-xs font-semibold shrink-0 ${marcado ? 'text-brand-700 dark:text-brand-400' : 'text-gray-400'}`}>
+                    {marcado ? '✓ Enchi este' : 'Toque se encheu'}
+                  </span>
+                </button>
 
-                {precisaTara ? (
-                  <div className="space-y-2">
-                    <Input
-                      label={`Peso do pote VAZIO (${b.rotulo})`}
-                      type="number"
-                      inputMode="decimal"
-                      value={taras[pote.local_id] ?? ''}
-                      onChange={e => setTaras(t => ({ ...t, [pote.local_id]: e.target.value }))}
-                      placeholder="Só uma vez: fica salvo no cadastro"
-                      hint="Sem a tara não dá para saber quanto tem dentro."
-                    />
-                    <Button
-                      variant="secondary" size="sm" fullWidth
-                      disabled={!(parseFloat((taras[pote.local_id] ?? '').replace(',', '.')) > 0)}
-                      onClick={() => salvarTara(pote)}
-                    >
-                      Salvar a tara
-                    </Button>
-                  </div>
-                ) : (
-                  <>
-                    {/* COMO O POTE CHEGOU. Duas respostas possíveis, e nenhuma
-                        delas é "cheio": cheio nunca é exato. Vazio se declara
-                        num toque; com conteúdo, pesa-se. */}
-                    <div className="flex gap-2 mb-3">
+                {marcado && (
+                  <div className="mt-3">
+                    <p className="text-sm text-gray-700 dark:text-unno-text mb-2">Estava vazio antes de encher?</p>
+                    <div className="grid grid-cols-2 gap-2">
                       <Button
-                        variant={vazios[pote.local_id] && !naoUsado ? 'primary' : 'ghost'}
-                        size="sm" fullWidth
-                        onClick={() => {
-                          setNaoUsados(n => ({ ...n, [pote.local_id]: false }))
-                          // Se o sistema espera conteúdo aqui, pergunta antes:
-                          // declarar vazio apaga o que estivesse dentro.
-                          if (pote.ja_tem > 0.0005) { setConfirmarVazio(pote); return }
-                          setVazios(v => ({ ...v, [pote.local_id]: true }))
-                          setPesosAntes(p => ({ ...p, [pote.local_id]: '' }))
-                        }}
+                        type="button" size="lg"
+                        variant={resposta === true ? 'primary' : 'secondary'}
+                        onClick={() => setEnchidos(prev => ({ ...prev, [bd.local_id]: true }))}
                       >
-                        Chegou vazio
+                        Sim, vazio
                       </Button>
                       <Button
-                        variant={vazios[pote.local_id] === false && !naoUsado ? 'primary' : 'ghost'}
-                        size="sm" fullWidth
-                        onClick={() => {
-                          setNaoUsados(n => ({ ...n, [pote.local_id]: false }))
-                          setVazios(v => ({ ...v, [pote.local_id]: false }))
-                        }}
+                        type="button" size="lg"
+                        variant={resposta === false ? 'primary' : 'secondary'}
+                        onClick={() => setEnchidos(prev => ({ ...prev, [bd.local_id]: false }))}
                       >
-                        Tinha sobra
-                      </Button>
-                      <Button
-                        variant={naoUsado ? 'primary' : 'ghost'}
-                        size="sm" fullWidth
-                        disabled={!pote.conferido_em}
-                        onClick={() => {
-                          // Segundo toque desmarca, como nos outros.
-                          setNaoUsados(n => ({ ...n, [pote.local_id]: !naoUsado }))
-                          setVazios(v => { const resto = { ...v }; delete resto[pote.local_id]; return resto })
-                          setPesosAntes(p => ({ ...p, [pote.local_id]: '' }))
-                        }}
-                      >
-                        Não foi usado
+                        Não, tinha sobra
                       </Button>
                     </div>
-
-                    {/* O que o botão vai fazer, antes de alguém apertar. */}
-                    {pote.conferido_em ? (
-                      <p className="text-xs text-gray-500 dark:text-unno-muted -mt-1 mb-3">
-                        Última pesagem {dataCurta(pote.conferido_em)}
-                        {' · '}"Não foi usado" volta a ter{' '}
-                        <strong className="text-gray-700 dark:text-unno-text">
-                          {formatQty(voltaATer(pote), alvo.unidade)}
-                        </strong>
-                      </p>
-                    ) : (
-                      <p className="text-xs text-gray-400 -mt-1 mb-3">
-                        Este pote nunca foi pesado — pese o antes.
-                      </p>
-                    )}
-
-                    {naoUsado && (
-                      <p className="text-xs text-amber-700 dark:text-amber-400 mb-3">
-                        Só marque se ninguém tirou nada deste pote desde a última
-                        pesagem. Se encheu, pese o depois; se não, deixe em branco.
-                      </p>
-                    )}
-
-                    {vazios[pote.local_id] === false && !naoUsado && (
-                      <Input
-                        label={usaTara(alvo.unidade)
-                          ? `Peso ANTES de encher, com o pote (${b.rotulo})`
-                          : `Quanto tinha ANTES de encher (${b.rotulo})`}
-                        type="number"
-                        inputMode="decimal"
-                        value={pesosAntes[pote.local_id] ?? ''}
-                        onChange={e => setPesosAntes(p => ({ ...p, [pote.local_id]: e.target.value }))}
-                        placeholder="O que voltou da produção"
-                        hint={`O sistema esperava ${formatQty(pote.ja_tem, alvo.unidade)}.`}
-                      />
-                    )}
-
-                    <Input
-                      label={usaTara(alvo.unidade)
-                        ? `Peso DEPOIS de encher, com o pote (${b.rotulo})`
-                        : `Quanto tem dentro agora (${b.rotulo})`}
-                      type="number"
-                      inputMode="decimal"
-                      value={pesos[pote.local_id] ?? ''}
-                      onChange={e => setPesos(p => ({ ...p, [pote.local_id]: e.target.value }))}
-                      placeholder="Em branco se não mexeu neste pote"
-                      error={res.estado === 'erro' ? res.mensagem : undefined}
-                      className={vazios[pote.local_id] === false && !naoUsado ? 'mt-2' : ''}
-                    />
-                    {res.estado === 'ok' && res.naoUsado && (
-                      <p className="text-xs text-emerald-700 dark:text-emerald-400 mt-2">
-                        {res.colocou > 0
-                          ? <>Volta a ter {formatQty(res.antes, alvo.unidade)} e entrou{' '}
-                              <strong>{formatQty(res.colocou, alvo.unidade)}</strong> — o pote fica com{' '}
-                              {formatQty(res.conteudoFinal, alvo.unidade)}.</>
-                          : <>Não recebeu nada — o pote fica com{' '}
-                              <strong>{formatQty(res.conteudoFinal, alvo.unidade)}</strong>.</>}
-                      </p>
-                    )}
-                    {res.estado === 'ok' && !res.naoUsado && (
-                      <>
-                        <p className="text-xs text-emerald-700 dark:text-emerald-400 mt-2">
-                          Entrou <strong>{formatQty(res.colocou, alvo.unidade)}</strong> — o pote fica com{' '}
-                          {formatQty(res.conteudoFinal, alvo.unidade)}
-                          {pote.capacidade != null && res.conteudoFinal > pote.capacidade && (
-                            <> , acima da capacidade cadastrada. Tudo bem: vale o que está no pote.</>
-                          )}
-                        </p>
-                        {/* O acerto sai da sombra. Antes esta diferença ia
-                            embutida no "os potes receberam a mais" do fim, e
-                            ninguém sabia de qual pote tinha vindo. */}
-                        {Math.abs(res.acerto) > 0.0005 && (
-                          <p className="text-xs text-amber-700 dark:text-amber-400 mt-1">
-                            O sistema esperava {formatQty(pote.ja_tem, alvo.unidade)} aqui dentro —
-                            acerto de <strong>{res.acerto > 0 ? '+' : '−'}
-                            {formatQty(Math.abs(res.acerto), alvo.unidade)}</strong>. Vale a balança.
-                          </p>
-                        )}
-                      </>
-                    )}
-                    {usaTara(alvo.unidade) && pote.peso_tara != null && (
-                      <p className="text-[0.7rem] text-gray-400 mt-1">
-                        Tara do pote: {pote.peso_tara} {b.rotulo}
-                      </p>
-                    )}
-                  </>
+                  </div>
                 )}
               </Card>
             )
           })}
 
-          <Card className="p-4">
-            <div className="flex justify-between text-sm">
-              <span className="text-gray-500 dark:text-unno-muted">Entrou nos potes</span>
-              <span className="font-bold text-brand-700 dark:text-brand-400 tabular-nums">
-                {formatQty(colocado, alvo.unidade)}
-              </span>
-            </div>
-          </Card>
-
-          {soDeclaracao && !temErroDePeso && (
-            <Button size="xl" fullWidth onClick={() => { setErro(''); setConfirmarDecl(true) }}>
-              Registrar só o "Não foi usado"
-            </Button>
-          )}
-          {erro && soDeclaracao && (
-            <div className="p-3 bg-red-50 border border-red-200 rounded-controle text-sm text-red-700">{erro}</div>
+          {faltaResponder.length > 0 && (
+            <p className="text-sm text-amber-700">
+              Falta dizer se estava vazio: {faltaResponder.map(bd => bd.nome).join(', ')}.
+            </p>
           )}
 
-          <Button
-            size="xl" fullWidth
-            className={soDeclaracao ? 'hidden' : ''}
-            disabled={colocado <= 0 || temErroDePeso}
-            onClick={() => { setErroScan(''); setPasso('lotes') }}
-          >
-            Continuar → bipar as embalagens
+          <Button size="xl" fullWidth disabled={!podeIrAosFardos} onClick={() => setPasso('lotes')}>
+            Continuar → bipar os fardos
           </Button>
-          <Button variant="ghost" size="lg" fullWidth onClick={() => setPasso('insumo')}>
-            ← Trocar de insumo
+          <Button variant="ghost" size="lg" fullWidth onClick={() => { setAlvo(null); setPasso('insumo') }}>
+            ← Escolher outro insumo
           </Button>
         </div>
       )}
 
-      {/* ── Passo 3: bipar as embalagens usadas ── */}
+      {/* ── Passo 3: os fardos e o que voltou ── */}
       {passo === 'lotes' && alvo && (
         <div className="space-y-4">
           <Card className="p-4">
-            <p className="text-xs text-gray-500 font-medium">JÁ NOS POTES</p>
-            <p className="font-semibold text-gray-900 dark:text-unno-text">
-              {formatQty(colocado, alvo.unidade)} de {alvo.nome}
-            </p>
+            <p className="text-xs text-gray-500 font-medium">FARDOS DE {alvo.nome.toUpperCase()}</p>
             <p className="text-xs text-gray-500 dark:text-unno-muted mt-1">
-              Agora bipe todas as embalagens que você usou — as que zeraram e as
-              que sobraram.
+              Bipe todos os fardos que você usou. Se um não foi inteiro, diga quanto voltou para o
+              estoque.
             </p>
             <DicaMaisAntiga />
           </Card>
-
-          {lotes.length > 0 && (
-            <Card className="p-4">
-              <p className="text-xs text-gray-500 font-medium mb-2">
-                {lotes.length} EMBALAGEM{lotes.length === 1 ? '' : 'S'} BIPADA{lotes.length === 1 ? '' : 'S'}
-              </p>
-              <div className="space-y-1.5">
-                {lotes.map(l => (
-                  <div key={l.id} className="flex justify-between items-center gap-2 text-sm">
-                    <span className="font-mono text-gray-700 dark:text-unno-text truncate">
-                      {l.codigo}{l.aberto && <span className="text-amber-600 text-xs"> · aberta</span>}
-                    </span>
-                    <div className="flex items-center gap-2 shrink-0">
-                      <span className="text-gray-500 text-xs">{formatQty(l.saldo, l.unidade)}</span>
-                      <button
-                        type="button"
-                        onClick={() => setLotes(prev => prev.filter(x => x.id !== l.id))}
-                        className="text-xs text-red-600 hover:underline"
-                      >
-                        tirar
-                      </button>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </Card>
-          )}
 
           <Card className="p-5">
             <QRScanner
               onScan={qr => bipar(qr)}
               continuo
               titulo={alvo.nome}
-              label={`${lotes.length} bipada${lotes.length === 1 ? '' : 's'}`}
+              label={`${lotes.length} bipado${lotes.length === 1 ? '' : 's'}`}
               dicaDigitar={{
                 texto: `Só a tarja preta da etiqueta — o insumo já é ${alvo.nome}. O espaço vira ponto e depois barra; os zeros da frente não precisam.`,
                 exemplo: '5.2/2',
                 tarja: true,
               }}
-              acaoConcluir={{
-                rotulo: 'Terminei de bipar',
-                onClick: () => { setErroScan(''); setPasso('fechar') },
-              }}
+              acaoConcluir={{ rotulo: 'Terminei de bipar', onClick: () => setErroScan('') }}
               painel={
                 <div className="text-xs">
                   {erroScan && <p className="font-semibold text-red-700 mb-2">{erroScan}</p>}
@@ -1193,401 +475,96 @@ export function AbastecimentoPage() {
               }
             />
             {erroScan && (
-              <div className="mt-3 p-3 bg-red-50 border border-red-200 rounded-lg text-sm text-red-700">
-                {erroScan}
-              </div>
+              <div className="mt-3 p-3 bg-red-50 border border-red-200 rounded-lg text-sm text-red-700">{erroScan}</div>
             )}
           </Card>
 
-          <Button
-            size="xl" fullWidth
-            disabled={lotes.length === 0}
-            onClick={() => { setErroScan(''); setPasso('fechar') }}
-          >
-            Continuar → o que sobrou
-          </Button>
-          <Button variant="ghost" size="lg" fullWidth onClick={() => setPasso('potes')}>
-            ← Voltar aos potes
-          </Button>
-        </div>
-      )}
-
-      {/* ── Passo 4: o que zerou e o que sobrou ── */}
-      {passo === 'fechar' && alvo && (
-        <div className="space-y-4">
-          <Card className="p-4">
-            <p className="text-xs text-gray-500 font-medium">ÚLTIMO PASSO</p>
-            <p className="font-semibold text-gray-900 dark:text-unno-text">
-              O que aconteceu com cada embalagem?
-            </p>
-            <p className="text-xs text-gray-500 dark:text-unno-muted mt-1">
-              Guardou o resto sem pesar? É o normal — deixe em "Não pesei". Se
-              pesou, digite o que a balança mostrou, com a embalagem:{' '}
-              {taraBancada > 0
-                ? <>o sistema tira os <strong>{taraBancada} {b.rotulo}</strong> da embalagem.</>
-                : <>a tara desta embalagem <strong>não está cadastrada</strong>, então digite o peso sem ela.</>}
-              {' '}"Zerou" é só quando ela foi para o lixo.
-            </p>
-          </Card>
-
           {lotes.map(l => {
-            const s = sobraDe(l)
-            const r = respostaDe(l)
-            const zerou = r === 'zerou'
-            const excedeu = s !== null && s > l.saldo + 0.001
+            const v = voltouDe(l)
             return (
               <Card key={l.id} className="p-4">
-                <div className="flex justify-between items-start gap-3 mb-3">
-                  <div className="min-w-0">
-                    <p className="font-mono font-semibold text-gray-900 dark:text-unno-text truncate">
-                      {l.codigo}
-                    </p>
-                    <p className="text-xs text-gray-500 dark:text-unno-muted">
-                      Tinha {formatQty(l.saldo, l.unidade)}
-                    </p>
+                <div className="flex justify-between items-center gap-2">
+                  <span className="font-mono text-sm text-gray-800 dark:text-unno-text truncate">{l.codigo}</span>
+                  <div className="flex items-center gap-3 shrink-0">
+                    <span className="text-xs text-gray-500">tinha {formatQty(l.saldo, l.unidade)}</span>
+                    <button
+                      type="button"
+                      onClick={() => setLotes(prev => prev.filter(x => x.id !== l.id))}
+                      className="text-xs text-red-600 hover:underline"
+                    >
+                      tirar
+                    </button>
                   </div>
                 </div>
-
-                {/* "Não pesei" vem primeiro e nasce marcado: é o que acontece
-                    quase sempre, e era justamente a resposta que faltava. */}
-                <div className="flex gap-2 mb-2">
-                  <Button
-                    variant={r === 'nao_pesei' ? 'primary' : 'ghost'}
-                    size="sm"
-                    fullWidth
-                    onClick={() => setRespostas(v => ({ ...v, [l.id]: 'nao_pesei' }))}
-                  >
-                    Não pesei
-                  </Button>
-                  <Button
-                    variant={r === 'pesou' ? 'primary' : 'ghost'}
-                    size="sm"
-                    fullWidth
-                    onClick={() => setRespostas(v => ({ ...v, [l.id]: 'pesou' }))}
-                  >
-                    Pesei
-                  </Button>
-                  <Button
-                    variant={zerou ? 'primary' : 'ghost'}
-                    size="sm"
-                    fullWidth
-                    onClick={() => setConfirmarZerou(l)}
-                  >
-                    Zerou
-                  </Button>
-                </div>
-
-                {r === 'pesou' && (
+                <div className="mt-3">
                   <Input
-                    label={`Peso na balança, com a embalagem (${b.rotulo})`}
-                    type="number"
+                    label={`Voltou quanto para o estoque? (${l.unidade}) — em branco = usou inteiro`}
                     inputMode="decimal"
-                    value={sobras[l.id] ?? ''}
-                    onChange={e => setSobras(v => ({ ...v, [l.id]: e.target.value }))}
-                    placeholder="Quanto voltou para o estoque"
-                    error={excedeu
-                      ? `Sobrou mais do que a embalagem tinha (${formatQty(l.saldo, l.unidade)}).`
-                      : undefined}
+                    value={voltou[l.id] ?? ''}
+                    onChange={e => setVoltou(prev => ({ ...prev, [l.id]: e.target.value }))}
+                    placeholder="0"
                   />
-                )}
-
-                {/* Deduzido não pode ter a mesma cara de medido — mesma regra do
-                    "≈" nos potes (migration 112). */}
-                {r === 'nao_pesei' && (
-                  <p className="text-xs text-gray-600 dark:text-unno-muted">
-                    O resto volta para a prateleira. Saiu daqui, pela balança do
-                    pote: <strong>≈ {formatQty(saiuDe(l), l.unidade)}</strong>, e a
-                    embalagem fica com <strong>≈ {formatQty(l.saldo - saiuDe(l), l.unidade)}</strong>
-                    {' '}— número aproximado, até alguém pesar.
-                  </p>
-                )}
-
-                {r !== 'nao_pesei' && s !== null && !excedeu && (
-                  <p className="text-xs text-gray-600 dark:text-unno-muted mt-2">
-                    Saiu desta embalagem: <strong>{formatQty(l.saldo - s, l.unidade)}</strong>
-                    {s === 0 && ' — vai ficar esgotada'}
-                  </p>
-                )}
+                  {!v.ok && <p className="text-xs text-red-700 mt-1">{v.msg}</p>}
+                </div>
               </Card>
             )
           })}
 
-          {/* O balanço. Ele nunca fecha: parte do insumo fica no funil, na
-              colher e no chão, e é isso que a linha da perda diz. */}
-          <Card className="p-4 space-y-2 text-sm">
-            <div className="flex justify-between">
-              <span className="text-gray-500 dark:text-unno-muted">Saiu das embalagens</span>
-              <span className="font-semibold tabular-nums">{formatQty(consumido, alvo.unidade)}</span>
-            </div>
-            <div className="flex justify-between">
-              <span className="text-gray-500 dark:text-unno-muted">Entrou nos potes</span>
-              <span className="font-semibold tabular-nums">{formatQty(colocado, alvo.unidade)}</span>
-            </div>
-            <div className="flex justify-between pt-2 border-t border-gray-100 dark:border-white/10">
-              <span className="text-gray-500 dark:text-unno-muted">Diferença (perda)</span>
-              <span className={`font-bold tabular-nums ${perda > 0 ? 'text-amber-700' : 'text-gray-400'}`}>
-                {formatQty(perda, alvo.unidade)}
-              </span>
-            </div>
-
-            {/* Excesso dentro da folga: é balança, não erro. A tela conta o que
-                vai ser acertado em vez de deixar o número mudar sozinho. */}
-            {excesso > 0 && !precisaExplicar && (
-              <p className="text-xs text-gray-600 dark:text-unno-muted">
-                Os potes marcaram {formatQty(excesso, alvo.unidade)} a mais — margem
-                das duas pesagens, dentro dos {formatQty(folga, alvo.unidade)} de
-                folga.{' '}
-                {unicoComSobra.length === 1
-                  ? `A sobra de ${unicoComSobra[0].codigo} vai voltar ao estoque como `
-                    + `${formatQty((sobraDe(unicoComSobra[0]) ?? 0) - excesso, alvo.unidade)}.`
-                  : unicoComSobra.length > 1
-                    ? 'A diferença sai das sobras que voltam ao estoque.'
-                    : 'Como tudo zerou, os potes é que ficam com essa diferença a menos.'}
-              </p>
-            )}
-            {respondidos.length < lotes.length && (
-              <p className="text-xs text-gray-500">
-                Falta o peso de {lotes.length - respondidos.length} embalagem
-                {lotes.length - respondidos.length === 1 ? '' : 's'}.
-              </p>
-            )}
-            {naoPesados.length > 0 && perda === 0 && (
-              <p className="text-xs text-gray-500">
-                Nada foi dado como perda: o que não entrou nos potes continua nas
-                embalagens, na prateleira.
-              </p>
-            )}
-          </Card>
-
-          {/* Excesso grande demais para ser balança: quase sempre é embalagem
-              que não foi bipada. Avisa e pede explicação — não bloqueia, porque
-              prender o operador aqui não desfaz o que já foi despejado. */}
-          {precisaExplicar && respondidos.length === lotes.length && (
-            <div className="p-4 rounded-xl border bg-amber-50 border-amber-300 space-y-3">
-              <p className="font-semibold text-gray-900">
-                Os potes receberam {formatQty(excesso, alvo.unidade)} a mais
-              </p>
-              <p className="text-sm text-gray-700">
-                Isso é bem além da margem das balanças, que aqui seria{' '}
-                {formatQty(folga, alvo.unidade)}. Quase sempre quer dizer que faltou
-                bipar uma embalagem — vale voltar e conferir. Se estiver certo, explique
-                e siga.
-              </p>
-              <textarea
-                rows={2}
-                value={justExcesso}
-                onChange={e => setJustExcesso(e.target.value)}
-                placeholder="Ex: a etiqueta do outro saco rasgou e não deu para bipar"
-                className="block w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm
-                           focus:outline-none focus:border-brand-500 focus:ring-[3px] focus:ring-brand-500/10"
-              />
-              <p className="text-[0.7rem] text-gray-500">
-                {justExcesso.trim().length < 5
-                  ? `Faltam ${5 - justExcesso.trim().length} letra(s) para liberar o botão.`
-                  : 'Fica registrado junto com o abastecimento.'}
-              </p>
-            </div>
-          )}
-
-          {perdaGrande && respondidos.length === lotes.length && (
-            <div className="p-4 rounded-xl border bg-amber-50 border-amber-300 space-y-3">
-              <p className="font-semibold text-gray-900">
-                Isso registra {formatQty(perda, alvo.unidade)} de perda de {alvo.nome}
-              </p>
-              <p className="text-sm text-gray-700">
-                Saíram {formatQty(consumido, alvo.unidade)} das embalagens e só{' '}
-                {formatQty(colocado, alvo.unidade)} entraram nos potes. Quase sempre é o
-                peso da sobra da embalagem digitado errado. Confira a sobra de cada
-                embalagem antes de registrar.
-              </p>
-              <label className="flex items-center gap-2 text-sm font-medium text-gray-900">
-                <input
-                  type="checkbox"
-                  checked={perdaConferida}
-                  onChange={e => setPerdaConferida(e.target.checked)}
-                  className="w-5 h-5"
-                />
-                Conferi os pesos: a perda é real
-              </label>
-            </div>
+          {lotes.length > 0 && (
+            <p className="text-sm text-gray-700 dark:text-unno-text">
+              Vai para {marcados.length} balde{marcados.length === 1 ? '' : 's'}:{' '}
+              <strong>{formatQty(levou, alvo.unidade)}</strong>
+            </p>
           )}
 
           {erro && (
-            <div className="p-3 bg-red-50 border border-red-200 rounded-lg text-sm text-red-700">
-              {erro}
-            </div>
+            <div className="p-3 bg-red-50 border border-red-200 rounded-lg text-sm text-red-700">{erro}</div>
           )}
 
-          <Button
-            variant="danger" size="xl" fullWidth
-            disabled={!podeFechar}
-            loading={salvando}
-            onClick={() => setConfirmar(true)}
-          >
-            REGISTRAR ABASTECIMENTO
+          <Button size="xl" fullWidth disabled={!podeRegistrar} loading={salvando} onClick={() => setConfirmar(true)}>
+            REGISTRAR REABASTECIMENTO
           </Button>
-          <Button variant="ghost" size="lg" fullWidth onClick={() => setPasso('lotes')}>
-            ← Voltar às embalagens
+          <Button variant="ghost" size="lg" fullWidth onClick={() => setPasso('baldes')}>
+            ← Voltar aos baldes
           </Button>
         </div>
       )}
 
       {/* ── Sucesso ── */}
-      {passo === 'sucesso' && sucesso && (
+      {passo === 'sucesso' && sucesso && alvo && (
         <Card className="p-8 text-center">
           <div className="w-16 h-16 rounded-full bg-emerald-100 flex items-center justify-center mx-auto mb-4">
             <svg className="w-8 h-8 text-emerald-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
               <path strokeLinecap="round" strokeLinejoin="round" d="M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
             </svg>
           </div>
-          <h2 className="text-lg font-bold text-gray-900 dark:text-unno-text mb-1">
-            {sucesso.soDeclaracao ? '"Não foi usado" registrado' : 'Abastecimento registrado'}
-          </h2>
-          <p className="text-sm text-gray-500 dark:text-unno-muted mb-4">
-            {sucesso.recipientes || 'Os recipientes foram atualizados.'}
+          <h2 className="text-lg font-bold text-gray-900 dark:text-unno-text mb-1">Reabastecimento registrado</h2>
+          <p className="text-sm text-gray-500 dark:text-unno-muted mb-6">
+            {formatQty(sucesso.levou, alvo.unidade)} de {alvo.nome} em {sucesso.baldes} balde
+            {sucesso.baldes === 1 ? '' : 's'}
+            {sucesso.esvaziados > 0 && ` (${sucesso.esvaziados} estava${sucesso.esvaziados === 1 ? '' : 'm'} vazio${sucesso.esvaziados === 1 ? '' : 's'})`}.
           </p>
-          {sucesso.soDeclaracao && (
-            <p className="text-sm text-gray-600 dark:text-unno-muted mb-6">
-              Voltaram ao que tinham na última pesagem. Nenhum insumo saiu do estoque central.
-            </p>
-          )}
-          <div className={`text-sm text-left space-y-1 mb-6 ${sucesso.soDeclaracao ? 'hidden' : ''}`}>
-            <div className="flex justify-between">
-              <span className="text-gray-500">Saiu do estoque central</span>
-              <span className="font-semibold tabular-nums">{sucesso.consumido}</span>
-            </div>
-            <div className="flex justify-between">
-              <span className="text-gray-500">Entrou nos potes</span>
-              <span className="font-semibold tabular-nums">{sucesso.colocado}</span>
-            </div>
-            {sucesso.perda > 0 && (
-              <div className="flex justify-between">
-                <span className="text-gray-500">Perda registrada</span>
-                <span className="font-semibold text-amber-700 tabular-nums">{sucesso.perda}</span>
-              </div>
-            )}
-          </div>
-
-          {/* O que a folga de balança acertou. Dito aqui, e não escondido: o
-              número que volta ao estoque não é o mesmo que foi digitado. */}
-          {sucesso.ajustes.length > 0 && (
-            <div className="text-xs text-left text-gray-600 dark:text-unno-muted mb-6 space-y-1">
-              {sucesso.ajustes.map(a => (
-                <p key={a.codigo}>
-                  A sobra de <span className="font-mono">{a.codigo}</span> voltou ao
-                  estoque como <strong>{a.sobra_ajustada}</strong> (você pesou{' '}
-                  {a.sobra_declarada}) — margem entre as duas balanças.
-                </p>
-              ))}
-            </div>
-          )}
-          {sucesso.ajustes.length === 0 && sucesso.potesCederam > 0 && (
-            <p className="text-xs text-left text-gray-600 dark:text-unno-muted mb-6">
-              Como todas as embalagens zeraram, os {sucesso.potesCederam} a mais que a
-              balança dos potes marcou não tinham de onde sair — os potes ficaram com o
-              que as embalagens entregaram.
-            </p>
-          )}
-          <Button size="xl" fullWidth onClick={recomecar}>
-            Abastecer outro insumo
-          </Button>
+          <Button size="xl" fullWidth onClick={recomecar}>Reabastecer outro insumo</Button>
         </Card>
       )}
 
-      {/* A pergunta que evita apagar conteúdo sem querer. Não é trava: se o
-          balde está mesmo vazio, um toque resolve. */}
-      <ConfirmModal
-        open={confirmarVazio !== null}
-        title="Este balde está mesmo vazio?"
-        description={confirmarVazio && alvo
-          ? `O sistema esperava ${formatQty(confirmarVazio.ja_tem, alvo.unidade)} dentro do `
-            + `${confirmarVazio.nome}. Dizendo que ele chegou vazio, essa quantidade sai do `
-            + `estoque como acerto de recipiente.`
-          : undefined}
-        confirmLabel="Sim, estava vazio"
-        cancelLabel="Vou pesar"
-        onConfirm={() => {
-          const p = confirmarVazio!
-          setVazios(v => ({ ...v, [p.local_id]: true }))
-          setPesosAntes(x => ({ ...x, [p.local_id]: '' }))
-          setConfirmarVazio(null)
-        }}
-        onCancel={() => {
-          // "Vou pesar" já deixa o campo do peso à mostra: o próximo passo da
-          // pessoa é esse, e sem isto ela teria de tocar de novo.
-          const p = confirmarVazio!
-          setVazios(v => ({ ...v, [p.local_id]: false }))
-          setConfirmarVazio(null)
-        }}
-      />
-
-      {/* "Zerou" é a única resposta que gera perda, e por muito tempo foi a
-          única saída de quem não tinha o peso. Agora ela diz, antes, quanto vai
-          para o lixo. */}
-      <ConfirmModal
-        open={confirmarZerou !== null}
-        title="Esta embalagem foi para o lixo?"
-        description={confirmarZerou && alvo
-          ? `Ela tinha ${formatQty(confirmarZerou.saldo, alvo.unidade)}. Dizendo que `
-            + `zerou, o que não entrou nos potes é registrado como perda. Se você `
-            + `guardou o resto, use "Não pesei".`
-          : undefined}
-        confirmLabel="Sim, foi pro lixo"
-        cancelLabel="Guardei o resto"
-        onConfirm={() => {
-          setRespostas(v => ({ ...v, [confirmarZerou!.id]: 'zerou' }))
-          setConfirmarZerou(null)
-        }}
-        onCancel={() => {
-          setRespostas(v => ({ ...v, [confirmarZerou!.id]: 'nao_pesei' }))
-          setConfirmarZerou(null)
-        }}
-      />
-
       <ConfirmModal
         open={confirmar}
-        title="Registrar abastecimento?"
-        description="Os potes passam a valer o peso declarado e as embalagens ficam com a sobra informada."
-        variant="danger"
+        title="Registrar reabastecimento?"
+        description="Os fardos ficam com o que voltou, e os lotes passam a constar nos baldes marcados."
         confirmLabel="REGISTRAR"
         loading={salvando}
         summary={alvo ? (
           <div className="space-y-1">
-            <p><strong>{alvo.nome}</strong></p>
-            <p>
-              {potesDeclarados.length} recipiente{potesDeclarados.length === 1 ? '' : 's'} ·{' '}
-              {formatQty(colocado, alvo.unidade)} · {lotes.length} embalagem
-              {lotes.length === 1 ? '' : 's'}
-            </p>
-            {perda > 0.001 && <p>Perda: {formatQty(perda, alvo.unidade)}</p>}
-          </div>
-        ) : undefined}
-        onConfirm={() => confirmarAbastecimento()}
-        onCancel={() => setConfirmar(false)}
-      />
-
-      {/* O aviso que o Lucca pediu: quem chega aqui pelo caminho do
-          reabastecimento precisa saber que NÃO está registrando um. */}
-      <ConfirmModal
-        open={confirmarDecl}
-        title='Registrar só o "Não foi usado"?'
-        description={alvo
-          ? `Você não está registrando nenhum abastecimento em nenhum recipiente de ${alvo.nome}. `
-            + 'Os potes marcados só voltam ao que tinham na última pesagem.'
-          : undefined}
-        confirmLabel="REGISTRAR"
-        loading={salvando}
-        summary={alvo ? (
-          <div className="space-y-1">
-            {potesDeclarados.map(x => (
-              <p key={x.pote.local_id}>
-                {x.pote.nome} → <strong>{formatQty(x.res.conteudoFinal, alvo.unidade)}</strong>
-              </p>
+            <p><strong>{alvo.nome}</strong> · {formatQty(levou, alvo.unidade)}</p>
+            {marcados.map(bd => (
+              <p key={bd.local_id}>{bd.nome}{enchidos[bd.local_id] ? ' · estava vazio' : ''}</p>
             ))}
+            <p>{lotes.length} fardo{lotes.length === 1 ? '' : 's'}</p>
           </div>
         ) : undefined}
-        onConfirm={() => confirmarAbastecimento(true)}
-        onCancel={() => setConfirmarDecl(false)}
+        onConfirm={registrar}
+        onCancel={() => setConfirmar(false)}
       />
     </div>
   )

@@ -306,14 +306,29 @@ export function FechamentoSessaoPage() {
 
   async function carregarPendentes() {
     if (!id) return
-    const [pend, linhas] = await Promise.all([
+    const [pend, linhasTodas, ses] = await Promise.all([
       supabase.from('consumo_pendente')
         .select('quantidade, unidade, insumo:insumos(nome)')
         .eq('sessao_id', id).eq('status', 'aberto'),
       supabase.from('sessoes_producao_locais')
-        .select('consumo_teorico, consumo_aplicado, insumo:insumos(nome, unidade_medida)')
+        .select('insumo_id, consumo_teorico, consumo_aplicado, insumo:insumos(nome, unidade_medida)')
         .eq('sessao_id', id),
+      supabase.from('sessoes_producao').select('empresa_id, data_abertura').eq('id', id).single(),
     ])
+    // Balde sem peso (migration 145): o balde é assumido cheio e nada sai dele,
+    // então o teórico que "não foi aplicado" não é dívida nenhuma.
+    const ids = [...new Set(((linhasTodas.data ?? []) as { insumo_id: string }[]).map(l => l.insumo_id))]
+    const s = ses.data as { empresa_id: string; data_abertura: string } | null
+    const semPeso = new Set<string>()
+    if (s) {
+      await Promise.all(ids.map(async insumoId => {
+        const { data } = await supabase.rpc('insumo_sem_peso', {
+          p_empresa_id: s.empresa_id, p_insumo_id: insumoId, p_quando: s.data_abertura,
+        })
+        if (data === true) semPeso.add(insumoId)
+      }))
+    }
+    const linhas = { data: ((linhasTodas.data ?? []) as { insumo_id: string }[]).filter(l => !semPeso.has(l.insumo_id)) }
     const soma = new Map<string, { qtd: number; unidade: string }>()
     const somar = (nome: string, qtd: number, unidade: string) => {
       const a = soma.get(nome) ?? { qtd: 0, unidade }
