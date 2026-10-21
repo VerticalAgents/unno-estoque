@@ -156,9 +156,13 @@ export function ContagemListPage() {
               <BotaoCancelar onClick={() => void pedirCancelamento(emAndamentoEp)} />
             </>
           ) : (
-            <Button size="md" fullWidth onClick={() => iniciar('ep')}>
-              Nova contagem EP
-            </Button>
+            // Balde não se pesa mais (migration 145, 21/10/2026): depois de
+            // reabastecido ele conta como cheio, e o que importa nele é a lista
+            // de lotes. Contagem nova é só do estoque central.
+            <p className="text-xs text-gray-500">
+              Não é mais preciso: os baldes não são pesados, contam como cheios depois do
+              reabastecimento.
+            </p>
           )}
         </div>
       </div>

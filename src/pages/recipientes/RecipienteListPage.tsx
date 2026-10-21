@@ -174,7 +174,7 @@ function ConteudoCell({ comp, local }: { comp?: Composicao; local?: Local }) {
         </span>
       ) : conferido ? (
         <span className="block text-[0.65rem] text-gray-400">
-          pesado em {new Date(conferido).toLocaleDateString('pt-BR', {
+          atualizado em {new Date(conferido).toLocaleDateString('pt-BR', {
             day: '2-digit', month: '2-digit',
           })}
         </span>

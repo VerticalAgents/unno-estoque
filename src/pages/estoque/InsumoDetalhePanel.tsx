@@ -281,6 +281,13 @@ export function InsumoDetalhePanel({
   const [loading, setLoading] = useState(true)
   const [descarteAlvo, setDescarteAlvo] = useState<DescarteAlvo | null>(null)
   const [zerarAlvo, setZerarAlvo] = useState<LoteEC | null>(null)
+  /**
+   * Balde sem peso (migration 145): o insumo de modo 'recipiente' não tem kg no
+   * balde — tem a lista de lotes que entraram desde o último esvaziamento. É o
+   * que se mostra ao fiscal.
+   */
+  const [semPeso, setSemPeso] = useState(false)
+  const [lotesNoBalde, setLotesNoBalde] = useState<Record<string, { codigo: string; desde: string | null }[]>>({})
   /** Formato das embalagens do EC (`insumos_embalagem_config.tipo_embalagem`). */
   const [tipoEmbalagem, setTipoEmbalagem] = useState<string | null>(null)
   /** A peça tocada: abre o cartão com o número completo e as ações. */
@@ -360,6 +367,30 @@ export function InsumoDetalhePanel({
     })
 
     setRecipientesEP(recipientes)
+
+    // Balde sem peso: vale a partir da virada, só para insumo de modo 'recipiente'.
+    const { data: sp } = await supabase.rpc('insumo_sem_peso', {
+      p_empresa_id: profile.empresa_id, p_insumo_id: insumo.insumo_id, p_quando: new Date().toISOString(),
+    })
+    setSemPeso(sp === true)
+    const ids = recipientes.filter(r => !r.efemero).map(r => r.id)
+    if (sp === true && ids.length > 0) {
+      const { data: ll } = await supabase
+        .from('locais_lotes').select('local_id, lote_id, data_transferencia').in('local_id', ids)
+      const linhas = (ll ?? []) as { local_id: string; lote_id: string; data_transferencia: string | null }[]
+      const { data: ls } = linhas.length
+        ? await supabase.from('lotes').select('id, codigo').in('id', [...new Set(linhas.map(l => l.lote_id))])
+        : { data: [] }
+      const codigos = new Map(((ls ?? []) as { id: string; codigo: string }[]).map(l => [l.id, l.codigo]))
+      const porBalde: Record<string, { codigo: string; desde: string | null }[]> = {}
+      for (const l of linhas) {
+        (porBalde[l.local_id] ??= []).push({ codigo: codigos.get(l.lote_id) ?? '?', desde: l.data_transferencia })
+      }
+      for (const lista of Object.values(porBalde)) lista.sort((a, b) => (a.desde ?? '').localeCompare(b.desde ?? ''))
+      setLotesNoBalde(porBalde)
+    } else {
+      setLotesNoBalde({})
+    }
     setLoading(false)
   }
 
@@ -522,6 +553,20 @@ export function InsumoDetalhePanel({
                         )
                       }
                       const cap = Number(r.capacidade_max)
+                      if (semPeso && !r.efemero) {
+                        const n = lotesNoBalde[r.id]?.length ?? 0
+                        return (
+                          <Peca
+                            key={r.id}
+                            forma={formaDaEmbalagem(r.subtipo)}
+                            cheio={n > 0 ? 1 : 0}
+                            rotulo={nomeCurto(r)}
+                            detalhe={n === 0 ? 'sem lote' : `${n} lote${n === 1 ? '' : 's'}`}
+                            selecionada={selecionada}
+                            onClick={() => alternar({ tipo: 'rec', id: r.id })}
+                          />
+                        )
+                      }
                       return (
                         <Peca
                           key={r.id}
@@ -538,7 +583,35 @@ export function InsumoDetalhePanel({
                   </div>
                 )}
 
-                {recSel && (() => {
+                {recSel && semPeso && !recSel.efemero && (() => {
+                  const lista = lotesNoBalde[recSel.id] ?? []
+                  const dia = (d: string) => d.split('-').reverse().slice(0, 2).join('/')
+                  return (
+                    <div className="mt-3 rounded-lg border border-gray-200 p-3 space-y-1.5">
+                      <p className="text-sm font-medium text-gray-900">{recSel.nome}</p>
+                      <p className="text-xs text-gray-500">
+                        Lotes dentro, desde a última vez que ele estava vazio. O balde não é pesado:
+                        depois de reabastecido, conta como cheio.
+                      </p>
+                      {lista.length === 0 ? (
+                        <p className="text-sm text-amber-700">Nenhum lote registrado neste balde.</p>
+                      ) : (
+                        <div className="space-y-0.5">
+                          {lista.map(l => (
+                            <div key={l.codigo} className="flex justify-between gap-3 text-sm">
+                              <span className="font-mono text-gray-800 truncate">{l.codigo}</span>
+                              <span className="text-xs text-gray-500 shrink-0">
+                                {l.desde ? `desde ${dia(l.desde)}` : ''}
+                              </span>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  )
+                })()}
+
+                {recSel && !(semPeso && !recSel.efemero) && (() => {
                   const temConteudo = recSel.quantidade != null && recSel.quantidade > 0
                   const cap = Number(recSel.capacidade_max)
                   return (
