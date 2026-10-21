@@ -39,12 +39,11 @@ const CAMINHOS: Caminho[] = [
   {
     chave: 'recipiente',
     titulo: 'Reabastecer recipientes',
-    descricao: 'Encher os baldes da cozinha e pesar — ou contar as garrafas e pacotes que levou. '
-             + 'Você bipa as embalagens no fim.',
+    descricao: 'Encher os baldes da cozinha e pesar. Você bipa as embalagens no fim.',
     rota: '/transferencia/baldes',
-    // 'unidade' (óleo, ovo em pó) é reabastecimento também: o fluxo muda por
-    // dentro, contado em vez de pesado (migration 126).
-    modos: ['recipiente', 'unidade'],
+    // Óleo e ovo ('unidade') saíram daqui na migration 144: a equipe procurava
+    // em "Levar embalagem original" (Lucca, 21/10/2026).
+    modos: ['recipiente'],
     icone: (
       <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
         <path strokeLinecap="round" strokeLinejoin="round" d="M5 8h14l-1.2 11.1A2 2 0 0115.8 21H8.2a2 2 0 01-2-1.9L5 8zm2-3h10l.6 3H6.4L7 5z" />
@@ -54,9 +53,12 @@ const CAMINHOS: Caminho[] = [
   {
     chave: 'embalagem',
     titulo: 'Levar embalagem original',
-    descricao: 'O pacote do fornecedor vai inteiro para a produção e é usado de dentro dele.',
+    descricao: 'O pacote do fornecedor vai para a produção e é usado de dentro dele. '
+             + 'Óleo e ovo: bipe a caixa e diga quantas sobraram nela.',
     rota: '/transferencia/scan',
-    modos: ['embalagem_fornecedor', 'escolher'],
+    // 'unidade' (óleo, ovo em pó): a tela de leitura manda para o fluxo de
+    // unidades assim que a caixa é bipada (migration 144).
+    modos: ['embalagem_fornecedor', 'escolher', 'unidade'],
     icone: (
       <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
         <path strokeLinecap="round" strokeLinejoin="round" d="M21 8l-9-5-9 5m18 0l-9 5m9-5v8l-9 5m0-8L3 8m9 5v8M3 8v8l9 5" />

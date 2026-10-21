@@ -192,6 +192,79 @@ function DescarteModal({
   )
 }
 
+// ── Zerar Modal ──────────────────────────────────────────────
+/**
+ * O lote acabou de verdade e o sistema ainda conta saldo — o óleo levado pelo
+ * botão errado em 20/10/2026. Conta como diferença de inventário, não como
+ * descarte: não foi para o lixo (Lucca, 21/10/2026; migration 144).
+ */
+function ZerarModal({
+  lote,
+  texto,
+  onClose,
+  onSuccess,
+}: {
+  lote: LoteEC
+  /** "15 garrafas", "12,15 kg" — o que o sistema ainda conta. */
+  texto: string
+  onClose: () => void
+  onSuccess: () => void
+}) {
+  const { profile } = useAuth()
+  const [porque, setPorque] = useState('')
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState('')
+
+  async function zerar() {
+    if (!profile) return
+    setSaving(true)
+    setError('')
+    const { data, error: rpcError } = await supabase.rpc('zerar_lote', {
+      p_lote_id:        lote.id,
+      p_empresa_id:     profile.empresa_id,
+      p_responsavel_id: profile.id,
+      p_observacoes:    porque.trim() || null,
+    })
+    setSaving(false)
+    if (rpcError || !(data as { ok: boolean })?.ok) {
+      setError(rpcError?.message ?? (data as { erro?: string })?.erro ?? 'Não foi possível zerar o lote.')
+      return
+    }
+    onSuccess()
+  }
+
+  return (
+    <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/50">
+      <div className="bg-white rounded-xl shadow-xl w-full max-w-md">
+        <div className="p-5 border-b border-gray-200">
+          <h3 className="text-base font-semibold text-gray-900">Zerar lote</h3>
+          <p className="text-sm text-gray-500 mt-0.5 font-mono">{lote.codigo}</p>
+        </div>
+        <div className="p-5 space-y-4">
+          <p className="text-sm text-gray-800">
+            O sistema ainda conta <strong>{texto}</strong> neste lote. Zere só se ele acabou de verdade:
+            o lote sai do estoque e a diferença fica registrada como acerto de inventário.
+          </p>
+          <Textarea
+            label="Por quê? (opcional)"
+            value={porque}
+            onChange={e => setPorque(e.target.value)}
+            placeholder="Ex.: já tinha sido usado, foi levado pelo botão errado"
+            rows={2}
+          />
+          {error && (
+            <div className="p-3 bg-red-50 border border-red-200 rounded-lg text-sm text-red-700">{error}</div>
+          )}
+          <div className="flex gap-3 pt-1">
+            <Button type="button" variant="secondary" onClick={onClose}>Cancelar</Button>
+            <Button type="button" fullWidth loading={saving} onClick={zerar}>Zerar lote</Button>
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 // ── Painel principal ─────────────────────────────────────────
 export function InsumoDetalhePanel({
   insumo,
@@ -207,6 +280,7 @@ export function InsumoDetalhePanel({
   const [recipientesEP, setRecipientesEP] = useState<RecipienteEP[]>([])
   const [loading, setLoading] = useState(true)
   const [descarteAlvo, setDescarteAlvo] = useState<DescarteAlvo | null>(null)
+  const [zerarAlvo, setZerarAlvo] = useState<LoteEC | null>(null)
   /** Formato das embalagens do EC (`insumos_embalagem_config.tipo_embalagem`). */
   const [tipoEmbalagem, setTipoEmbalagem] = useState<string | null>(null)
   /** A peça tocada: abre o cartão com o número completo e as ações. */
@@ -392,6 +466,16 @@ export function InsumoDetalhePanel({
                         Etiqueta
                       </button>
                       <button
+                        onClick={() => setZerarAlvo(loteSel)}
+                        className="flex items-center gap-1 text-xs font-medium text-gray-600 hover:text-gray-900 border border-gray-200 hover:border-gray-400 rounded-md px-2.5 py-1.5 transition-colors"
+                      >
+                        <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                          <circle cx="12" cy="12" r="8" />
+                          <path strokeLinecap="round" d="M6.5 17.5l11-11" />
+                        </svg>
+                        Zerar
+                      </button>
+                      <button
                         onClick={() => setDescarteAlvo({ tipo: 'lote', lote: loteSel })}
                         className="flex items-center gap-1 text-xs font-medium text-red-600 hover:text-red-800 border border-red-200 hover:border-red-400 rounded-md px-2.5 py-1.5 transition-colors"
                       >
@@ -502,6 +586,15 @@ export function InsumoDetalhePanel({
           )}
         </div>
       </aside>
+
+      {zerarAlvo && (
+        <ZerarModal
+          lote={zerarAlvo}
+          texto={textoQtd(Number(zerarAlvo.quantidade_disponivel))}
+          onClose={() => setZerarAlvo(null)}
+          onSuccess={() => { setZerarAlvo(null); setSel(null); load() }}
+        />
+      )}
 
       {/* Modal de descarte */}
       {descarteAlvo && (

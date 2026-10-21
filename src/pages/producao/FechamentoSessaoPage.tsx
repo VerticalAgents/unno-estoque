@@ -144,6 +144,10 @@ export function FechamentoSessaoPage() {
   const [bipandoPotes, setBipandoPotes] = useState(false)
   const [erroPote, setErroPote] = useState('')
 
+  /** Óleo e ovo desta sessão: contados no fechamento, obrigatório (migration 144). */
+  const [contagens, setContagens] = useState<{ insumo_id: string; nome: string; tipo: string }[]>([])
+  const [contados, setContados] = useState<Record<string, string>>({})
+
   /** O que a produção não teve: sai do estoque central no fechamento (migration 137). */
   const [doEstoqueCentral, setDoEstoqueCentral] = useState<{ nome: string; qtd: number; unidade: string }[]>([])
 
@@ -181,6 +185,7 @@ export function FechamentoSessaoPage() {
     carregarEmbalagens()
     carregarPotes()
     carregarPendentes()
+    carregarContagens()
     try {
       const salvos = sessionStorage.getItem(chavePotes(id))
       if (salvos) setNaoUsados(JSON.parse(salvos))
@@ -257,9 +262,46 @@ export function FechamentoSessaoPage() {
 
     const { data: ls } = await supabase
       .from('locais').select('id, nome, insumo_id, efemero, conteudo_conferido_em').in('id', localIds)
-    setPotes(((ls ?? []) as { id: string; nome: string; insumo_id: string; efemero: boolean | null; conteudo_conferido_em: string | null }[])
-      .filter(l => !l.efemero)
+    const linhas = (ls ?? []) as { id: string; nome: string; insumo_id: string; efemero: boolean | null; conteudo_conferido_em: string | null }[]
+    // Óleo e ovo não são pote: a contagem obrigatória logo acima já diz o que
+    // sobrou, e o lugar deles na produção nem tem QR para bipar (migration 144).
+    const { data: cfg } = await supabase
+      .from('insumos_armazenamento_config').select('insumo_id, modo_ep')
+      .in('insumo_id', [...new Set(linhas.map(l => l.insumo_id))])
+    const porUnidade = new Set(((cfg ?? []) as { insumo_id: string; modo_ep: string | null }[])
+      .filter(c => c.modo_ep === 'unidade').map(c => c.insumo_id))
+    setPotes(linhas
+      .filter(l => !l.efemero && !porUnidade.has(l.insumo_id))
       .map(l => ({ local_id: l.id, nome: l.nome, insumo_id: l.insumo_id, conferido_em: l.conteudo_conferido_em })))
+  }
+
+  /**
+   * Óleo e ovo que entram nas receitas desta sessão. Pela ficha, e não pelos
+   * recipientes da abertura: com a produção zerada na abertura o insumo não
+   * ganha linha em `sessoes_producao_locais`, e a contagem continua valendo.
+   */
+  async function carregarContagens() {
+    if (!id) return
+    const { data: sk } = await supabase.from('sessoes_producao_skus').select('ficha_versao_id').eq('sessao_id', id)
+    const versoes = [...new Set(((sk ?? []) as { ficha_versao_id: string | null }[]).map(s => s.ficha_versao_id).filter(Boolean))] as string[]
+    if (versoes.length === 0) { setContagens([]); return }
+    const { data: itens } = await supabase.from('fichas_tecnicas_itens').select('insumo_id').in('versao_id', versoes)
+    const insumoIds = [...new Set(((itens ?? []) as { insumo_id: string }[]).map(i => i.insumo_id))]
+    if (insumoIds.length === 0) { setContagens([]); return }
+    const [cfg, emb, ins] = await Promise.all([
+      supabase.from('insumos_armazenamento_config').select('insumo_id, modo_ep').in('insumo_id', insumoIds),
+      supabase.from('insumos_embalagem_config').select('insumo_id, tem_subunidades, subunidade_tipo, subunidade_peso').in('insumo_id', insumoIds),
+      supabase.from('insumos').select('id, nome').in('id', insumoIds),
+    ])
+    const unidade = new Set(((cfg.data ?? []) as { insumo_id: string; modo_ep: string | null }[])
+      .filter(c => c.modo_ep === 'unidade').map(c => c.insumo_id))
+    const tipos = new Map(((emb.data ?? []) as { insumo_id: string; tem_subunidades: boolean; subunidade_tipo: string | null; subunidade_peso: number | null }[])
+      .filter(e => e.tem_subunidades && Number(e.subunidade_peso) > 0)
+      .map(e => [e.insumo_id, e.subunidade_tipo ?? 'unidade']))
+    setContagens(((ins.data ?? []) as { id: string; nome: string }[])
+      .filter(i => unidade.has(i.id) && tipos.has(i.id))
+      .map(i => ({ insumo_id: i.id, nome: i.nome, tipo: tipos.get(i.id)! }))
+      .sort((a, b) => a.nome.localeCompare(b.nome, 'pt-BR')))
   }
 
   async function carregarPendentes() {
@@ -528,13 +570,23 @@ export function FechamentoSessaoPage() {
   )
 
   const hasValidationError = skus.some((s) => skuValidation(s) !== null)
-  const podeFechar = !hasValidationError && pendentes.length === 0
+  const contado = (insumoId: string) => {
+    const v = (contados[insumoId] ?? '').trim()
+    return /^\d+$/.test(v) ? parseInt(v, 10) : null
+  }
+  const faltaContar = contagens.filter(c => contado(c.insumo_id) === null)
+  const podeFechar = !hasValidationError && pendentes.length === 0 && faltaContar.length === 0
 
   async function handleConfirmar() {
     if (!profile || !id) return
     if (hasValidationError) { setError('Corrija os erros antes de fechar.'); setShowConfirm(false); return }
     if (pendentes.length > 0) {
       setError('Responda todas as embalagens do fornecedor antes de fechar.')
+      setShowConfirm(false)
+      return
+    }
+    if (faltaContar.length > 0) {
+      setError(`Conte ${faltaContar.map(c => c.nome).join(' e ')} antes de fechar.`)
       setShowConfirm(false)
       return
     }
@@ -574,6 +626,24 @@ export function FechamentoSessaoPage() {
         setLoading(false)
         setShowConfirm(false)
         setError(errEmb?.message ?? resEmb?.erro ?? 'Não foi possível registrar as embalagens.')
+        return
+      }
+    }
+
+    // A contagem de óleo e ovo também vai antes: ela zera o que a sessão deve
+    // desses insumos, e o fechamento não pode criar dívida do que já foi contado.
+    if (contagens.length > 0) {
+      const { data: cont, error: errCont } = await supabase.rpc('registrar_contagem_unidades', {
+        p_sessao_id:      id,
+        p_empresa_id:     profile.empresa_id,
+        p_responsavel_id: profile.id,
+        p_itens:          contagens.map(c => ({ insumo_id: c.insumo_id, unidades: contado(c.insumo_id) })),
+      })
+      const resCont = cont as { ok: boolean; erro?: string } | null
+      if (errCont || !resCont?.ok) {
+        setLoading(false)
+        setShowConfirm(false)
+        setError(errCont?.message ?? resCont?.erro ?? 'Não foi possível registrar a contagem.')
         return
       }
     }
@@ -921,6 +991,39 @@ export function FechamentoSessaoPage() {
             <p className="text-xs text-red-700 font-semibold mt-2">
               {pendentes.length === 1 ? 'Falta 1 embalagem' : `Faltam ${pendentes.length} embalagens`}
               {' '}— responda todas para fechar a sessão.
+            </p>
+          )}
+        </div>
+      )}
+
+      {/* ── Óleo e ovo: contagem obrigatória (migration 144) ── */}
+      {contagens.length > 0 && (
+        <div className="mb-4">
+          <h2 className="text-sm font-semibold text-gray-700 uppercase tracking-wide mb-1">
+            {contagens.map(c => c.nome).join(' e ')} na produção
+          </h2>
+          <p className="text-xs text-gray-500 mb-3">
+            Conte o que sobrou na produção. <strong>Só {contagens.length > 1 ? 'os fechados' : (contagens[0].tipo.endsWith('a') ? 'as fechadas' : 'os fechados')}</strong>:
+            {' '}o que está aberto não conta, mesmo quase cheio.
+          </p>
+          <div className="space-y-3">
+            {contagens.map(c => {
+              const fem = c.tipo.endsWith('a')
+              return (
+                <Card key={c.insumo_id} className="p-4">
+                  <Input
+                    label={`${fem ? 'Quantas' : 'Quantos'} ${c.tipo}s de ${c.nome} ${fem ? 'fechadas' : 'fechados'} sobraram?`}
+                    type="number" inputMode="numeric" min="0" step="1"
+                    value={contados[c.insumo_id] ?? ''}
+                    onChange={e => setContados(prev => ({ ...prev, [c.insumo_id]: e.target.value.replace(/\D/g, '') }))}
+                  />
+                </Card>
+              )
+            })}
+          </div>
+          {faltaContar.length > 0 && (
+            <p className="text-xs text-red-700 font-semibold mt-2">
+              Falta contar {faltaContar.map(c => c.nome).join(' e ')} para fechar a sessão.
             </p>
           )}
         </div>

@@ -13,13 +13,15 @@ import { parseLoteDoInsumo, parseQRLoteCodigo } from '../../lib/qr'
  * produção. Ninguém pesa — tratar isso como pote de açúcar, com tara e duas
  * pesagens, era conta à toa (Lucca, 28/09/2026).
  *
- * Três perguntas, na ordem da vida real:
+ * Quem reabastece diz só o que mexeu (Lucca, 21/10/2026):
  *
- *   1. quantas FECHADAS ainda estavam na produção — o "pesar o antes" daqui.
- *      A aberta não conta: o sistema fica no máximo uma unidade abaixo do
- *      real, e o erro não acumula (na contagem seguinte ela já foi usada);
- *   2. de quais caixas saiu, e quantas de cada;
- *   3. conferir e confirmar.
+ *   1. bipa as caixas que pegou e diz quantas SOBRARAM em cada (0 = levou a
+ *      caixa inteira);
+ *   2. conferir e confirmar.
+ *
+ * Até a migration 144 a primeira pergunta era "quantas fechadas ainda estavam
+ * na produção". Essa contagem passou para o fechamento da sessão, obrigatória:
+ * quem fecha está com tudo na frente; quem reabastece está com pressa.
  */
 
 export type InsumoPorUnidade = {
@@ -35,12 +37,15 @@ export type InsumoPorUnidade = {
   codigo?: string
 }
 
-type Caixa = { id: string; codigo: string; tem: number; unidades: string }
+/** `sobrou`: quantas ficaram na caixa — o que saiu é `tem - sobrou`. */
+type Caixa = { id: string; codigo: string; tem: number; sobrou: string }
 
-type Passo = 'contar' | 'caixas' | 'confirmar' | 'ok'
+/** A caixa já bipada na tela de "Levar embalagem original". */
+export type CaixaInicial = { id: string; codigo: string; quantidade_disponivel: number }
+
+type Passo = 'caixas' | 'confirmar' | 'ok'
 
 const plural = (tipo: string, n: number) => (n === 1 ? tipo : `${tipo}s`)
-const Maiuscula = (s: string) => s.charAt(0).toUpperCase() + s.slice(1)
 
 /**
  * A dica que ficou no lugar da trava FEFO (migration 142, Lucca 14/10/2026):
@@ -75,8 +80,9 @@ function Contador({ valor, onChange }: { valor: string; onChange: (v: string) =>
   )
 }
 
-export function AbastecimentoUnidades({ insumo, onVoltar, onConcluido }: {
+export function AbastecimentoUnidades({ insumo, inicial, onVoltar, onConcluido }: {
   insumo: InsumoPorUnidade
+  inicial?: CaixaInicial
   onVoltar: () => void
   onConcluido: () => void
 }) {
@@ -89,27 +95,29 @@ export function AbastecimentoUnidades({ insumo, onVoltar, onConcluido }: {
   const emb = tipo === 'pacote' ? 'saco' : 'caixa'
   const dEmb = emb === 'saco' ? 'deste' : 'desta'
   const g2 = (m: string, f: string) => (emb === 'saco' ? m : f)
-  const esperado = Math.floor(insumo.tem / insumo.peso + 0.0001)
+  const unidadesNaCaixa = (q: number) => Math.floor(Number(q) / insumo.peso + 0.0001)
 
-  const [passo, setPasso] = useState<Passo>('contar')
-  const [tinha, setTinha] = useState('')
-  const [caixas, setCaixas] = useState<Caixa[]>([])
+  const [passo, setPasso] = useState<Passo>('caixas')
+  const [caixas, setCaixas] = useState<Caixa[]>(() => inicial
+    ? [{ id: inicial.id, codigo: inicial.codigo, tem: unidadesNaCaixa(inicial.quantidade_disponivel), sobrou: '0' }]
+    : [])
   const [erroScan, setErroScan] = useState('')
-  const [lendo, setLendo] = useState(false)
+  const [lendo, setLendo] = useState(!inicial)
   const [erro, setErro] = useState('')
   const [salvando, setSalvando] = useState(false)
-  const [resultado, setResultado] = useState<{ tinha: number; levou: number; total: number } | null>(null)
+  const [resultado, setResultado] = useState<{ levou: number } | null>(null)
 
-  const nTinha = /^\d+$/.test(tinha.trim()) ? parseInt(tinha, 10) : null
-  const unidadesDe = (c: Caixa) => (/^\d+$/.test(c.unidades.trim()) ? parseInt(c.unidades, 10) : null)
-  const levou = caixas.reduce((s, c) => s + (unidadesDe(c) ?? 0), 0)
+  const sobrouDe = (c: Caixa) => (/^\d+$/.test(c.sobrou.trim()) ? parseInt(c.sobrou, 10) : null)
+  const unidadesDe = (c: Caixa) => { const s = sobrouDe(c); return s === null ? null : c.tem - s }
+  const levou = caixas.reduce((s, c) => s + Math.max(unidadesDe(c) ?? 0, 0), 0)
   const caixaComErro = (c: Caixa): string | null => {
-    const n = unidadesDe(c)
-    if (n === null || n <= 0) return `${g('Quantas', 'Quantos')} ${plural(tipo, 2)} saíram ${dEmb}?`
-    if (n > c.tem) return `${emb === 'saco' ? 'Este' : 'Esta'} só tem ${c.tem} ${plural(tipo, c.tem)}.`
+    const s = sobrouDe(c)
+    if (s === null) return `${g('Quantas', 'Quantos')} sobraram ${dEmb} ${emb}?`
+    if (s > c.tem) return `${emb === 'saco' ? 'Este' : 'Esta'} só tem ${c.tem} ${plural(tipo, c.tem)}.`
+    if (s === c.tem) return `Se ${g('sobraram todas', 'sobraram todos')}, nada saiu ${dEmb} ${emb}: tire da lista.`
     return null
   }
-  const podeConferir = caixas.every(c => caixaComErro(c) === null)
+  const podeConferir = caixas.length > 0 && caixas.every(c => caixaComErro(c) === null)
 
   async function bipar(qr: string) {
     setErroScan('')
@@ -149,34 +157,35 @@ export function AbastecimentoUnidades({ insumo, onVoltar, onConcluido }: {
     setCaixas(prev => [...prev, {
       id: lote.id,
       codigo: lote.codigo,
-      tem: Math.floor(Number(lote.quantidade_disponivel) / insumo.peso + 0.0001),
-      unidades: '',
+      tem: unidadesNaCaixa(lote.quantidade_disponivel),
+      sobrou: '0',
     }])
   }
 
   async function confirmar() {
-    if (!profile || nTinha === null) return
+    if (!profile) return
     setSalvando(true)
     setErro('')
     const { data, error } = await supabase.rpc('registrar_abastecimento_unidades', {
       p_empresa_id:     profile.empresa_id,
       p_responsavel_id: profile.id,
       p_insumo_id:      insumo.insumo_id,
-      p_tinha:          nTinha,
+      // Ninguém conta mais aqui: a contagem é do fechamento (migration 144).
+      p_tinha:          null,
       p_itens:          caixas.map(c => ({ lote_id: c.id, unidades: unidadesDe(c) })),
       p_justificativa:  null,
     })
     setSalvando(false)
-    const resp = data as { ok: boolean; erro?: string; tinha?: number; levou?: number; total?: number } | null
+    const resp = data as { ok: boolean; erro?: string; levou?: number } | null
     if (error || !resp?.ok) {
       setErro(resp?.erro ?? error?.message ?? 'Não foi possível registrar.')
       return
     }
-    setResultado({ tinha: resp.tinha ?? 0, levou: resp.levou ?? 0, total: resp.total ?? 0 })
+    setResultado({ levou: resp.levou ?? 0 })
     setPasso('ok')
   }
 
-  const PASSOS: Passo[] = ['contar', 'caixas', 'confirmar']
+  const PASSOS: Passo[] = ['caixas', 'confirmar']
   const indice = PASSOS.indexOf(passo)
 
   return (
@@ -191,54 +200,15 @@ export function AbastecimentoUnidades({ insumo, onVoltar, onConcluido }: {
         </div>
       )}
 
-      {/* ── 1. O que ainda estava lá ── */}
-      {passo === 'contar' && (
-        <>
-          <Card className="p-4">
-            <p className="text-xs text-gray-500 font-medium">ABASTECENDO</p>
-            <p className="font-semibold text-gray-900 dark:text-unno-text">{insumo.nome}</p>
-            <p className="text-xs text-gray-500 dark:text-unno-muted mt-1">
-              Sem balança: aqui se conta {plural(tipo, 2)}.
-            </p>
-          </Card>
-
-          <Card className="p-5">
-            <p className="font-semibold text-gray-900 dark:text-unno-text">
-              {g('Quantas', 'Quantos')} {plural(tipo, 2)}{' '}
-              <span className="underline">{g('fechadas', 'fechados')}</span> ainda estavam na produção?
-            </p>
-
-            {/* A regra que faz a conta fechar. Precisa estar à vista, não
-                escondida numa dica: é o erro que o dedo comete. */}
-            <div className="mt-3 p-3 rounded-controle bg-amber-50 border border-amber-300 text-sm text-amber-900">
-              <strong>Conte só {g('as fechadas', 'os fechados')}.</strong> {Maiuscula(tipo)}{' '}
-              {g('aberta', 'aberto')} não conta, mesmo que esteja quase {g('cheia', 'cheio')}.
-            </div>
-
-            <div className="mt-4 flex justify-center">
-              <Contador valor={tinha} onChange={setTinha} />
-            </div>
-            <p className="text-xs text-gray-500 dark:text-unno-muted mt-3 text-center">
-              O sistema esperava cerca de {esperado} {plural(tipo, esperado)}.
-            </p>
-          </Card>
-
-          <Button size="xl" fullWidth disabled={nTinha === null}
-                  onClick={() => { setErroScan(''); setPasso('caixas'); setLendo(true) }}>
-            Continuar → bipar {emb === 'saco' ? 'os sacos' : 'as caixas'}
-          </Button>
-          <Button variant="ghost" size="lg" fullWidth onClick={onVoltar}>← Trocar de insumo</Button>
-        </>
-      )}
-
-      {/* ── 2. De onde saíram ── */}
+      {/* ── 1. De onde saíram ── */}
       {passo === 'caixas' && (
         <>
           <Card className="p-4">
-            <p className="text-xs text-gray-500 font-medium">DE ONDE SAÍRAM</p>
+            <p className="text-xs text-gray-500 font-medium">LEVANDO PARA A PRODUÇÃO</p>
+            <p className="font-semibold text-gray-900 dark:text-unno-text">{insumo.nome}</p>
             <p className="text-sm text-gray-700 dark:text-unno-text mt-1">
-              Bipe o QR de cada {emb} de onde você tirou{' '}
-              {plural(tipo, 2)}, e diga {g('quantas', 'quantos')} saíram de cada.
+              Bipe o QR de cada {emb} que você pegou e diga {g('quantas', 'quantos')}{' '}
+              {plural(tipo, 2)} sobraram nela. {g('As', 'Os')} {plural(tipo, 2)} não têm QR: não precisa bipar.
             </p>
             <DicaMaisAntiga />
           </Card>
@@ -294,14 +264,19 @@ export function AbastecimentoUnidades({ insumo, onVoltar, onConcluido }: {
                   </button>
                 </div>
                 <p className="text-sm text-gray-700 dark:text-unno-text mb-2">
-                  {g('Quantas', 'Quantos')} {plural(tipo, 2)} você tirou {dEmb}?
+                  {g('Quantas', 'Quantos')} {plural(tipo, 2)} sobraram {dEmb} {emb}?{' '}
+                  <span className="text-gray-500 dark:text-unno-muted">(0 = levou {g2('o saco inteiro', 'a caixa inteira')})</span>
                 </p>
                 <div className="flex justify-center">
-                  <Contador valor={c.unidades}
-                    onChange={v => setCaixas(prev => prev.map(x => x.id === c.id ? { ...x, unidades: v } : x))} />
+                  <Contador valor={c.sobrou}
+                    onChange={v => setCaixas(prev => prev.map(x => x.id === c.id ? { ...x, sobrou: v } : x))} />
                 </div>
-                {problema && c.unidades !== '' && (
+                {problema ? (
                   <p className="text-xs text-red-600 font-semibold mt-2 text-center">{problema}</p>
+                ) : (
+                  <p className="text-xs text-gray-500 dark:text-unno-muted mt-2 text-center">
+                    Leva {unidadesDe(c)} {plural(tipo, unidadesDe(c) ?? 0)} para a produção.
+                  </p>
                 )}
               </Card>
             )
@@ -311,24 +286,20 @@ export function AbastecimentoUnidades({ insumo, onVoltar, onConcluido }: {
               adivinhar que falta apertar "Terminei de bipar". */}
           <Button size="xl" fullWidth disabled={!podeConferir}
                   onClick={() => { setLendo(false); setErro(''); setPasso('confirmar') }}>
-            {caixas.length === 0 ? 'Não levei nenhuma — só contei' : 'Conferir'}
+            Conferir
           </Button>
-          <Button variant="ghost" size="lg" fullWidth onClick={() => { setLendo(false); setPasso('contar') }}>
+          <Button variant="ghost" size="lg" fullWidth onClick={() => { setLendo(false); onVoltar() }}>
             ← Voltar
           </Button>
         </>
       )}
 
-      {/* ── 3. Conferir e confirmar ── */}
-      {passo === 'confirmar' && nTinha !== null && (
+      {/* ── 2. Conferir e confirmar ── */}
+      {passo === 'confirmar' && (
         <>
           <Card className="p-5">
             <p className="text-xs text-gray-500 font-medium mb-3">CONFIRA</p>
             <div className="space-y-2 text-sm">
-              <div className="flex justify-between">
-                <span className="text-gray-600 dark:text-unno-muted">Estavam na produção ({g('fechadas', 'fechados')})</span>
-                <span className="font-semibold tabular-nums">{nTinha}</span>
-              </div>
               {caixas.map(c => (
                 <div key={c.id} className="flex justify-between">
                   <span className="text-gray-600 dark:text-unno-muted">Levou de <span className="font-mono">{c.codigo}</span></span>
@@ -336,17 +307,12 @@ export function AbastecimentoUnidades({ insumo, onVoltar, onConcluido }: {
                 </div>
               ))}
               <div className="flex justify-between border-t border-gray-200 dark:border-white/10 pt-2">
-                <span className="font-semibold text-gray-900 dark:text-unno-text">Fica na produção</span>
+                <span className="font-semibold text-gray-900 dark:text-unno-text">Vai para a produção</span>
                 <span className="font-bold text-brand-700 dark:text-brand-400 tabular-nums">
-                  {nTinha + levou} {plural(tipo, nTinha + levou)}
+                  {levou} {plural(tipo, levou)}
                 </span>
               </div>
             </div>
-            {nTinha !== esperado && (
-              <p className="text-xs text-amber-700 mt-3">
-                O sistema esperava {esperado} {plural(tipo, esperado)} lá — vale a sua contagem.
-              </p>
-            )}
           </Card>
 
           {erro && (
@@ -362,10 +328,10 @@ export function AbastecimentoUnidades({ insumo, onVoltar, onConcluido }: {
         <Card className="p-8 text-center">
           <h2 className="text-lg font-bold text-gray-900 dark:text-unno-text mb-1">Registrado</h2>
           <p className="text-sm text-gray-500 dark:text-unno-muted mb-6">
-            {insumo.nome}: {resultado.tinha} + {resultado.levou} = <strong>{resultado.total}</strong>{' '}
-            {plural(tipo, resultado.total)} na produção.
+            {insumo.nome}: <strong>{resultado.levou}</strong> {plural(tipo, resultado.levou)}{' '}
+            levad{g('as', 'os')} para a produção.
           </p>
-          <Button size="lg" fullWidth onClick={onConcluido}>Reabastecer outro insumo</Button>
+          <Button size="lg" fullWidth onClick={onConcluido}>Concluir</Button>
         </Card>
       )}
     </div>

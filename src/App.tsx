@@ -12,6 +12,7 @@ import { ImpressaoLotesPage } from './pages/recebimento/ImpressaoLotesPage'
 import { TransferenciaPage } from './pages/transferencia/TransferenciaPage'
 import { AbastecimentoPage } from './pages/transferencia/AbastecimentoPage'
 import { EscolhaTransferenciaPage } from './pages/transferencia/EscolhaTransferenciaPage'
+import { AbastecimentoUnidadesPage } from './pages/transferencia/AbastecimentoUnidadesPage'
 import { SessoesListPage } from './pages/producao/SessoesListPage'
 import { AberturaSessaoPage } from './pages/producao/AberturaSessaoPage'
 import { PlanejadorPage } from './pages/producao/PlanejadorPage'
@@ -72,6 +73,7 @@ export default function App() {
           <Route path="transferencia" element={<EscolhaTransferenciaPage />} />
           <Route path="transferencia/baldes" element={<AbastecimentoPage />} />
           <Route path="transferencia/scan" element={<TransferenciaPage />} />
+          <Route path="transferencia/unidades/:insumoId" element={<AbastecimentoUnidadesPage />} />
           <Route path="reabastecimento" element={<ReabastecimentoPage />} />
           <Route path="producao" element={<SessoesListPage />} />
           <Route path="producao/abrir" element={<AberturaSessaoPage />} />

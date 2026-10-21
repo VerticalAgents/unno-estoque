@@ -288,6 +288,20 @@ export function TransferenciaPage() {
 
     const novo = loteData as LoteWithInsumo
 
+    // Óleo e ovo (modo 'unidade') moram neste botão desde a migration 144, mas
+    // têm fluxo próprio: a garrafa não tem QR, só a caixa. Antes daqui a trava
+    // de capacidade acusava "cheio" e a tela parava no passo do recipiente sem
+    // gravar nada (Fernando, 20/10/2026). Só com a lista vazia: no meio de
+    // outros lotes, misturar os dois fluxos perderia o que já foi bipado.
+    if (modoEp(novo) === 'unidade') {
+      if (lotes.length > 0) {
+        setScanError(`${novo.insumo?.nome ?? 'Este insumo'} vai sozinho: termine estes lotes e bipe a caixa depois.`)
+        return
+      }
+      navigate(`/transferencia/unidades/${novo.insumo_id}?lote=${novo.id}`)
+      return
+    }
+
     // Checado no ref e não em `lotes`: o estado do React só chega no próximo
     // quadro, e duas leituras rápidas leriam a lista velha as duas vezes.
     if (idsLidos.current.has(novo.id)) {
