@@ -154,7 +154,9 @@ export function AbastecimentoUnidades({ insumo, inicial, onVoltar, onConcluido }
     const resp = data as { erro?: string; trava?: string } | null
     if (resp?.erro && !resp?.trava) { setErroScan(resp.erro); return }
 
-    setCaixas(prev => [...prev, {
+    // A conferência de cima lê a lista antes das consultas; duas leituras no
+    // meio delas passariam as duas. Aqui é a lista de agora que decide.
+    setCaixas(prev => prev.some(c => c.id === lote.id) ? prev : [...prev, {
       id: lote.id,
       codigo: lote.codigo,
       tem: unidadesNaCaixa(lote.quantidade_disponivel),

@@ -218,7 +218,9 @@ export function AbastecimentoPage() {
     // Erro de coerência (outro insumo, outra marca) vale; a trava de capacidade não.
     if (resp?.erro && !resp?.trava) { setErroScan(resp.erro); return }
 
-    setLotes(prev => [...prev, {
+    // A conferência de cima lê a lista antes das consultas; duas leituras no
+    // meio delas passariam as duas. Aqui é a lista de agora que decide.
+    setLotes(prev => prev.some(l => l.id === lote.id) ? prev : [...prev, {
       id: lote.id, codigo: lote.codigo, saldo: Number(lote.quantidade_disponivel), unidade: lote.unidade,
     }])
   }

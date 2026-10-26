@@ -97,6 +97,13 @@ export function QRScanner({
   const [digitando, setDigitando] = useState(false)
   const [codigoManual, setCodigoManual] = useState('')
 
+  // A biblioteca guarda a função de leitura de quando a câmera abriu. Chamar o
+  // `onScan` direto entregava cada leitura à tela daquele momento, com a lista
+  // ainda vazia: segurando o QR além da carência, o mesmo lote entrava de novo
+  // (Fernando, 26/10/2026). O ref aponta sempre para a tela de agora.
+  const onScanRef = useRef(onScan)
+  onScanRef.current = onScan
+
   async function pararLeitura() {
     const s = scannerRef.current
     scannerRef.current = null
@@ -126,13 +133,13 @@ export function QRScanner({
       // A câmera continua aberta, então o painel de quem chamou se atualiza na
       // frente de quem está bipando. O aviso verde diz o que acabou de entrar.
       setUltimoOk(valor)
-      onScan(valor)
+      onScanRef.current(valor)
       return
     }
 
     setLido(valor)
     void pararLeitura()
-    onScan(valor)
+    onScanRef.current(valor)
   }
 
   /**
