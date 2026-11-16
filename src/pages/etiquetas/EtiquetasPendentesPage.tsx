@@ -64,7 +64,11 @@ export function EtiquetasPendentesPage() {
         .eq('etiqueta_impressa', false),
     ]).then(([l, r]) => {
       setLotes(((l.data ?? []) as unknown as LotePendente[])
-        .sort((a, b) => ordemNatural(a.codigo, b.codigo)))
+        // Pelo nome do insumo e, dentro dele, pelo código do lote (Lucca,
+        // 16/11/2026): o código do insumo segue a ordem de cadastro, não a do
+        // alfabeto, e quem cola as etiquetas procura pelo nome na prateleira.
+        .sort((a, b) => ordemNatural(a.insumo?.nome ?? '', b.insumo?.nome ?? '')
+          || ordemNatural(a.codigo, b.codigo)))
       setRecipientes(((r.data ?? []) as unknown as RecipientePendente[])
         .sort((a, b) => ordemNatural(a.nome, b.nome)))
       setCarregando(false)
